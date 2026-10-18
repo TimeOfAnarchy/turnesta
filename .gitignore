@@ -1,0 +1,18 @@
+# Local working instructions and personal scratch files
+/AGENTS.md
+/.local/
+
+# Build output
+/target/
+**/node_modules/
+/apps/web/dist/
+*.tsbuildinfo
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Runtime/editor artifacts
+*.log
+.DS_Store

@@ -1,0 +1,30 @@
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #19362c; background: #f4f5ef; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 40px 20px; }
+main { width: min(100%, 520px); }
+.brand { color: #19362c; text-decoration: none; font-size: 31px; font-weight: 800; letter-spacing: -1.5px; }
+.brand span { color: #e7994d; }
+.eyebrow { margin-top: 58px; font-size: 10px; letter-spacing: 2.2px; font-weight: 700; color: #6a796b; }
+h1 { font-size: clamp(32px, 6vw, 42px); line-height: 1.15; letter-spacing: -1.5px; margin: 14px 0; }
+.intro { color: #65736a; line-height: 1.65; margin-bottom: 30px; max-width: 410px; }
+section { background: #fff; border: 1px solid #dce2d8; border-radius: 16px; padding: 28px; box-shadow: 0 8px 30px #19362c06; }
+h2 { font-size: 17px; margin: 0 0 23px; }
+label { display: block; font-size: 13px; margin-bottom: 9px; }
+input { width: 100%; border: 1px solid #cbd5c8; border-radius: 8px; padding: 13px; font-size: 15px; background: #fafbf8; }
+input:focus { outline: 2px solid #51846a; outline-offset: 2px; }
+button { cursor: pointer; width: 100%; border: 0; background: #234b39; color: #fff; font: inherit; font-size: 14px; font-weight: 600; padding: 14px 16px; border-radius: 8px; margin-top: 16px; display: flex; justify-content: space-between; }
+button:hover { background: #183b2b; }
+button:disabled { opacity: .6; cursor: wait; }
+.hint, footer { color: #768177; font-size: 12px; line-height: 1.65; }
+.hint { margin: 18px 0 0; }
+footer { text-align: center; margin-top: 48px; }
+#status { line-height: 1.55; font-size: 14px; min-height: 24px; }
+.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.section-heading h2 { margin: 0; }
+.secondary { width: auto; margin: 0; background: #edf1e9; color: #19362c; padding: 10px 14px; }
+.secondary:hover { background: #dfe8d9; }
+ul { list-style: none; padding: 0; margin-bottom: 0; }
+li { display: grid; gap: 5px; padding: 18px 0; border-top: 1px solid #edf0e9; }
+li span { color: #768177; font-size: 12px; }
+li a { color: #234b39; font-weight: 700; text-underline-offset: 4px; }
+[hidden] { display: none !important; }

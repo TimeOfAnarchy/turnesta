@@ -1,0 +1,22 @@
+# Keep local instructions, private notes, and environment files out of builds.
+AGENTS.md
+**/AGENTS.md
+.local/
+**/.local/
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+.git/
+**/.git/
+target/
+**/target/
+node_modules/
+**/node_modules/
+**/dist/
+.idea/
+.vscode/
+*.log
+**/*.log

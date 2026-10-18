@@ -1,0 +1,146 @@
+name: turnesta
+
+# Local development only. Bootstrap uses the existing database administrator;
+# application processes receive separate migration/runtime/provisioning roles.
+x-turnesta-service: &turnesta-service
+  image: turnesta-api:local
+  environment: &turnesta-environment
+    DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD:-turnesta_api_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
+    TURNESTA_BIND_ADDR: 0.0.0.0:8080
+    TURNESTA_DB_MAX_CONNECTIONS: ${TURNESTA_DB_MAX_CONNECTIONS:-10}
+    TURNESTA_DB_ACQUIRE_TIMEOUT_MS: ${TURNESTA_DB_ACQUIRE_TIMEOUT_MS:-3000}
+    TURNESTA_READY_TIMEOUT_MS: ${TURNESTA_READY_TIMEOUT_MS:-1000}
+    TURNESTA_SHUTDOWN_TIMEOUT_MS: ${TURNESTA_SHUTDOWN_TIMEOUT_MS:-10000}
+    TURNESTA_PUBLIC_ORIGIN: ${TURNESTA_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+    TURNESTA_SESSION_TTL_SECONDS: ${TURNESTA_SESSION_TTL_SECONDS:-28800}
+    TURNESTA_WEB_DIST: /app/web
+    RUST_LOG: ${RUST_LOG:-turnesta_api=info,tower_http=info,sqlx=warn}
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 15s
+
+services:
+  db:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-turnesta}
+      POSTGRES_USER: ${POSTGRES_USER:-turnesta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-turnesta_local_dev}
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      # PostgreSQL 18+ uses /var/lib/postgresql/18/docker as PGDATA.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    stop_grace_period: 30s
+
+  db-bootstrap:
+    image: postgres:18-bookworm
+    user: postgres
+    entrypoint: ["psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--file=/bootstrap/bootstrap.sql"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-turnesta}
+      PGUSER: ${POSTGRES_USER:-turnesta}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-turnesta_local_dev}
+      TURNESTA_API_DB_PASSWORD: ${TURNESTA_API_DB_PASSWORD:-turnesta_api_local_dev}
+      TURNESTA_ADMIN_DB_PASSWORD: ${TURNESTA_ADMIN_DB_PASSWORD:-turnesta_admin_local_dev}
+      TURNESTA_MIGRATOR_DB_PASSWORD: ${TURNESTA_MIGRATOR_DB_PASSWORD:-turnesta_migrator_local_dev}
+      TURNESTA_WORKER_DB_PASSWORD: ${TURNESTA_WORKER_DB_PASSWORD:-turnesta_worker_local_dev}
+    volumes:
+      - ./scripts/db:/bootstrap:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  migrator:
+    <<: *turnesta-service
+    command: ["migrate"]
+    environment:
+      <<: *turnesta-environment
+      DATABASE_URL: postgresql://turnesta_migrator:${TURNESTA_MIGRATOR_DB_PASSWORD:-turnesta_migrator_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
+      TURNESTA_DB_MAX_CONNECTIONS: 1
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+
+  api:
+    <<: *turnesta-service
+    build:
+      context: .
+      target: runtime
+    command: ["serve"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Trusted operator CLI only. Never exposed as an HTTP service.
+  admin:
+    <<: *turnesta-service
+    profiles: ["tools"]
+    command: ["--help"]
+    environment:
+      <<: *turnesta-environment
+      DATABASE_URL: postgresql://turnesta_admin:${TURNESTA_ADMIN_DB_PASSWORD:-turnesta_admin_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
+      TURNESTA_DB_MAX_CONNECTIONS: 1
+      TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+
+  worker:
+    <<: *turnesta-service
+    command: ["worker"]
+    environment:
+      <<: *turnesta-environment
+      DATABASE_URL: postgresql://turnesta_worker:${TURNESTA_WORKER_DB_PASSWORD:-turnesta_worker_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
+      TURNESTA_DB_MAX_CONNECTIONS: 2
+      TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}
+      TURNESTA_SMTP_HOST: ${TURNESTA_SMTP_HOST:-mailhog}
+      TURNESTA_SMTP_PORT: ${TURNESTA_SMTP_PORT:-1025}
+      TURNESTA_SMTP_FROM: ${TURNESTA_SMTP_FROM:-no-reply@turnesta.test}
+      TURNESTA_SMTP_TLS_MODE: ${TURNESTA_SMTP_TLS_MODE:-smtps}
+      TURNESTA_SMTP_ALLOW_INSECURE: ${TURNESTA_SMTP_ALLOW_INSECURE:-false}
+      TURNESTA_SMTP_USERNAME: ${TURNESTA_SMTP_USERNAME:-}
+      TURNESTA_SMTP_PASSWORD: ${TURNESTA_SMTP_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    stop_grace_period: 40s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
