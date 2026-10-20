@@ -12,6 +12,18 @@ pub struct TenantSession {
 }
 
 impl TenantSession {
+    pub fn connection(&mut self) -> &mut sqlx::PgConnection {
+        &mut self.tx
+    }
+
+    pub fn role(&self) -> Role {
+        self.role
+    }
+
+    pub fn tenant_id(&self) -> TenantId {
+        self.tenant_id
+    }
+
     pub async fn begin(
         pool: &PgPool,
         user_id: UserId,

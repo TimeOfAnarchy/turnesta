@@ -47,6 +47,8 @@ try {
     Invoke-Docker -DockerArgs ($runArgs + @('auth_store_postgres', '--', '--ignored'))
     Invoke-Docker -DockerArgs ($runArgs + @('auth_http_postgres', '--', '--ignored'))
     Invoke-Docker -DockerArgs ($runArgs + @('delivery_postgres', '--', '--ignored'))
+    Invoke-Docker -DockerArgs ($runArgs + @('tips_postgres', '--', '--ignored'))
+    Invoke-Docker -DockerArgs ($runArgs + @('tips_http_postgres', '--', '--ignored'))
 }
 finally {
     Pop-Location

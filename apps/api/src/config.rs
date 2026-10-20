@@ -11,6 +11,7 @@ pub struct Config {
     pub shutdown_timeout: Duration,
     pub auth: AuthConfig,
     pub web_dist: PathBuf,
+    pub payments: crate::payments::PaymentConfig,
 }
 
 // No Debug implementation: connection options can contain credentials.
@@ -49,6 +50,12 @@ impl Config {
             .map_err(|_| invalid("DATABASE_URL", "must be a valid PostgreSQL URL"))?;
 
         Ok(Self {
+            payments: crate::payments::PaymentConfig::from_lookup(&lookup).map_err(|_| {
+                invalid(
+                    "TURNESTA_TIPS_MODE / TURNESTA_MOCK_PAYMENT_KEY / TURNESTA_MOCK_CALLBACK_URL",
+                    "must define disabled or valid mock configuration",
+                )
+            })?,
             bind_addr,
             web_dist: lookup("TURNESTA_WEB_DIST")
                 .unwrap_or_else(|| "apps/web/dist".into())

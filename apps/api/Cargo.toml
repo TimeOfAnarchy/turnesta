@@ -9,14 +9,18 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+askama.workspace = true
 axum.workspace = true
 clap.workspace = true
 chacha20poly1305.workspace = true
 getrandom.workspace = true
 hex.workspace = true
+hmac.workspace = true
 lettre.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
 sha2.workspace = true
 subtle.workspace = true
 sqlx.workspace = true

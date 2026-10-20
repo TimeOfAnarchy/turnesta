@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod tips_http;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,6 +34,8 @@ pub struct AppState {
     auth: AuthConfig,
     login_gate: Arc<tokio::sync::Semaphore>,
     web_dist: PathBuf,
+    payments: crate::payments::PaymentConfig,
+    public_gate: Arc<tokio::sync::Semaphore>,
 }
 
 impl AppState {
@@ -44,6 +47,8 @@ impl AppState {
             auth: AuthConfig::default(),
             login_gate: Arc::new(tokio::sync::Semaphore::new(16)),
             web_dist: "apps/web/dist".into(),
+            payments: crate::payments::PaymentConfig::default(),
+            public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
         }
     }
 
@@ -58,6 +63,11 @@ impl AppState {
 
     pub fn with_web_dist(mut self, path: PathBuf) -> Self {
         self.web_dist = path;
+        self
+    }
+
+    pub fn with_payments(mut self, config: crate::payments::PaymentConfig) -> Self {
+        self.payments = config;
         self
     }
 }
@@ -108,7 +118,15 @@ struct ErrorResponse {
         api::create_location,
         api::rename_organization,
         api::update_location,
-        api::time_zones
+        api::time_zones,
+        tips_http::recipients,
+        tips_http::create_recipient,
+        tips_http::attempts,
+        tips_http::reconcile,
+        tips_http::create_attempt,
+        tips_http::complete_checkout,
+        tips_http::public_status,
+        tips_http::webhook
     ),
     components(schemas(
         HealthResponse,
@@ -125,7 +143,19 @@ struct ErrorResponse {
         api::LocationList,
         crate::core::Organization,
         crate::core::Location,
-        crate::core::Role
+        crate::core::Role,
+        crate::tips::Recipient,
+        crate::tips::Attempt,
+        crate::tips::PublicAttempt,
+        crate::tips::MockEvent,
+        tips_http::CreateRecipientRequest,
+        tips_http::RecipientPage,
+        tips_http::AttemptPage,
+        tips_http::CreateAttemptRequest,
+        tips_http::CheckoutLinks,
+        tips_http::CompleteCheckoutRequest,
+        tips_http::StatusLink,
+        tips_http::WebhookReceipt
     ))
 )]
 struct ApiDoc;
@@ -148,6 +178,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health/ready", get(ready))
         .route("/openapi.json", get(openapi))
         .merge(api::routes())
+        .merge(tips_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)

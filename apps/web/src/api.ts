@@ -4,6 +4,10 @@ export type Organization = { id: string; name: string; version: number };
 export type Location = { id: string; tenant_id: string; name: string; time_zone: string; version: number };
 export type Page<T> = { items: T[]; next_cursor: string | null };
 export type LocationDraft = { name: string; time_zone: string };
+export type TipRecipient = { id: string; tenant_id: string; location_id: string; display_name: string; public_slug: string; environment: 'mock' };
+export type TipRecipientDraft = { display_name: string; location_id: string };
+export type TipAttemptStatus = 'awaiting_payment' | 'succeeded' | 'failed' | 'expired';
+export type TipAttempt = { id: string; recipient_id: string; recipient_name: string; amount_minor: number; currency: 'RUB'; status: TipAttemptStatus; environment: 'mock'; created_at: string };
 
 export const roleLabels: Record<Role, string> = {
   owner: 'Владелец', manager: 'Управляющий', operator: 'Оператор', employee: 'Сотрудник',
@@ -75,10 +79,17 @@ export const api = {
     method: 'PATCH', body: JSON.stringify({ ...draft, expected_version }),
   }),
   timeZones: (query: string, signal: AbortSignal) => request<{ items: string[] }>(`/api/time-zones?${new URLSearchParams({ query, limit: '20' })}`, { signal }),
+  tipRecipients: (tenant: string, after: string | null, signal: AbortSignal) => request<Page<TipRecipient>>(pageUrl(`${organizationUrl(tenant)}/tips/recipients`, after), { signal }),
+  createTipRecipient: (tenant: string, draft: TipRecipientDraft) => request<TipRecipient>(`${organizationUrl(tenant)}/tips/recipients`, {
+    method: 'POST', body: JSON.stringify(draft),
+  }),
+  tipAttempts: (tenant: string, after: string | null, signal: AbortSignal) => request<Page<TipAttempt>>(pageUrl(`${organizationUrl(tenant)}/tips/attempts`, after), { signal }),
+  reconcileTipAttempt: (tenant: string, attempt: string) => request<TipAttempt>(`${organizationUrl(tenant)}/tips/attempts/${encodeURIComponent(attempt)}/reconcile`, { method: 'POST' }),
 };
 
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'tips_disabled') return 'Тестовый режим чаевых сейчас выключен. Обратитесь к администратору сервиса.';
     if (error.code === 'invalid_name') return 'Введите название от 1 до 120 символов без управляющих символов.';
     if (error.code === 'invalid_time_zone') return 'Такой часовой пояс не найден. Выберите значение из подсказок, например Europe/Moscow.';
     if (error.status === 403) return 'Недостаточно прав для этого действия или проверка безопасности не пройдена. Обновите страницу и попробуйте ещё раз.';

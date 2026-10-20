@@ -90,6 +90,10 @@ services:
       context: .
       target: runtime
     command: ["serve"]
+    environment:
+      <<: *turnesta-environment
+      TURNESTA_TIPS_MODE: ${TURNESTA_TIPS_MODE:-disabled}
+      TURNESTA_MOCK_PAYMENT_KEY: ${TURNESTA_MOCK_PAYMENT_KEY:-}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
@@ -128,6 +132,9 @@ services:
       TURNESTA_DB_MAX_CONNECTIONS: 2
       TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}
       TURNESTA_SMTP_HOST: ${TURNESTA_SMTP_HOST:-mailhog}
+      TURNESTA_TIPS_MODE: ${TURNESTA_TIPS_MODE:-disabled}
+      TURNESTA_MOCK_PAYMENT_KEY: ${TURNESTA_MOCK_PAYMENT_KEY:-}
+      TURNESTA_MOCK_CALLBACK_URL: ${TURNESTA_MOCK_CALLBACK_URL:-http://api:8080/hooks/tips/mock}
       TURNESTA_SMTP_PORT: ${TURNESTA_SMTP_PORT:-1025}
       TURNESTA_SMTP_FROM: ${TURNESTA_SMTP_FROM:-no-reply@turnesta.test}
       TURNESTA_SMTP_TLS_MODE: ${TURNESTA_SMTP_TLS_MODE:-smtps}

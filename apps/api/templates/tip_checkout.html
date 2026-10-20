@@ -1,0 +1,23 @@
+{% extends "tip_base.html" %}
+{% block title %}Эмулятор оплаты{% endblock %}
+{% block content %}
+<section class="tip-card">
+  <div class="profile-emblem" aria-hidden="true">↗</div>
+  <p class="eyebrow">ЭМУЛЯТОР ПЛАТЁЖНОГО ПРОВАЙДЕРА</p>
+  <h1>Проверим оплату<span class="orange">.</span></h1>
+  <p class="intro">{{ checkout.display_name }} · {{ checkout.location_name }}</p>
+  <p class="checkout-amount">{{ amount }}</p>
+  {% if pending %}
+  <p class="explanation">Выберите результат тестовой операции. Данные карты и банковского счёта не нужны.</p>
+  <form data-complete-checkout data-token="{{ token }}">
+    <p id="form-error" class="error" role="alert" hidden></p>
+    <button class="primary" type="submit" name="outcome" value="succeeded">Тест: успешная оплата <span aria-hidden="true">✓</span></button>
+    <button class="secondary" type="submit" name="outcome" value="failed">Тест: отказ в оплате</button>
+  </form>
+  {% else %}
+  <p class="explanation">Эмулятор уже зафиксировал окончательный результат. Повторного списания здесь нет.</p>
+  <a class="primary" href="/tips/status/{{ checkout.status_token }}">Посмотреть результат →</a>
+  {% endif %}
+  <p class="fine-print">Этот экран имитирует отдельную страницу провайдера. Настоящие платёжные реквизиты здесь не принимаются.</p>
+</section>
+{% endblock %}

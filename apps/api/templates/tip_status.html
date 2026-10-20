@@ -1,0 +1,14 @@
+{% extends "tip_base.html" %}
+{% block title %}Результат тестовой оплаты{% endblock %}
+{% block content %}
+<section class="tip-card" data-payment-status data-token="{{ token }}" data-status="{{ attempt.status }}">
+  <div class="profile-emblem" aria-hidden="true">♡</div>
+  <p class="eyebrow">РЕЗУЛЬТАТ ОПЕРАЦИИ</p>
+  <div aria-live="polite"><h1 id="status-heading">{{ heading }}</h1><p id="status-message" class="explanation">{{ message }}</p></div>
+  <p class="checkout-amount">{{ amount }}</p>
+  <p class="recipient-name">{{ attempt.display_name }}</p>
+  <p id="status-error" class="error" role="alert" hidden></p>
+  <button class="secondary" id="refresh-status" type="button">Проверить статус</button>
+  <p class="fine-print">Подтверждение оплаты и выплата получателю — разные события. В демонстрации реальных выплат нет.</p>
+</section>
+{% endblock %}

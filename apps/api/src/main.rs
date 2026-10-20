@@ -13,6 +13,7 @@ use turnesta_api::{
     core::cli::{self as core_cli, CoreCommand},
     database,
     http::{self, AppState},
+    payments::MockDispatcher,
     telemetry,
 };
 
@@ -104,6 +105,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
     );
     let state = AppState::new(pool.clone(), config.ready_timeout)
         .with_auth(config.auth.clone())
+        .with_payments(config.payments.clone())
         .with_web_dist(config.web_dist.clone());
     let app = http::router(state.clone());
     let listener = TcpListener::bind(config.bind_addr)
@@ -168,9 +170,10 @@ async fn run_worker(config: &Config, pool: PgPool, once: bool) -> Result<()> {
         "worker requires the dedicated delivery database role"
     );
     let worker = Worker::from_env(pool.clone())?;
+    let payments = MockDispatcher::new(pool.clone(), config.payments.clone())?;
     if once {
-        let outcome = worker.run_once().await?;
-        tracing::info!(has_work = outcome.has_work(), "worker step completed");
+        let has_work = worker_step(&worker, &payments).await?;
+        tracing::info!(has_work, "worker step completed");
         tokio::time::timeout(config.shutdown_timeout, pool.close())
             .await
             .context("database pool shutdown deadline exceeded")?;
@@ -182,9 +185,10 @@ async fn run_worker(config: &Config, pool: PgPool, once: bool) -> Result<()> {
             if *stop_rx.borrow() {
                 break;
             }
-            // Await the complete delivery attempt: shutdown never cancels SMTP.
-            let delay = match worker.run_once().await {
-                Ok(outcome) if outcome.has_work() => Duration::from_millis(10),
+            // Both bounded attempts run concurrently, keeping the combined drain
+            // within the existing deadline. Neither is canceled on stop.
+            let delay = match worker_step(&worker, &payments).await {
+                Ok(true) => Duration::from_millis(10),
                 Ok(_) => Duration::from_secs(1),
                 Err(error) => {
                     tracing::warn!(error = %error, "delivery worker step failed");
@@ -216,4 +220,29 @@ async fn run_worker(config: &Config, pool: PgPool, once: bool) -> Result<()> {
             anyhow::bail!("delivery worker exited unexpectedly")
         }
     }
+}
+
+async fn worker_step(mail: &Worker, payments: &MockDispatcher) -> Result<bool> {
+    let (mail, payments) = tokio::join!(mail.run_once(), payments.run_once());
+    let results = [
+        (
+            "invitations",
+            mail.map(|value| value.has_work())
+                .map_err(anyhow::Error::from),
+        ),
+        ("mock_payments", payments.map_err(anyhow::Error::from)),
+    ];
+    let mut has_work = false;
+    let mut failed = false;
+    for (queue, result) in results {
+        match result {
+            Ok(value) => has_work |= value,
+            Err(error) => {
+                failed = true;
+                tracing::warn!(queue, error=%error, "worker queue step failed");
+            }
+        }
+    }
+    anyhow::ensure!(!failed, "a delivery queue step failed");
+    Ok(has_work)
 }

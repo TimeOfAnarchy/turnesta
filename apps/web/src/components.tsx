@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { errorMessage } from './api';
 
-type IconName = 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe';
+type IconName = 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external';
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
     locations: <><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
@@ -16,6 +16,9 @@ export function Icon({ name, className = '' }: { name: IconName; className?: str
     check: <path d="m5 12 4 4L19 6"/>,
     close: <path d="m6 6 12 12M6 18 18 6"/>,
     globe: <><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></>,
+    heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.2 6a8 8 0 0 1 13.5 5M4.3 13a8 8 0 0 0 13.5 5"/></>,
+    external: <><path d="M14 3h7v7m0-7L10 14M10 3H4v17h17v-6"/></>,
   };
   return <svg className={`icon ${className}`} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -44,6 +47,7 @@ export function Modal({ title, description, children, close, busy = false }: {
     const element = dialog.current!;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     element.showModal();
+    element.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus();
     return () => { element.close(); previous?.focus(); };
   }, []);
   return <dialog className="dialog" ref={dialog} aria-labelledby="dialog-title" aria-describedby="dialog-description" onCancel={(event) => {

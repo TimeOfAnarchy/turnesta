@@ -1,0 +1,21 @@
+{% extends "tip_base.html" %}
+{% block title %}Чаевые — {{ profile.display_name }}{% endblock %}
+{% block content %}
+<section class="tip-card">
+  <div class="profile-emblem" aria-hidden="true">♡</div>
+  <p class="eyebrow">ХОРОШИЙ СЕРВИС ЗАПОМИНАЕТСЯ</p>
+  <h1>Маленькое спасибо<span class="orange">.</span></h1>
+  <p class="intro">Оставьте тестовые чаевые получателю</p>
+  <div class="recipient-name">{{ profile.display_name }}</div>
+  <p class="recipient-location">{{ profile.location_name }} · {{ profile.organization_name }}</p>
+  <form data-create-attempt data-slug="{{ profile.public_slug }}" data-idempotency-key="{{ key }}" novalidate>
+    <fieldset class="amount-presets"><legend>Сумма чаевых</legend><button type="button" data-amount="100">100 ₽</button><button type="button" data-amount="300" aria-pressed="true">300 ₽</button><button type="button" data-amount="500">500 ₽</button></fieldset>
+    <label class="amount-label" for="tip-amount">Или своя сумма в рублях</label>
+    <div class="amount-input"><input id="tip-amount" name="amount" value="300" inputmode="decimal" autocomplete="off" maxlength="9" aria-describedby="amount-hint form-error"><span aria-hidden="true">₽</span></div>
+    <p id="amount-hint" class="hint">От 1 до 10 000 ₽. До двух знаков после запятой.</p>
+    <p id="form-error" class="error" role="alert" hidden></p>
+    <button class="primary" type="submit">Перейти к тестовой оплате <span aria-hidden="true">→</span></button>
+    <p class="fine-print">Чаевые добровольные. В этом режиме нет списания, комиссии или выплаты получателю.</p>
+  </form>
+</section>
+{% endblock %}

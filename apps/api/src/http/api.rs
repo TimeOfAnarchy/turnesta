@@ -71,6 +71,9 @@ pub(super) fn routes() -> Router<AppState> {
 pub(super) struct ApiError(StatusCode, &'static str, &'static str);
 
 impl ApiError {
+    pub(super) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
+        Self(status, code, message)
+    }
     fn unauthorized() -> Self {
         Self(
             StatusCode::UNAUTHORIZED,
@@ -78,17 +81,17 @@ impl ApiError {
             "A valid session is required",
         )
     }
-    fn forbidden() -> Self {
+    pub(super) fn forbidden() -> Self {
         Self(StatusCode::FORBIDDEN, "forbidden", "Request not permitted")
     }
-    fn bad_request() -> Self {
+    pub(super) fn bad_request() -> Self {
         Self(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "Invalid request",
         )
     }
-    fn unavailable() -> Self {
+    pub(super) fn unavailable() -> Self {
         Self(
             StatusCode::SERVICE_UNAVAILABLE,
             "service_unavailable",
@@ -147,7 +150,7 @@ impl From<CoreError> for ApiError {
 }
 
 pub(super) struct SignedIn {
-    user_id: UserId,
+    pub(super) user_id: UserId,
     token_hash: [u8; 32],
     csrf_hash: [u8; 32],
 }
@@ -175,7 +178,7 @@ impl FromRequestParts<AppState> for SignedIn {
     }
 }
 
-fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, ApiError> {
+pub(super) fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, ApiError> {
     let mut values = headers.get_all(name).iter();
     let value = values.next().ok_or_else(ApiError::forbidden)?;
     if values.next().is_some() {
@@ -184,14 +187,14 @@ fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, ApiE
     value.to_str().map_err(|_| ApiError::forbidden())
 }
 
-fn check_origin(headers: &HeaderMap, config: &AuthConfig) -> Result<(), ApiError> {
+pub(super) fn check_origin(headers: &HeaderMap, config: &AuthConfig) -> Result<(), ApiError> {
     if single_header(headers, "origin")? != config.public_origin {
         return Err(ApiError::forbidden());
     }
     Ok(())
 }
 
-fn check_mutation(
+pub(super) fn check_mutation(
     headers: &HeaderMap,
     config: &AuthConfig,
     signed_in: &SignedIn,

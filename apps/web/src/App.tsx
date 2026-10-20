@@ -8,6 +8,7 @@ import { Brand, ErrorNotice, Icon, Loading } from './components';
 import { useOrganization, useOrganizations } from './queries';
 import { LocationsPage } from './LocationsPage';
 import { SettingsPage } from './SettingsPage';
+import { TipsPage } from './TipsPage';
 
 export type Workspace = { organization: Organization; role: Role; canManage: boolean };
 export function useWorkspace() { return useOutletContext<Workspace>(); }
@@ -22,6 +23,7 @@ export function App() {
       <Route index element={<LocationsPage/>}/>
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
+      <Route path="tips" element={<TipsPage/>}/>
     </Route>
     <Route path="*" element={<Shell><div className="empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Страница не найдена</h1><p>Вернитесь к своим организациям, чтобы продолжить работу.</p><Link className="button primary" to="/">К организациям <Icon name="arrow"/></Link></div></Shell>}/>
   </Routes>;
@@ -31,6 +33,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
   const client = useQueryClient();
   const pathname = useLocation().pathname;
   const isSettings = pathname.endsWith('/settings');
+  const isTips = pathname.endsWith('/tips');
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => { client.clear(); window.location.replace('/login'); },
@@ -50,6 +53,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         </Link>
         <nav className="main-nav" aria-label="Организация">
           <NavLink to={`${base}/locations`} className={({ isActive }) => isActive || pathname === base ? 'nav-item active' : 'nav-item'}><Icon name="locations"/>Точки</NavLink>
+          <NavLink to={`${base}/tips`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="heart"/>Чаевые</NavLink>
           <NavLink to={`${base}/settings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="settings"/>Настройки</NavLink>
         </nav>
       </> : <nav className="main-nav" aria-label="Главная"><Link className="nav-item active" to="/"><Icon name="grid"/>Мои организации</Link></nav>}
@@ -60,7 +64,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isSettings ? 'Настройки' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isSettings ? 'Настройки' : isTips ? 'Чаевые' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
       <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
       <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>

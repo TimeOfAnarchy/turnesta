@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#234b39">
+  <title>{% block title %}Чаевые{% endblock %} · Turnesta</title>
+  <link rel="stylesheet" href="/assets/tips.css">
+  <script src="/assets/tips.js" defer></script>
+</head>
+<body>
+  <header class="public-header"><a class="brand" href="/app/" aria-label="Кабинет Turnesta">turnesta<span>•</span></a><span class="header-note">МАЛЕНЬКОЕ СПАСИБО. БОЛЬШОЙ СМЫСЛ.</span></header>
+  <main class="public-main">
+    <div class="mode-banner"><strong>Тестовый режим</strong><span>Деньги не списываются. Это демонстрация чаевых.</span></div>
+    {% block content %}{% endblock %}
+    <noscript><p class="notice">Для продолжения тестового сценария включите JavaScript.</p></noscript>
+  </main>
+  <footer class="public-footer"><span>Сделано для хорошего сервиса.</span><span>С заботой, turnesta<span class="orange">•</span></span></footer>
+</body>
+</html>
