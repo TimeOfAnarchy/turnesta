@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod queue_http;
 mod tips_http;
 
 #[derive(Clone)]
@@ -126,7 +127,12 @@ struct ErrorResponse {
         tips_http::create_attempt,
         tips_http::complete_checkout,
         tips_http::public_status,
-        tips_http::webhook
+        tips_http::webhook,
+        queue_http::queues,
+        queue_http::create_queue,
+        queue_http::get_queue,
+        queue_http::tickets,
+        queue_http::command
     ),
     components(schemas(
         HealthResponse,
@@ -155,7 +161,15 @@ struct ErrorResponse {
         tips_http::CheckoutLinks,
         tips_http::CompleteCheckoutRequest,
         tips_http::StatusLink,
-        tips_http::WebhookReceipt
+        tips_http::WebhookReceipt,
+        crate::queue::Queue,
+        crate::queue::Ticket,
+        crate::queue::TicketStatus,
+        crate::queue::Command,
+        crate::queue::CommandResult,
+        queue_http::CreateQueueRequest,
+        queue_http::QueuePage,
+        queue_http::TicketList
     ))
 )]
 struct ApiDoc;
@@ -179,6 +193,7 @@ pub fn router(state: AppState) -> Router {
         .route("/openapi.json", get(openapi))
         .merge(api::routes())
         .merge(tips_http::routes())
+        .merge(queue_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)

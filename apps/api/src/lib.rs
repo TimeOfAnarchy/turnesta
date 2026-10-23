@@ -4,5 +4,6 @@ pub mod core;
 pub mod database;
 pub mod http;
 pub mod payments;
+pub mod queue;
 pub mod telemetry;
 pub mod tips;

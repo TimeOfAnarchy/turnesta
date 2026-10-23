@@ -1,4 +1,8 @@
-param([string]$EnvFile = '.env')
+param(
+    [string]$EnvFile = '.env',
+    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres')]
+    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres')
+)
 
 $ErrorActionPreference = 'Stop'
 $projectPath = Split-Path -Parent $PSScriptRoot
@@ -43,12 +47,9 @@ try {
         'turnesta-devtool:local', 'cargo', 'test', '--package', 'turnesta-api', '--locked', '--test'
     )
     Invoke-Docker -DockerArgs ($runArgs + @('postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('core_postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('auth_store_postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('auth_http_postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('delivery_postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('tips_postgres', '--', '--ignored'))
-    Invoke-Docker -DockerArgs ($runArgs + @('tips_http_postgres', '--', '--ignored'))
+    foreach ($suite in $Suites) {
+        Invoke-Docker -DockerArgs ($runArgs + @($suite, '--', '--ignored'))
+    }
 }
 finally {
     Pop-Location
