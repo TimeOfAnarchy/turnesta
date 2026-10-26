@@ -98,6 +98,7 @@ pub(super) struct TicketPagination {
     after: Option<i64>,
     limit: Option<i64>,
     status: Option<TicketStatus>,
+    mine: Option<bool>,
 }
 
 fn limit(value: Option<i64>) -> Result<i64, ApiError> {
@@ -184,7 +185,7 @@ pub(super) async fn get_queue(
     ))
 }
 
-#[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/tickets", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("after"=Option<i64>,Query),("limit"=Option<i64>,Query),("status"=Option<TicketStatus>,Query)), responses((status=200,body=TicketList),(status=400,description="Invalid pagination or status")))]
+#[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/tickets", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("after"=Option<i64>,Query),("limit"=Option<i64>,Query),("status"=Option<TicketStatus>,Query),("mine"=Option<bool>,Query,description="Only tickets assigned to the authenticated user")), responses((status=200,body=TicketList),(status=400,description="Invalid pagination or status")))]
 pub(super) async fn tickets(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -206,6 +207,7 @@ pub(super) async fn tickets(
             after: page.after,
             status: page.status,
             limit,
+            mine: page.mine.unwrap_or(false),
         },
     ))
     .await?;

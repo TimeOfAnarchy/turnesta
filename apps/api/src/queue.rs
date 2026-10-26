@@ -160,6 +160,7 @@ pub struct TicketPage {
     pub after: Option<i64>,
     pub status: Option<TicketStatus>,
     pub limit: i64,
+    pub mine: bool,
 }
 
 pub async fn tickets(
@@ -184,12 +185,14 @@ pub async fn tickets(
         "SELECT id, queue_id, position, service_date, number, status, called_by, \
          issued_at, called_at, closed_at FROM queue.ticket_details \
          WHERE tenant_id = $1 AND queue_id = $2 AND ($3::bigint IS NULL OR position > $3) \
-         AND ($4::text IS NULL OR status = $4) ORDER BY position LIMIT $5",
+         AND ($4::text IS NULL OR status = $4) \
+         AND ($5::uuid IS NULL OR called_by = $5) ORDER BY position LIMIT $6",
     )
     .bind(tenant)
     .bind(queue)
     .bind(page.after)
     .bind(page.status)
+    .bind(page.mine.then_some(user))
     .bind(page.limit.clamp(1, 100) + 1)
     .fetch_all(session.connection())
     .await?;

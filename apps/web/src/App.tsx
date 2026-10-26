@@ -9,8 +9,9 @@ import { useOrganization, useOrganizations } from './queries';
 import { LocationsPage } from './LocationsPage';
 import { SettingsPage } from './SettingsPage';
 import { TipsPage } from './TipsPage';
+import { QueuesPage, QueuePage } from './QueuesPage';
 
-export type Workspace = { organization: Organization; role: Role; canManage: boolean };
+export type Workspace = { organization: Organization; role: Role; canManage: boolean; userId: string };
 export function useWorkspace() { return useOutletContext<Workspace>(); }
 
 export function App() {
@@ -19,11 +20,13 @@ export function App() {
   if (session.isError) return <div className="entry-state"><Brand/><ErrorNotice error={session.error} retry={() => { void session.refetch(); }}/></div>;
   return <Routes>
     <Route index element={<OrganizationPicker/>}/>
-    <Route path="organizations/:tenantId" element={<OrganizationLayout/>}>
+    <Route path="organizations/:tenantId" element={<OrganizationLayout userId={session.data.user_id}/>}>
       <Route index element={<LocationsPage/>}/>
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
       <Route path="tips" element={<TipsPage/>}/>
+      <Route path="queues" element={<QueuesPage/>}/>
+      <Route path="queues/:queueId" element={<QueuePage/>}/>
     </Route>
     <Route path="*" element={<Shell><div className="empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Страница не найдена</h1><p>Вернитесь к своим организациям, чтобы продолжить работу.</p><Link className="button primary" to="/">К организациям <Icon name="arrow"/></Link></div></Shell>}/>
   </Routes>;
@@ -34,6 +37,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
   const pathname = useLocation().pathname;
   const isSettings = pathname.endsWith('/settings');
   const isTips = pathname.endsWith('/tips');
+  const isQueue = pathname.includes('/queues');
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => { client.clear(); window.location.replace('/login'); },
@@ -53,6 +57,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         </Link>
         <nav className="main-nav" aria-label="Организация">
           <NavLink to={`${base}/locations`} className={({ isActive }) => isActive || pathname === base ? 'nav-item active' : 'nav-item'}><Icon name="locations"/>Точки</NavLink>
+          <NavLink to={`${base}/queues`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="queue"/>Очереди</NavLink>
           <NavLink to={`${base}/tips`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="heart"/>Чаевые</NavLink>
           <NavLink to={`${base}/settings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="settings"/>Настройки</NavLink>
         </nav>
@@ -64,7 +69,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isSettings ? 'Настройки' : isTips ? 'Чаевые' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
       <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
       <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>
@@ -89,12 +94,12 @@ function OrganizationPicker() {
   </Shell>;
 }
 
-function OrganizationLayout() {
+function OrganizationLayout({ userId }: { userId: string }) {
   const { tenantId = '' } = useParams();
-  return <OrganizationWorkspace key={tenantId} tenantId={tenantId}/>;
+  return <OrganizationWorkspace key={tenantId} tenantId={tenantId} userId={userId}/>;
 }
 
-function OrganizationWorkspace({ tenantId }: { tenantId: string }) {
+function OrganizationWorkspace({ tenantId, userId }: { tenantId: string; userId: string }) {
   const organization = useOrganization(tenantId);
   const organizations = useOrganizations();
   const membership = organizations.data?.pages.flatMap((page) => page.items).find((item) => item.id === tenantId);
@@ -103,6 +108,6 @@ function OrganizationWorkspace({ tenantId }: { tenantId: string }) {
   }, [organization.isSuccess, membership, organizations.hasNextPage, organizations.isFetching, organizations.isError, organizations.fetchNextPage]);
   const pending = organization.isPending || organizations.isPending || (!membership && organizations.hasNextPage && !organizations.isError);
   return <Shell organization={organization.data} role={membership?.role}>
-    {pending ? <Loading/> : organization.isError ? organization.error instanceof ApiError && [400, 403, 404].includes(organization.error.status) ? <div className="panel empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Организация недоступна</h1><p>Возможно, ссылка устарела или ваши права изменились. Выберите организацию из доступных вам.</p><Link className="button primary" to="/">К моим организациям <Icon name="arrow"/></Link></div> : <ErrorNotice error={organization.error} retry={() => { void organization.refetch(); }}/> : organizations.isError ? <ErrorNotice error={organizations.error} retry={() => { void organizations.refetch(); }}/> : !membership || !organization.data ? <div className="panel empty-state"><h1>Доступ изменился</h1><p>Вернитесь к списку организаций и выберите рабочее пространство.</p><Link className="button primary" to="/">К организациям</Link></div> : <Outlet context={{ organization: organization.data, role: membership.role, canManage: membership.role === 'owner' || membership.role === 'manager' } satisfies Workspace}/>}
+    {pending ? <Loading/> : organization.isError ? organization.error instanceof ApiError && [400, 403, 404].includes(organization.error.status) ? <div className="panel empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Организация недоступна</h1><p>Возможно, ссылка устарела или ваши права изменились. Выберите организацию из доступных вам.</p><Link className="button primary" to="/">К моим организациям <Icon name="arrow"/></Link></div> : <ErrorNotice error={organization.error} retry={() => { void organization.refetch(); }}/> : organizations.isError ? <ErrorNotice error={organizations.error} retry={() => { void organizations.refetch(); }}/> : !membership || !organization.data ? <div className="panel empty-state"><h1>Доступ изменился</h1><p>Вернитесь к списку организаций и выберите рабочее пространство.</p><Link className="button primary" to="/">К организациям</Link></div> : <Outlet context={{ organization: organization.data, role: membership.role, canManage: membership.role === 'owner' || membership.role === 'manager', userId } satisfies Workspace}/>}
   </Shell>;
 }

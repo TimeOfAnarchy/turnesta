@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, ApiError } from './api';
+import type { TicketStatus } from './api';
 
 export const keys = {
   organizations: ['organizations'] as const,
@@ -7,6 +8,9 @@ export const keys = {
   locations: (tenant: string) => ['organization', tenant, 'locations'] as const,
   tipRecipients: (tenant: string) => ['organization', tenant, 'tips', 'recipients'] as const,
   tipAttempts: (tenant: string) => ['organization', tenant, 'tips', 'attempts'] as const,
+  queues: (tenant: string, location: string) => ['organization', tenant, 'queues', location] as const,
+  queue: (tenant: string, queue: string) => ['organization', tenant, 'queue', queue] as const,
+  tickets: (tenant: string, queue: string) => [...keys.queue(tenant, queue), 'tickets'] as const,
 };
 
 export function useOrganizations() {
@@ -28,6 +32,26 @@ export function useLocations(tenant: string) {
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => api.locations(tenant, pageParam, signal),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  });
+}
+
+export function useQueues(tenant: string, location: string) {
+  return useInfiniteQuery({
+    queryKey: keys.queues(tenant, location), enabled: Boolean(location),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => api.queues(tenant, location, pageParam, signal),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  });
+}
+
+export function useQueueTickets(tenant: string, queue: string, status: TicketStatus) {
+  return useInfiniteQuery({
+    queryKey: [...keys.tickets(tenant, queue), status],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam, signal }) => api.tickets(tenant, queue, status, pageParam, signal),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    refetchInterval: status === 'waiting' || status === 'called' ? 5_000 : false,
+    retry: false,
   });
 }
 

@@ -126,6 +126,7 @@ impl Fixture {
                 after: None,
                 status,
                 limit: 100,
+                mine: false,
             },
         )
         .await
@@ -881,5 +882,86 @@ async fn http_setup_pagination_roles_and_openapi_match_contract() {
             .iter()
             .any(|p| p["name"] == "Idempotency-Key" && p["required"] == true)
     );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn http_mine_filter_uses_authenticated_actor_and_preserves_shared_read_access() {
+    let f = Fixture::new().await;
+    let operator = f.member(Role::Operator).await;
+    for _ in 0..2 {
+        f.command(f.owner, Uuid::new_v4(), Command::Issue {})
+            .await
+            .unwrap();
+    }
+    let owner_ticket = f
+        .command(f.owner, Uuid::new_v4(), Command::CallNext {})
+        .await
+        .unwrap()
+        .ticket
+        .unwrap();
+    let operator_ticket = f
+        .command(operator, Uuid::new_v4(), Command::CallNext {})
+        .await
+        .unwrap()
+        .ticket
+        .unwrap();
+    for (user, expected) in [(f.owner, owner_ticket.id), (operator, operator_ticket.id)] {
+        let auth = f.login(user).await;
+        let path = format!("{}/tickets?status=called&mine=true", f.queue_path());
+        let (status, body) = f.request("GET", &path, Some(&auth), None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["items"].as_array().unwrap().len(), 1);
+        assert_eq!(body["items"][0]["id"], expected.to_string());
+        let (_, all) = f
+            .request(
+                "GET",
+                &format!("{}/tickets?status=called", f.queue_path()),
+                Some(&auth),
+                None,
+                None,
+            )
+            .await;
+        assert_eq!(all["items"].as_array().unwrap().len(), 2);
+        for query in ["mine=not-a-bool", "mine=true&called_by=someone-else"] {
+            assert_eq!(
+                f.request(
+                    "GET",
+                    &format!("{}/tickets?{query}", f.queue_path()),
+                    Some(&auth),
+                    None,
+                    None
+                )
+                .await
+                .0,
+                StatusCode::BAD_REQUEST
+            );
+        }
+        assert_eq!(
+            f.request(
+                "GET",
+                &format!("{}/queues/{}/tickets?mine=true", f.root(), Uuid::new_v4()),
+                Some(&auth),
+                None,
+                None
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    let employee = f.member(Role::Employee).await;
+    let auth = f.login(employee).await;
+    let (_, mine) = f
+        .request(
+            "GET",
+            &format!("{}/tickets?status=called&mine=true", f.queue_path()),
+            Some(&auth),
+            None,
+            None,
+        )
+        .await;
+    assert!(mine["items"].as_array().unwrap().is_empty());
     f.close().await;
 }

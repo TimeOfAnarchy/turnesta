@@ -2,12 +2,20 @@ export type Role = 'owner' | 'manager' | 'operator' | 'employee';
 export type OrganizationSummary = { id: string; name: string; role: Role };
 export type Organization = { id: string; name: string; version: number };
 export type Location = { id: string; tenant_id: string; name: string; time_zone: string; version: number };
-export type Page<T> = { items: T[]; next_cursor: string | null };
+export type Page<T, Cursor = string> = { items: T[]; next_cursor: Cursor | null };
 export type LocationDraft = { name: string; time_zone: string };
 export type TipRecipient = { id: string; tenant_id: string; location_id: string; display_name: string; public_slug: string; environment: 'mock' };
 export type TipRecipientDraft = { display_name: string; location_id: string };
 export type TipAttemptStatus = 'awaiting_payment' | 'succeeded' | 'failed' | 'expired';
 export type TipAttempt = { id: string; recipient_id: string; recipient_name: string; amount_minor: number; currency: 'RUB'; status: TipAttemptStatus; environment: 'mock'; created_at: string };
+export type Queue = { id: string; tenant_id: string; location_id: string; name: string; version: number };
+export type TicketStatus = 'waiting' | 'called' | 'completed' | 'cancelled';
+export type Ticket = {
+  id: string; queue_id: string; position: number; service_date: string; number: number;
+  status: TicketStatus; called_by: string | null; issued_at: string; called_at: string | null; closed_at: string | null;
+};
+export type QueueCommand = { type: 'issue' } | { type: 'call_next' } | { type: 'complete'; ticket_id: string } | { type: 'cancel'; ticket_id: string };
+export type QueueCommandResult = { queue_id: string; version: number; ticket: Ticket | null };
 
 export const roleLabels: Record<Role, string> = {
   owner: 'Владелец', manager: 'Управляющий', operator: 'Оператор', employee: 'Сотрудник',
@@ -63,6 +71,7 @@ function pageUrl(url: string, after: string | null): string {
 }
 
 const organizationUrl = (tenant: string) => `/api/organizations/${encodeURIComponent(tenant)}`;
+const queueUrl = (tenant: string, queue: string) => `${organizationUrl(tenant)}/queues/${encodeURIComponent(queue)}`;
 export const api = {
   session: (signal: AbortSignal) => request<{ user_id: string }>('/auth/session', { signal }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
@@ -85,6 +94,32 @@ export const api = {
   }),
   tipAttempts: (tenant: string, after: string | null, signal: AbortSignal) => request<Page<TipAttempt>>(pageUrl(`${organizationUrl(tenant)}/tips/attempts`, after), { signal }),
   reconcileTipAttempt: (tenant: string, attempt: string) => request<TipAttempt>(`${organizationUrl(tenant)}/tips/attempts/${encodeURIComponent(attempt)}/reconcile`, { method: 'POST' }),
+  queues: (tenant: string, location: string, after: string | null, signal: AbortSignal) => request<Page<Queue>>(pageUrl(`${organizationUrl(tenant)}/locations/${encodeURIComponent(location)}/queues`, after), { signal }),
+  createQueue: (tenant: string, location: string, name: string) => request<Queue>(`${organizationUrl(tenant)}/locations/${encodeURIComponent(location)}/queues`, {
+    method: 'POST', body: JSON.stringify({ name }),
+  }),
+  queue: (tenant: string, queue: string, signal: AbortSignal) => request<Queue>(queueUrl(tenant, queue), { signal }),
+  tickets: (tenant: string, queue: string, status: TicketStatus, after: number | null, signal: AbortSignal, mine = false) => {
+    const params = new URLSearchParams({ status, limit: '50' });
+    if (after !== null) params.set('after', String(after));
+    if (mine) params.set('mine', 'true');
+    return request<Page<Ticket, number>>(`${queueUrl(tenant, queue)}/tickets?${params}`, { signal });
+  },
+  queueCommand: async (tenant: string, queue: string, key: string, command: QueueCommand) => {
+    const result = await request<QueueCommandResult>(`${queueUrl(tenant, queue)}/commands`, {
+      method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(command), signal: AbortSignal.timeout(10_000),
+    });
+    // A malformed successful response leaves the command outcome unknown.
+    if (!result || result.queue_id !== queue || !Number.isSafeInteger(result.version) || result.version < 1
+      || (result.ticket !== null && (!result.ticket || result.ticket.queue_id !== queue || typeof result.ticket.id !== 'string'
+        || !Number.isSafeInteger(result.ticket.number) || result.ticket.number < 1 || typeof result.ticket.service_date !== 'string'
+        || !['waiting', 'called', 'completed', 'cancelled'].includes(result.ticket.status)))
+      || (command.type !== 'call_next' && result.ticket === null)
+      || (('ticket_id' in command) && result.ticket?.id !== command.ticket_id)) {
+      throw new Error('Invalid queue command response');
+    }
+    return result;
+  },
 };
 
 export function errorMessage(error: unknown): string {

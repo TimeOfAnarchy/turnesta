@@ -376,3 +376,74 @@ body:has(dialog[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+.queue-location-picker { display: flex; align-items: center; gap: 22px; margin-bottom: 30px; flex-wrap: wrap; }
+.queue-location-picker .form-field { width: min(100%, 420px); margin: 0; }
+.queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 22px; }
+.queue-card { display: block; padding: 25px; text-decoration: none; min-width: 0; }
+.queue-card:hover { border-color: #aabe9c; background: #fdfefb; }
+.queue-card-icon { display: grid; place-items: center; width: 42px; height: 42px; color: #5b7a4b; background: #eef4e7; border-radius: 11px; margin-bottom: 23px; }
+.queue-card h3 { font-size: 20px; line-height: 1.4; margin-bottom: 8px; overflow-wrap: anywhere; }
+.queue-card p { font-size: 12px; line-height: 1.7; color: var(--muted); overflow-wrap: anywhere; }
+.queue-card-link { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 600; border-top: 1px solid var(--border); padding-top: 18px; margin-top: 26px; }
+.queue-back { display: inline-block; font-size: 12px; color: #617a56; margin-bottom: 24px; text-underline-offset: 4px; }
+.queue-workplace-heading { margin-bottom: 20px; }
+.queue-workplace-heading > div { min-width: 0; }
+.queue-workplace-heading h1 { overflow-wrap: anywhere; }
+.queue-update-hint, .queue-time-hint { font-size: 11px; line-height: 1.8; color: var(--muted); margin-bottom: 23px; }
+.queue-pending { border: 1px solid #dbc390; border-radius: 12px; padding: 23px; margin: 24px 0; background: #fff9eb; color: #745c2c; }
+.queue-pending > strong { font-size: 15px; }
+.queue-pending > p { font-size: 12px; line-height: 1.9; margin: 10px 0 16px; }
+.queue-pending > .field-hint { font-size: 11px; margin: 14px 0 0; }
+.queue-console { display: grid; grid-template-columns: minmax(0, 1fr) 250px; margin: 25px 0 38px; overflow: hidden; }
+.queue-console > div { padding: 29px; min-width: 0; }
+.queue-console .small-eyebrow { margin-bottom: 17px; }
+.queue-console h2 { font-size: 22px; line-height: 1.5; letter-spacing: -.4px; margin-bottom: 12px; }
+.queue-console p { color: var(--muted); font-size: 12px; line-height: 1.9; max-width: 460px; margin-bottom: 23px; }
+.queue-current-number { display: block; font-size: 23px; line-height: 1.6; margin-bottom: 10px; }
+.queue-command-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.queue-console > .queue-issue { border-left: 1px solid var(--border); background: #fafbf7; }
+.queue-issue h3 { font-size: 15px; margin-bottom: 9px; }
+.queue-issue .queue-card-icon { margin-bottom: 16px; }
+.queue-issue p { font-size: 11px; }
+.queue-status-filter { display: flex; gap: 7px; margin-bottom: 18px; flex-wrap: wrap; }
+.queue-status-filter button { border: 1px solid var(--border); background: #fff; font-size: 12px; padding: 11px 15px; min-height: 42px; }
+.queue-status-filter button[aria-pressed=true] { color: #fff; background: var(--green); border-color: var(--green); }
+.queue-status-filter button[aria-pressed=false]:hover { background: #edf3e7; }
+.queue-ticket-list { padding: 0 26px; }
+.queue-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 125px minmax(105px, auto); align-items: center; gap: 20px; padding: 22px 0; border-bottom: 1px solid var(--border); }
+.queue-ticket:last-child { border-bottom: 0; }
+.queue-ticket h3 { font-size: 15px; line-height: 1.6; margin-bottom: 5px; overflow-wrap: anywhere; }
+.queue-ticket p { margin: 0; font-size: 11px; line-height: 1.8; color: var(--muted); }
+.queue-ticket-status { justify-self: start; border-radius: 6px; background: #f0f2ec; color: #6d7b62; padding: 6px 9px; font-size: 10px; line-height: 1.5; }
+.queue-ticket-called { color: #315f40; background: #e9f2e1; }
+.queue-ticket-cancelled { color: #906556; background: #f8eee8; }
+.queue-ticket-actions { display: flex; align-items: center; justify-content: flex-end; gap: 13px; flex-wrap: wrap; }
+.queue-ticket .queue-cancel { font-size: 11px; color: #9c6450; padding: 10px 0; }
+.queue-empty { text-align: center; padding: 46px 25px; }
+.queue-empty > .icon { margin: 0 auto 21px; color: #849b73; width: 30px; height: 30px; }
+.queue-empty h3 { font-size: 18px; margin-bottom: 13px; }
+.queue-empty p { font-size: 12px; line-height: 1.8; color: var(--muted); margin: 0; }
+@media (max-width: 1100px) {
+  .queue-console { grid-template-columns: minmax(0, 1fr); }
+  .queue-console > .queue-issue { border-left: 0; border-top: 1px solid var(--border); }
+  .queue-issue .queue-card-icon { display: none; }
+  .queue-ticket { grid-template-columns: minmax(0, 1fr) 115px; gap: 12px; }
+  .queue-ticket-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+  .queue-location-picker { gap: 12px; }
+  .queue-location-picker .form-field { width: 100%; }
+  .queue-console > div { padding: 23px 20px; }
+  .queue-console h2 { font-size: 20px; }
+  .queue-console .button { width: 100%; justify-content: center; white-space: normal; }
+  .queue-current-number { font-size: 20px; }
+  .queue-command-actions { flex-direction: column; }
+  .queue-ticket-list { padding: 0 18px; }
+  .queue-ticket { grid-template-columns: minmax(0, 1fr); }
+  .queue-ticket-actions { justify-content: space-between; }
+  .queue-status-filter { gap: 6px; }
+  .queue-status-filter button { flex: 1 1 43%; padding: 10px; }
+  .queue-pending { padding: 19px; }
+  .queue-pending .button { width: 100%; white-space: normal; }
+}
