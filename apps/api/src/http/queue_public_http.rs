@@ -4,8 +4,8 @@ use askama::Template;
 use axum::{
     Json, Router,
     extract::{
-        DefaultBodyLimit, FromRequestParts, Path, State,
-        rejection::{JsonRejection, PathRejection},
+        DefaultBodyLimit, FromRequestParts, Path, Query, State,
+        rejection::{JsonRejection, PathRejection, QueryRejection},
     },
     http::{
         HeaderMap, StatusCode,
@@ -27,7 +27,9 @@ use super::{
 use crate::{
     auth::token::SecretToken,
     core::TenantId,
-    queue_public::{self, PublicProfile, PublicQueueError, PublicSettings, PublicTicket},
+    queue_public::{
+        self, PublicDisplay, PublicProfile, PublicQueueError, PublicSettings, PublicTicket,
+    },
 };
 
 pub(super) fn routes() -> Router<AppState> {
@@ -39,6 +41,39 @@ pub(super) fn routes() -> Router<AppState> {
         .route(
             "/api/organizations/{tenant_id}/queues/{queue_id}/public-access/qr.svg",
             get(qr),
+        )
+        .route(
+            "/api/organizations/{tenant_id}/queues/{queue_id}/public-access/display",
+            axum::routing::put(configure_display),
+        )
+        .route("/display/{slug}", get(display_page))
+        .route("/api/public/queues/{slug}/display", get(display))
+        .route(
+            "/assets/queue-display.css",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "text/css; charset=utf-8")],
+                    include_str!("../../web/queue-display.css"),
+                )
+            }),
+        )
+        .route(
+            "/assets/queue-display.js",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../../web/queue-display.js"),
+                )
+            }),
+        )
+        .route(
+            "/assets/queue-display-client.js",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                    include_str!("../../web/queue-display-client.mjs"),
+                )
+            }),
         )
         .route("/q/{slug}", get(page))
         .route("/api/public/queues/{slug}", get(profile))
@@ -156,6 +191,8 @@ pub(super) struct SettingsResponse {
     public_url: Option<String>,
     qr_url: Option<String>,
     join_open: bool,
+    display_enabled: bool,
+    display_url: Option<String>,
     version: i32,
 }
 
@@ -173,6 +210,11 @@ fn links(
             .public_slug
             .map(|_| format!("/api/organizations/{tenant}/queues/{queue}/public-access/qr.svg")),
         join_open: settings.join_open,
+        display_enabled: settings.display_enabled,
+        display_url: settings
+            .public_slug
+            .filter(|_| settings.display_enabled)
+            .map(|slug| format!("{}/display/{slug}", state.auth.public_origin)),
         version: settings.version,
     }
 }
@@ -182,6 +224,20 @@ fn links(
 pub(super) struct ConfigureRequest {
     join_open: bool,
     expected_version: i32,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ConfigureDisplayRequest {
+    enabled: bool,
+    expected_version: i32,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DisplayQuery {
+    #[serde(default)]
+    page: i32,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -230,6 +286,81 @@ pub(super) async fn configure(
     ))
     .await?;
     Ok(Json(links(&state, tenant, queue, settings)))
+}
+
+#[utoipa::path(put, path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access/display", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), request_body=ConfigureDisplayRequest, responses((status=200,body=SettingsResponse),(status=409,description="Settings changed; reload current version")))]
+pub(super) async fn configure_display(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    headers: HeaderMap,
+    path: Result<Path<(TenantId, Uuid)>, PathRejection>,
+    body: Result<Json<ConfigureDisplayRequest>, JsonRejection>,
+) -> Result<Json<SettingsResponse>, ApiError> {
+    check_mutation(&headers, &state.auth, &signed)?;
+    let Path((tenant, queue)) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(body) = body.map_err(|_| ApiError::bad_request())?;
+    let settings = bounded(queue_public::configure_display(
+        &state.pool,
+        signed.user_id,
+        tenant,
+        queue,
+        body.enabled,
+        body.expected_version,
+    ))
+    .await?;
+    Ok(Json(links(&state, tenant, queue, settings)))
+}
+
+#[utoipa::path(get, path="/api/public/queues/{slug}/display", tag="queue-public", params(("slug"=Uuid,Path),("page"=Option<i32>,Query,description="Zero-based page, 100 active calls per page")), responses((status=200,body=PublicDisplay),(status=404,description="Display not published")))]
+pub(super) async fn display(
+    State(state): State<AppState>,
+    path: Result<Path<Uuid>, PathRejection>,
+    query: Result<Query<DisplayQuery>, QueryRejection>,
+) -> Result<Json<PublicDisplay>, ApiError> {
+    let _permit = permit(&state)?;
+    let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
+    let Query(query) = query.map_err(|_| ApiError::bad_request())?;
+    Ok(Json(
+        bounded(queue_public::display(&state.pool, slug, query.page)).await?,
+    ))
+}
+
+#[derive(Template)]
+#[template(path = "queue_display.html")]
+struct DisplayTemplate<'a> {
+    slug: Uuid,
+    profile: Option<&'a PublicDisplay>,
+}
+
+async fn display_page(
+    State(state): State<AppState>,
+    path: Result<Path<Uuid>, PathRejection>,
+) -> Result<(StatusCode, Html<String>), ApiError> {
+    let _permit = permit(&state)?;
+    let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
+    let snapshot = match tokio::time::timeout(
+        Duration::from_secs(5),
+        queue_public::display(&state.pool, slug, 0),
+    )
+    .await
+    {
+        Ok(Ok(value)) => Some(value),
+        Ok(Err(PublicQueueError::NotFound)) => None,
+        Ok(Err(error)) => return Err(error.into()),
+        Err(_) => return Err(ApiError::unavailable()),
+    };
+    let status = if snapshot.is_some() {
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    };
+    let html = DisplayTemplate {
+        slug,
+        profile: snapshot.as_ref(),
+    }
+    .render()
+    .map_err(|_| ApiError::unavailable())?;
+    Ok((status, Html(html)))
 }
 
 #[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access/qr.svg", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,description="SVG QR for the public queue URL",content_type="image/svg+xml")))]

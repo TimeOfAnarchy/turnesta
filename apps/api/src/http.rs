@@ -136,6 +136,8 @@ struct ErrorResponse {
         queue_http::command,
         queue_public_http::settings,
         queue_public_http::configure,
+        queue_public_http::configure_display,
+        queue_public_http::display,
         queue_public_http::qr,
         queue_public_http::profile,
         queue_public_http::ticket,
@@ -179,9 +181,12 @@ struct ErrorResponse {
         queue_http::TicketList,
         queue_public_http::SettingsResponse,
         queue_public_http::ConfigureRequest,
+        queue_public_http::ConfigureDisplayRequest,
         queue_public_http::IssueRequest,
         crate::queue_public::PublicProfile,
-        crate::queue_public::PublicTicket
+        crate::queue_public::PublicTicket,
+        crate::queue_public::DisplayTicket,
+        crate::queue_public::PublicDisplay
     ))
 )]
 struct ApiDoc;

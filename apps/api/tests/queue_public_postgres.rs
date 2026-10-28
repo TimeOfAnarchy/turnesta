@@ -757,3 +757,430 @@ async fn protected_settings_http_and_qr_expose_only_the_public_queue_url() {
     );
     f.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_publication_is_explicit_independent_and_manager_only() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    assert!(
+        !public::settings(&f.runtime, f.owner, f.tenant, f.queue)
+            .await
+            .unwrap()
+            .display_enabled
+    );
+    assert!(matches!(
+        public::display(&f.runtime, slug, 0).await,
+        Err(PublicQueueError::NotFound)
+    ));
+    for role in [Role::Operator, Role::Employee] {
+        let user = f.member(role).await;
+        assert!(matches!(
+            public::configure_display(&f.runtime, user, f.tenant, f.queue, true, 1).await,
+            Err(PublicQueueError::Core(_))
+        ));
+    }
+    let (_, hash) = token();
+    let ticket = public::issue(&f.runtime, slug, &hash).await.unwrap();
+    let manager = f.member(Role::Manager).await;
+    let enabled = public::configure_display(&f.runtime, manager, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    assert!(enabled.display_enabled && enabled.join_open);
+    let paused = public::configure(&f.runtime, f.owner, f.tenant, f.queue, false, 2)
+        .await
+        .unwrap();
+    assert!(paused.display_enabled && !paused.join_open);
+    assert!(
+        !public::display(&f.runtime, slug, 0)
+            .await
+            .unwrap()
+            .join_open
+    );
+    let disabled = public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, false, 3)
+        .await
+        .unwrap();
+    assert!(!disabled.display_enabled && !disabled.join_open);
+    assert_eq!(
+        public::ticket(&f.runtime, slug, &hash).await.unwrap(),
+        ticket
+    );
+    assert!(matches!(
+        public::display(&f.runtime, slug, 0).await,
+        Err(PublicQueueError::NotFound)
+    ));
+    let other = Fixture::new().await;
+    assert!(matches!(
+        public::configure_display(&f.runtime, f.owner, other.tenant, other.queue, true, 0).await,
+        Err(PublicQueueError::Core(_))
+    ));
+    let first = public::configure_display(
+        &other.runtime,
+        other.owner,
+        other.tenant,
+        other.queue,
+        true,
+        0,
+    )
+    .await
+    .unwrap();
+    assert!(first.display_enabled && !first.join_open);
+    let other_slug = first.public_slug.unwrap();
+    assert_eq!(
+        public::display(&other.runtime, other_slug, 0)
+            .await
+            .unwrap()
+            .waiting_count,
+        0
+    );
+    assert!(matches!(
+        public::issue(&other.runtime, other_slug, &token().1).await,
+        Err(PublicQueueError::Closed)
+    ));
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_and_joining_changes_share_one_optimistic_version() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (joining, display) = tokio::join!(
+        public::configure(&f.runtime, f.owner, f.tenant, f.queue, false, 1),
+        public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+    );
+    assert_ne!(joining.is_ok(), display.is_ok());
+    let loser = match (joining, display) {
+        (Ok(_), Err(error)) | (Err(error), Ok(_)) => error,
+        _ => panic!("exactly one concurrent settings change must succeed"),
+    };
+    assert!(matches!(
+        loser,
+        PublicQueueError::Core(turnesta_api::core::CoreError::VersionConflict)
+    ));
+    let actual = public::settings(&f.runtime, f.owner, f.tenant, f.queue)
+        .await
+        .unwrap();
+    assert_eq!(actual.version, 2);
+    assert_eq!(actual.join_open, actual.display_enabled);
+    assert_eq!(actual.public_slug, Some(slug));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_data() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    let old = f.staff(Command::Issue {}).await.ticket.unwrap();
+    sqlx::query("UPDATE queue.tickets SET service_date=service_date-1 WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant).bind(f.queue).bind(old.id).execute(&f.migrator).await.unwrap();
+    let new = f.staff(Command::Issue {}).await.ticket.unwrap();
+    sqlx::query("UPDATE queue.tickets SET number=1 WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant)
+        .bind(f.queue)
+        .bind(new.id)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    f.staff(Command::CallNext {}).await;
+    let operator = f.member(Role::Operator).await;
+    queue::execute(
+        &f.runtime,
+        operator,
+        f.tenant,
+        f.queue,
+        Uuid::new_v4(),
+        Command::CallNext {},
+    )
+    .await
+    .unwrap();
+    f.staff(Command::Issue {}).await;
+    let snapshot = public::display(&f.runtime, slug, 0).await.unwrap();
+    assert_eq!(snapshot.called_count, 2);
+    assert_eq!(snapshot.waiting_count, 1);
+    assert_eq!(snapshot.called[0].number, 1);
+    assert_eq!(snapshot.called[1].number, 1);
+    assert_ne!(
+        snapshot.called[0].service_date,
+        snapshot.called[1].service_date
+    );
+    let value = serde_json::to_value(&snapshot).unwrap();
+    let keys: Vec<_> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            "called",
+            "called_count",
+            "join_open",
+            "location_name",
+            "next_page",
+            "observed_at",
+            "organization_name",
+            "page",
+            "queue_name",
+            "time_zone",
+            "version",
+            "waiting_count"
+        ]
+    );
+    assert_eq!(value["called"][0].as_object().unwrap().len(), 2);
+    let serialized = value.to_string();
+    for private in [
+        f.tenant.to_string(),
+        f.queue.to_string(),
+        f.owner.to_string(),
+        operator.to_string(),
+        old.id.to_string(),
+        new.id.to_string(),
+    ] {
+        assert!(!serialized.contains(&private));
+    }
+    f.staff(Command::Complete { ticket_id: old.id }).await;
+    f.staff(Command::Cancel { ticket_id: new.id }).await;
+    let actual = public::display(&f.runtime, slug, 0).await.unwrap();
+    assert!(actual.called.is_empty());
+    assert_eq!(actual.waiting_count, 1);
+    assert_ne!(actual.version, snapshot.version);
+    let safe: bool = sqlx::query_scalar("SELECT prosecdef AND 'search_path=pg_catalog'=ANY(proconfig) AND NOT EXISTS (SELECT 1 FROM aclexplode(proacl) a WHERE grantee=0 AND privilege_type='EXECUTE') FROM pg_proc WHERE oid='queue.public_display(uuid,integer)'::regprocedure")
+        .fetch_one(&f.runtime).await.unwrap();
+    assert!(safe);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_pagination_does_not_silently_drop_active_calls() {
+    let f = Fixture::new().await;
+    let settings = public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 0)
+        .await
+        .unwrap();
+    let slug = settings.public_slug.unwrap();
+    sqlx::query("WITH users AS (INSERT INTO core.users (id,display_name) SELECT gen_random_uuid(),'Display operator' FROM generate_series(1,101) RETURNING id), members AS (INSERT INTO core.memberships (tenant_id,user_id,role) SELECT $1,id,'operator' FROM users RETURNING user_id), numbered AS (SELECT user_id,row_number() OVER (ORDER BY user_id) AS n FROM members) INSERT INTO queue.tickets (tenant_id,queue_id,id,position,service_date,number,status,called_by,issued_at,called_at) SELECT $1,$2,gen_random_uuid(),n,'2026-10-28',n::integer,'called',user_id,clock_timestamp(),clock_timestamp() FROM numbered")
+        .bind(f.tenant).bind(f.queue).execute(&f.migrator).await.unwrap();
+    let first = public::display(&f.runtime, slug, 0).await.unwrap();
+    let second = public::display(&f.runtime, slug, 1).await.unwrap();
+    assert_eq!(first.called_count, 101);
+    assert_eq!(first.called.len(), 100);
+    assert_eq!(first.next_page, Some(1));
+    assert_eq!(second.called.len(), 1);
+    assert_eq!(second.called[0].number, 101);
+    assert_eq!(second.next_page, None);
+    assert_eq!(first.version, second.version);
+    assert!(
+        public::display(&f.runtime, slug, 2)
+            .await
+            .unwrap()
+            .called
+            .is_empty()
+    );
+    let ticket: Uuid = sqlx::query_scalar(
+        "SELECT id FROM queue.tickets WHERE tenant_id=$1 AND queue_id=$2 AND position=1",
+    )
+    .bind(f.tenant)
+    .bind(f.queue)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    f.staff(Command::Complete { ticket_id: ticket }).await;
+    let changed = public::display(&f.runtime, slug, 0).await.unwrap();
+    assert_eq!(changed.called_count, 100);
+    assert_eq!(changed.next_page, None);
+    assert_ne!(changed.version, first.version);
+    f.close().await;
+}
+
+fn display_configuration(f: &Fixture, auth: &(String, String), body: Value) -> Request<Body> {
+    Request::put(format!("{}/display", f.settings_url()))
+        .header("cookie", &auth.0)
+        .header("origin", ORIGIN)
+        .header("x-csrf-token", &auth.1)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_http_is_anonymous_strict_and_never_cached_even_when_disabled() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let url = format!("/api/public/queues/{slug}/display");
+    let page = format!("/display/{slug}");
+    for target in [&url, &page] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(Request::get(target).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    f.staff(Command::Issue {}).await;
+    f.staff(Command::CallNext {}).await;
+    let (status, body) = f
+        .json(Request::get(&url).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["called"][0]["number"], 1);
+    assert_eq!(body["version"].as_str().unwrap(), "3");
+    for suffix in [
+        "?page=-1",
+        "?page=no",
+        "?page=21474836",
+        "?page=1&page=2",
+        "?actor=owner",
+    ] {
+        assert_eq!(
+            f.json(
+                Request::get(format!("{url}{suffix}"))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let response = f
+        .app
+        .clone()
+        .oneshot(Request::get(&page).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let html = String::from_utf8(
+        to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("alert(1)"));
+    assert!(!html.contains("<script>alert(1)"));
+    assert!(!html.contains("№ 001"));
+    for path in [
+        "/assets/queue-display.css",
+        "/assets/queue-display.js",
+        "/assets/queue-display-client.js",
+    ] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, false, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        f.json(Request::get(&url).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let (_, document) = f
+        .json(Request::get("/openapi.json").body(Body::empty()).unwrap())
+        .await;
+    assert!(
+        document["paths"]["/api/public/queues/{slug}/display"]["get"]
+            .get("security")
+            .is_none()
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn display_http_configuration_checks_session_csrf_role_and_version() {
+    let f = Fixture::new().await;
+    let path = format!("{}/display", f.settings_url());
+    assert_eq!(
+        f.json(Request::put(&path).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let owner = f.login(f.owner).await;
+    for field in ["origin", "x-csrf-token"] {
+        let mut request =
+            display_configuration(&f, &owner, json!({"enabled":true,"expected_version":0}));
+        request.headers_mut().remove(field);
+        assert_eq!(f.json(request).await.0, StatusCode::FORBIDDEN);
+    }
+    assert_eq!(
+        f.json(display_configuration(
+            &f,
+            &owner,
+            json!({"enabled":true,"expected_version":0,"join_open":true})
+        ))
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let operator = f.member(Role::Operator).await;
+    let auth = f.login(operator).await;
+    assert_eq!(
+        f.json(display_configuration(
+            &f,
+            &auth,
+            json!({"enabled":true,"expected_version":0})
+        ))
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, settings) = f
+        .json(display_configuration(
+            &f,
+            &owner,
+            json!({"enabled":true,"expected_version":0}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["display_enabled"], true);
+    assert_eq!(settings["join_open"], false);
+    assert!(
+        settings["display_url"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{ORIGIN}/display/"))
+    );
+    assert_eq!(
+        f.json(display_configuration(
+            &f,
+            &owner,
+            json!({"enabled":false,"expected_version":0})
+        ))
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (_, disabled) = f
+        .json(display_configuration(
+            &f,
+            &owner,
+            json!({"enabled":false,"expected_version":1}),
+        ))
+        .await;
+    assert!(disabled["display_url"].is_null());
+    assert_eq!(disabled["display_enabled"], false);
+    f.close().await;
+}
