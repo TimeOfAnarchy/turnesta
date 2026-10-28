@@ -290,40 +290,12 @@ async fn issue(
     tenant: TenantId,
     queue: Uuid,
 ) -> Result<Uuid, QueueError> {
-    let position: i64 = sqlx::query_scalar(
-        "UPDATE queue.queues SET next_position = next_position + 1 \
-         WHERE tenant_id = $1 AND id = $2 RETURNING next_position",
-    )
-    .bind(tenant)
-    .bind(queue)
-    .fetch_one(session.connection())
-    .await?;
-    // Capture one instant after locking; now() would be the transaction start,
-    // potentially yesterday for a transaction that waited across midnight.
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "WITH instant AS MATERIALIZED (SELECT clock_timestamp() AS at), \
-         day AS (SELECT (i.at AT TIME ZONE l.time_zone)::date AS date, i.at \
-             FROM instant i, queue.queues q JOIN core.locations l \
-             ON l.tenant_id = q.tenant_id AND l.id = q.location_id \
-             WHERE q.tenant_id = $1 AND q.id = $2), \
-         counter AS (INSERT INTO queue.daily_counters (tenant_id, queue_id, service_date, last_number) \
-             SELECT $1, $2, date, 1 FROM day \
-             ON CONFLICT (tenant_id, queue_id, service_date) \
-             DO UPDATE SET last_number = queue.daily_counters.last_number + 1 \
-             RETURNING service_date, last_number) \
-         INSERT INTO queue.tickets (tenant_id, queue_id, id, position, service_date, number, issued_at) \
-         SELECT $1, $2, $3, $4, counter.service_date, counter.last_number, day.at FROM counter, day",
-    )
-    .bind(tenant)
-    .bind(queue)
-    .bind(id)
-    .bind(position)
-    .execute(session.connection())
-    .await?;
-    Ok(id)
+    Ok(sqlx::query_scalar("SELECT queue.allocate_ticket($1, $2)")
+        .bind(tenant)
+        .bind(queue)
+        .fetch_one(session.connection())
+        .await?)
 }
-
 async fn call_next(
     session: &mut TenantSession,
     tenant: TenantId,

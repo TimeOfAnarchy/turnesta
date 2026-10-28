@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 mod api;
 mod queue_http;
+mod queue_public_http;
 mod tips_http;
 
 #[derive(Clone)]
@@ -132,7 +133,13 @@ struct ErrorResponse {
         queue_http::create_queue,
         queue_http::get_queue,
         queue_http::tickets,
-        queue_http::command
+        queue_http::command,
+        queue_public_http::settings,
+        queue_public_http::configure,
+        queue_public_http::qr,
+        queue_public_http::profile,
+        queue_public_http::ticket,
+        queue_public_http::issue
     ),
     components(schemas(
         HealthResponse,
@@ -169,7 +176,12 @@ struct ErrorResponse {
         crate::queue::CommandResult,
         queue_http::CreateQueueRequest,
         queue_http::QueuePage,
-        queue_http::TicketList
+        queue_http::TicketList,
+        queue_public_http::SettingsResponse,
+        queue_public_http::ConfigureRequest,
+        queue_public_http::IssueRequest,
+        crate::queue_public::PublicProfile,
+        crate::queue_public::PublicTicket
     ))
 )]
 struct ApiDoc;
@@ -194,6 +206,7 @@ pub fn router(state: AppState) -> Router {
         .merge(api::routes())
         .merge(tips_http::routes())
         .merge(queue_http::routes())
+        .merge(queue_public_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
@@ -262,6 +275,10 @@ async fn openapi(State(state): State<AppState>) -> Json<utoipa::openapi::OpenApi
                 state.auth.session_cookie_name(),
             ))),
         );
+        components.add_security_scheme(
+            "queueTicket",
+            SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("X-Queue-Ticket"))),
+        );
     }
     Json(document)
 }
@@ -315,7 +332,7 @@ async fn request_context(request: Request, next: Next) -> Response {
         response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static(cache_control));
         response.headers_mut().insert("x-content-type-options", HeaderValue::from_static("nosniff"));
         response.headers_mut().insert("referrer-policy", HeaderValue::from_static("no-referrer"));
-        response.headers_mut().insert("content-security-policy", HeaderValue::from_static("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"));
+        response.headers_mut().insert("content-security-policy", HeaderValue::from_static("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"));
         tracing::info!(
             status = response.status().as_u16(),
             duration_ms = started.elapsed().as_secs_f64() * 1_000.0,

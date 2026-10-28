@@ -1,0 +1,32 @@
+:root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #19362c; background: #f5f6f1; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+[hidden] { display: none !important; }
+.guest-page { max-width: 540px; margin: 0 auto; padding: 35px 24px 25px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 55px; }
+.brand { font-size: 29px; font-weight: 800; letter-spacing: -1.7px; }
+.brand > span { color: #e49b54; }
+.header-note, .eyebrow { font-size: 10px; letter-spacing: 1.8px; color: #78886f; font-weight: 650; }
+.eyebrow { margin: 0 0 14px; }
+h1 { font-size: 32px; line-height: 1.25; letter-spacing: -1px; margin: 0 0 17px; overflow-wrap: anywhere; }
+.location { color: #718074; font-size: 14px; line-height: 1.8; margin: 0 0 30px; overflow-wrap: anywhere; }
+.ticket-card { background: #fff; border: 1px solid #e1e6dd; border-radius: 18px; padding: 29px 25px; }
+#service-note { font-size: 11px; line-height: 1.8; color: #718074; margin: 0 0 25px; overflow-wrap: anywhere; }
+h2 { font-size: 22px; line-height: 1.4; margin: 0 0 17px; }
+.ticket-number { font-size: 64px; line-height: 1.2; letter-spacing: -2px; font-weight: 750; margin: 12px 0; }
+#ticket-date { font-size: 14px; color: #718074; margin: 0 0 22px; }
+.ticket-message { font-size: 15px; line-height: 1.8; margin-bottom: 20px; }
+#ticket-ahead { padding: 14px 16px; border-radius: 9px; background: #f0f5e9; font-size: 14px; line-height: 1.7; }
+.guest-notice { font-size: 13px; line-height: 1.8; color: #718074; margin: 16px 0; }
+.guest-error { color: #965844; background: #fcf3ee; border: 1px solid #edd3c8; border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.8; }
+.guest-actions { display: grid; gap: 12px; margin-top: 24px; }
+button { font: inherit; cursor: pointer; min-height: 49px; border: 1px solid #d9e1d2; border-radius: 9px; padding: 12px 17px; line-height: 1.6; font-size: 14px; font-weight: 600; }
+.primary { background: #234b39; border-color: #234b39; color: #fff; }
+.primary:hover:not(:disabled) { background: #183c2c; }
+.secondary { background: #f9fbf6; color: #234b39; }
+.secondary:hover:not(:disabled) { background: #eef4e6; }
+button:disabled { cursor: not-allowed; opacity: .6; }
+:focus-visible { outline: 3px solid #5b8971; outline-offset: 4px; }
+.privacy-note, footer { font-size: 11px; line-height: 1.9; color: #718074; margin: 24px 6px; }
+footer { border-top: 1px solid #e1e6dd; padding-top: 22px; margin-top: 36px; text-align: center; }
+@media (max-width: 380px) { .guest-page { padding: 25px 18px; } .ticket-card { padding: 24px 20px; } h1 { font-size: 28px; } }

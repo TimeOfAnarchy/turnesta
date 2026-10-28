@@ -5,5 +5,6 @@ pub mod database;
 pub mod http;
 pub mod payments;
 pub mod queue;
+pub mod queue_public;
 pub mod telemetry;
 pub mod tips;

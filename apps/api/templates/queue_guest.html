@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ profile.queue_name }} · Turnesta</title>
+  <link rel="stylesheet" href="/assets/queue-guest.css">
+  <script type="module" src="/assets/queue-guest.js"></script>
+</head>
+<body>
+  <main class="guest-page" id="guest-queue" data-slug="{{ profile.public_slug }}">
+    <header><span class="brand">turnesta<span aria-hidden="true">•</span></span><span class="header-note">ВАШ ВИЗИТ</span></header>
+    <p class="eyebrow">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p>
+    <h1>{{ profile.queue_name }}</h1>
+    <p class="location">{{ profile.organization_name }}<br>{{ profile.location_name }}</p>
+    <section class="ticket-card" aria-labelledby="ticket-heading">
+      <p id="service-note">Номер и дата талона — по времени точки: {{ profile.time_zone }}.</p>
+      <h2 id="ticket-heading" aria-live="polite" aria-atomic="true">Загружаем очередь…</h2>
+      <p class="ticket-number" id="ticket-number" hidden></p>
+      <p id="ticket-date" hidden></p>
+      <p class="ticket-message" id="ticket-message"></p>
+      <p id="ticket-ahead" hidden></p>
+      <p class="guest-notice" id="guest-notice" role="status" aria-live="polite"></p>
+      <div class="guest-actions">
+        <button type="button" class="primary" id="join-button" hidden>Получить талон</button>
+        <button type="button" class="secondary" id="refresh-button">Обновить</button>
+      </div>
+    </section>
+    <p class="privacy-note">Талон сохраняется в этом браузере. Сохраните ссылку на страницу и возвращайтесь к ней, чтобы проверить состояние. Не передавайте доступ к своему браузеру посторонним.</p>
+    <noscript><p class="guest-error">Для получения талона нужен JavaScript. Обратитесь к сотруднику точки — он сможет выдать талон.</p></noscript>
+    <footer>Больше времени для людей.</footer>
+  </main>
+</body>
+</html>

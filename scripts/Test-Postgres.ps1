@@ -1,7 +1,7 @@
 param(
     [string]$EnvFile = '.env',
-    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres')]
-    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres')
+    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres')]
+    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres')
 )
 
 $ErrorActionPreference = 'Stop'

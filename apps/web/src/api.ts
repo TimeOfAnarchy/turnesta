@@ -16,6 +16,7 @@ export type Ticket = {
 };
 export type QueueCommand = { type: 'issue' } | { type: 'call_next' } | { type: 'complete'; ticket_id: string } | { type: 'cancel'; ticket_id: string };
 export type QueueCommandResult = { queue_id: string; version: number; ticket: Ticket | null };
+export type QueuePublicAccess = { public_url: string | null; qr_url: string | null; join_open: boolean; version: number };
 
 export const roleLabels: Record<Role, string> = {
   owner: 'Владелец', manager: 'Управляющий', operator: 'Оператор', employee: 'Сотрудник',
@@ -99,6 +100,10 @@ export const api = {
     method: 'POST', body: JSON.stringify({ name }),
   }),
   queue: (tenant: string, queue: string, signal: AbortSignal) => request<Queue>(queueUrl(tenant, queue), { signal }),
+  queuePublicAccess: (tenant: string, queue: string, signal: AbortSignal) => request<QueuePublicAccess>(`${queueUrl(tenant, queue)}/public-access`, { signal }),
+  configureQueuePublicAccess: (tenant: string, queue: string, join_open: boolean, expected_version: number) => request<QueuePublicAccess>(`${queueUrl(tenant, queue)}/public-access`, {
+    method: 'PUT', body: JSON.stringify({ join_open, expected_version }),
+  }),
   tickets: (tenant: string, queue: string, status: TicketStatus, after: number | null, signal: AbortSignal, mine = false) => {
     const params = new URLSearchParams({ status, limit: '50' });
     if (after !== null) params.set('after', String(after));

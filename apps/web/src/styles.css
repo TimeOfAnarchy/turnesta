@@ -380,6 +380,22 @@ body:has(dialog[open]) { overflow: hidden; }
 .queue-location-picker { display: flex; align-items: center; gap: 22px; margin-bottom: 30px; flex-wrap: wrap; }
 .queue-location-picker .form-field { width: min(100%, 420px); margin: 0; }
 .queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 22px; }
+.queue-public-access { display: flex; align-items: flex-start; gap: 30px; padding: 27px; margin-bottom: 25px; }
+.queue-public-content { flex: 1; min-width: 0; }
+.queue-public-access h2 { font-size: 19px; line-height: 1.5; margin-bottom: 12px; }
+.queue-public-access p { font-size: 12px; line-height: 1.9; color: var(--muted); }
+.queue-public-access .small-eyebrow { margin-bottom: 15px; font-size: 9px; }
+.queue-public-url { display: block; width: 100%; border: 1px solid var(--border); padding: 11px; font-size: 12px; margin-bottom: 14px; background: #fafbf7; }
+.queue-public-toggle { display: inline-block; margin-top: 22px; font-size: 12px; text-align: left; }
+.queue-public-qr { flex: 0 0 160px; text-align: center; }
+.queue-public-qr img { display: block; background: #fff; max-width: 100%; height: auto; margin: 0 auto 12px; }
+.queue-public-qr .text-button { font-size: 12px; }
+.queue-public-qr p { font-size: 10px; }
+@media (max-width: 700px) {
+  .queue-public-access { flex-direction: column; padding: 22px 20px; gap: 23px; }
+  .queue-public-content { width: 100%; }
+  .queue-public-qr { flex-basis: auto; align-self: center; }
+}
 .queue-card { display: block; padding: 25px; text-decoration: none; min-width: 0; }
 .queue-card:hover { border-color: #aabe9c; background: #fdfefb; }
 .queue-card-icon { display: grid; place-items: center; width: 42px; height: 42px; color: #5b7a4b; background: #eef4e7; border-radius: 11px; margin-bottom: 23px; }
