@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { api, ApiError } from './api';
+import { api, ApiError, readRecoveryInterval } from './api';
 import type { TicketStatus } from './api';
 
 export const keys = {
@@ -18,12 +18,13 @@ export function useOrganizations() {
     queryKey: keys.organizations,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => api.organizations(pageParam, signal),
+    refetchInterval: query => readRecoveryInterval(query.state.error),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
 }
 
 export function useOrganization(tenant: string) {
-  return useQuery({ queryKey: keys.organization(tenant), queryFn: ({ signal }) => api.organization(tenant, signal) });
+  return useQuery({ queryKey: keys.organization(tenant), queryFn: ({ signal }) => api.organization(tenant, signal), refetchInterval: query => readRecoveryInterval(query.state.error) });
 }
 
 export function useLocations(tenant: string) {
@@ -50,7 +51,6 @@ export function useQueueTickets(tenant: string, queue: string, status: TicketSta
     initialPageParam: null as number | null,
     queryFn: ({ pageParam, signal }) => api.tickets(tenant, queue, status, pageParam, signal),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-    refetchInterval: status === 'waiting' || status === 'called' ? 5_000 : false,
     retry: false,
   });
 }

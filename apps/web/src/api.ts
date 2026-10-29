@@ -33,6 +33,12 @@ export class ApiError extends Error {
   }
 }
 
+export function readRecoveryInterval(error: unknown): number | false {
+  if (!error) return false;
+  if (error instanceof ApiError && error.status < 500 && ![408, 429].includes(error.status)) return false;
+  return 5_000;
+}
+
 let signedOut = () => { window.location.replace('/login'); };
 export function onSignedOut(callback: () => void) { signedOut = callback; }
 
@@ -100,6 +106,7 @@ export const api = {
     method: 'POST', body: JSON.stringify({ name }),
   }),
   queue: (tenant: string, queue: string, signal: AbortSignal) => request<Queue>(queueUrl(tenant, queue), { signal }),
+  queueEventsUrl: (tenant: string, queue: string) => `${queueUrl(tenant, queue)}/events`,
   queuePublicAccess: (tenant: string, queue: string, signal: AbortSignal) => request<QueuePublicAccess>(`${queueUrl(tenant, queue)}/public-access`, { signal }),
   configureQueuePublicAccess: (tenant: string, queue: string, join_open: boolean, expected_version: number) => request<QueuePublicAccess>(`${queueUrl(tenant, queue)}/public-access`, {
     method: 'PUT', body: JSON.stringify({ join_open, expected_version }),

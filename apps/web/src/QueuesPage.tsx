@@ -9,6 +9,9 @@ import { ErrorNotice, Icon, Loading, Modal, SuccessNotice } from './components';
 import { keys, useLocations, useQueues, useQueueTickets } from './queries';
 import { QueueCommands, canCloseTicket, commandError, commandLabel, ticketLabel, ticketStatusLabels } from './queueCommands';
 import { QueuePublicAccess } from './QueuePublicAccess';
+import { watchQueue, liveLabels } from './queueLive.mjs';
+import type { LiveStatus } from './queueLive.mjs';
+import './queueLive.css';
 
 export function QueuesPage() {
   const { organization, canManage } = useWorkspace();
@@ -88,12 +91,12 @@ function QueueWorkplace({ tenant, queueId }: { tenant: string; queueId: string }
   const { role, canManage, userId } = useWorkspace();
   const canOperate = role !== 'employee';
   const client = useQueryClient();
-  const queue = useQuery({ queryKey: [...keys.queue(tenant, queueId), 'details'], queryFn: ({ signal }) => api.queue(tenant, queueId, signal), refetchInterval: 5_000, retry: false });
+  const queue = useQuery({ queryKey: [...keys.queue(tenant, queueId), 'details'], queryFn: ({ signal }) => api.queue(tenant, queueId, signal), retry: false });
   const locations = useLocations(tenant);
   const point = locations.data?.pages.flatMap((page) => page.items).find((item) => item.id === queue.data?.location_id);
   const [status, setStatus] = useState<TicketStatus>('waiting');
   const tickets = useQueueTickets(tenant, queueId, status);
-  const mine = useQuery({ queryKey: [...keys.queue(tenant, queueId), 'mine', userId], queryFn: ({ signal }) => api.tickets(tenant, queueId, 'called', null, signal, true), enabled: canOperate, refetchInterval: 5_000, retry: false });
+  const mine = useQuery({ queryKey: [...keys.queue(tenant, queueId), 'mine', userId], queryFn: ({ signal }) => api.tickets(tenant, queueId, 'called', null, signal, true), enabled: canOperate, retry: false });
   const ownTicket = mine.data?.items[0];
   const [journal] = useState(() => new QueueCommands({ tenant, queue: queueId, user: userId }, commandStorage()));
   const [busy, setBusy] = useState(false);
@@ -101,6 +104,23 @@ function QueueWorkplace({ tenant, queueId }: { tenant: string; queueId: string }
   const [error, setError] = useState<unknown>(null);
   const [cancel, setCancel] = useState<Ticket | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>('connecting');
+  useEffect(() => {
+    const live = watchQueue({
+      url: api.queueEventsUrl(tenant, queueId), status: setLiveStatus,
+      refresh: async () => {
+        try {
+          await Promise.all([
+            client.invalidateQueries({ queryKey: keys.queue(tenant, queueId) }, { throwOnError: true }),
+            client.invalidateQueries({ queryKey: keys.locations(tenant) }, { throwOnError: true }),
+            client.invalidateQueries({ queryKey: keys.organization(tenant), exact: true }, { throwOnError: true }),
+          ]);
+          return true;
+        } catch { return false; }
+      },
+    });
+    return () => live.dispose();
+  }, [tenant, queueId, client]);
   const items = tickets.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
     document.title = `${queue.data?.name ?? 'Очередь'} · Turnesta`;
@@ -134,7 +154,7 @@ function QueueWorkplace({ tenant, queueId }: { tenant: string; queueId: string }
   return <>
     <Link className="queue-back" to={`/organizations/${tenant}/queues?location=${encodeURIComponent(queue.data.location_id)}`}>← К очередям точки</Link>
     <div className="page-heading queue-workplace-heading"><div><p className="eyebrow">РАБОЧЕЕ МЕСТО ОПЕРАТОРА</p><h1>{queue.data.name}<span className="heading-dot">.</span></h1><p className="page-intro">{point?.name ?? 'Очередь точки'}{point ? ` · ${point.time_zone.replaceAll('_', ' ')}` : ''}</p></div><button type="button" className="button secondary" onClick={() => { void refresh(); }} disabled={queue.isFetching || tickets.isFetching || mine.isFetching}><Icon name="refresh"/>Обновить</button></div>
-    <p className="queue-update-hint">Ожидающие и обслуживаемые талоны обновляются каждые 5 секунд. Историю можно обновить кнопкой выше.</p>
+    <div className="queue-update-hint"><span className="queue-live-status" data-state={liveStatus} role="status" aria-live="polite">{liveLabels[liveStatus]}</span></div>
     <QueuePublicAccess tenant={tenant} queue={queueId} canManage={canManage}/>
     {!online && <div className="conflict-notice" role="status"><strong>Нет подключения</strong><p>Действия недоступны. После восстановления связи повторите нужное действие вручную.</p></div>}
     {queue.isError && <ErrorNotice error={queue.error} retry={() => { void refresh(); }}/>}

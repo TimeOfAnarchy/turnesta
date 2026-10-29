@@ -151,7 +151,7 @@ impl From<CoreError> for ApiError {
 
 pub(super) struct SignedIn {
     pub(super) user_id: UserId,
-    token_hash: [u8; 32],
+    pub(super) token_hash: [u8; 32],
     csrf_hash: [u8; 32],
 }
 

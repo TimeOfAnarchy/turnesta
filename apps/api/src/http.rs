@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod queue_events;
 mod queue_http;
 mod queue_public_http;
 mod tips_http;
@@ -38,6 +39,7 @@ pub struct AppState {
     web_dist: PathBuf,
     payments: crate::payments::PaymentConfig,
     public_gate: Arc<tokio::sync::Semaphore>,
+    queue_live: Option<Arc<crate::queue_live::LiveHub>>,
 }
 
 impl AppState {
@@ -51,11 +53,20 @@ impl AppState {
             web_dist: "apps/web/dist".into(),
             payments: crate::payments::PaymentConfig::default(),
             public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
+            queue_live: None,
         }
     }
 
     pub fn begin_shutdown(&self) {
         self.draining.store(true, Ordering::Release);
+        if let Some(hub) = &self.queue_live {
+            hub.shutdown();
+        }
+    }
+
+    pub fn with_queue_live(mut self, hub: Arc<crate::queue_live::LiveHub>) -> Self {
+        self.queue_live = Some(hub);
+        self
     }
 
     pub fn with_auth(mut self, auth: AuthConfig) -> Self {
@@ -138,6 +149,8 @@ struct ErrorResponse {
         queue_public_http::configure,
         queue_public_http::configure_display,
         queue_public_http::display,
+        queue_events::staff,
+        queue_events::public,
         queue_public_http::qr,
         queue_public_http::profile,
         queue_public_http::ticket,
@@ -211,6 +224,7 @@ pub fn router(state: AppState) -> Router {
         .merge(api::routes())
         .merge(tips_http::routes())
         .merge(queue_http::routes())
+        .merge(queue_events::routes())
         .merge(queue_public_http::routes())
         .merge(cabinet)
         .fallback(not_found)

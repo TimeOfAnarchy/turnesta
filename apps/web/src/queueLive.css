@@ -1,0 +1,14 @@
+.queue-live-status {
+  --live-accent: var(--green, #234b39);
+  display: inline-flex; align-items: center; gap: .55em; max-width: 100%;
+  padding: .55em .85em; border: 1px solid #dce3d6; border-radius: 999px;
+  color: #64735b; background: #f8faf5; font-size: .75rem; font-weight: 550;
+  line-height: 1.45; letter-spacing: .01em; text-align: left;
+}
+.queue-live-status::before { content: ''; flex: 0 0 .45em; width: .45em; height: .45em; border-radius: 50%; background: currentColor; }
+.queue-live-status[data-state="live"] { color: var(--live-accent); background: #eff5e9; border-color: #d6e3ca; }
+.queue-live-status[data-state="connecting"], .queue-live-status[data-state="reconnecting"] { color: #8a613e; background: #fbf5ed; border-color: #eadcca; }
+.queue-live-status[data-state="connecting"]::before { animation: queue-live-pulse 1.5s ease-in-out infinite; }
+.queue-live-status[data-state="paused"] { color: #7b8277; }
+@keyframes queue-live-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .queue-live-status::before { animation: none; } }

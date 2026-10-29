@@ -1,4 +1,5 @@
 import { GuestError, GuestTicketClient, guestErrorMessage, guestRequest } from '/assets/queue-client.js';
+import { watchQueue, liveLabels } from '/assets/queue-live.js';
 
 const root = document.getElementById('guest-queue');
 const slug = root.dataset.slug;
@@ -52,11 +53,11 @@ function render() {
   notice.className = failure ? 'guest-notice guest-error' : 'guest-notice';
   notice.setAttribute('role', failure ? 'alert' : 'status');
   notice.textContent = failure ? guestErrorMessage(failure) : pending ? 'Ждём подтверждения сервера…'
-    : active ? 'Состояние обновляется каждые 5 секунд, пока страница открыта.' : '';
+    : active ? 'Оставьте страницу открытой — состояние обновляется автоматически.' : '';
 }
 
 async function refresh() {
-  if (busy || client?.busy) return;
+  if (busy || client?.busy || !navigator.onLine) return false;
   busy = true; render();
   const results = await Promise.allSettled([
     guestRequest(`/api/public/queues/${encodeURIComponent(slug)}`),
@@ -65,6 +66,7 @@ async function refresh() {
   if (results[0].status === 'fulfilled') profile = results[0].value;
   failure = results.find((result) => result.status === 'rejected')?.reason ?? null;
   initializing = false; busy = false; render();
+  return !failure;
 }
 
 join.addEventListener('click', async () => {
@@ -74,9 +76,11 @@ join.addEventListener('click', async () => {
   catch (error) { failure = error; }
   finally { busy = false; render(); }
 });
-update.addEventListener('click', () => { void refresh(); });
-window.addEventListener('online', () => { render(); void refresh(); });
-window.addEventListener('offline', render);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
-setInterval(() => { if (!document.hidden && navigator.onLine) void refresh(); }, 5_000);
-render(); void refresh();
+update.addEventListener('click', () => live.refresh());
+const live = watchQueue({
+  url: `/api/public/queues/${encodeURIComponent(slug)}/events?audience=guest`, refresh,
+  status: value => {
+    const badge = document.getElementById('guest-live-status'); badge.dataset.state = value; badge.textContent = liveLabels[value]; render();
+  },
+});
+render();

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ profile.queue_name }} · Turnesta</title>
   <link rel="stylesheet" href="/assets/queue-guest.css">
+  <link rel="stylesheet" href="/assets/queue-live.css">
   <script type="module" src="/assets/queue-guest.js"></script>
 </head>
 <body>
@@ -13,6 +14,7 @@
     <p class="eyebrow">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p>
     <h1>{{ profile.queue_name }}</h1>
     <p class="location">{{ profile.organization_name }}<br>{{ profile.location_name }}</p>
+    <p class="queue-live-status" id="guest-live-status" data-state="connecting" role="status" aria-live="polite">Подключаем обновления</p>
     <section class="ticket-card" aria-labelledby="ticket-heading">
       <p id="service-note">Номер и дата талона — по времени точки: {{ profile.time_zone }}.</p>
       <h2 id="ticket-heading" aria-live="polite" aria-atomic="true">Загружаем очередь…</h2>

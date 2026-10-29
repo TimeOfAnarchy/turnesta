@@ -1,3 +1,5 @@
+use futures_util::StreamExt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
@@ -14,6 +16,7 @@ use turnesta_api::{
     core::{Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
     queue::{self, Command, TicketStatus},
+    queue_live::LiveHub,
     queue_public::{self as public, PublicQueueError},
 };
 use uuid::Uuid;
@@ -1182,5 +1185,471 @@ async fn display_http_configuration_checks_session_csrf_role_and_version() {
         .await;
     assert!(disabled["display_url"].is_null());
     assert_eq!(disabled["display_enabled"], false);
+    f.close().await;
+}
+
+fn live_app(f: &Fixture) -> (Router, Arc<LiveHub>, tokio::task::JoinHandle<()>) {
+    let hub = LiveHub::new(f.runtime.clone());
+    let task = hub.start();
+    let app = router(
+        AppState::new(f.runtime.clone(), Duration::from_secs(1)).with_queue_live(hub.clone()),
+    );
+    (app, hub, task)
+}
+async fn stop_live(hub: Arc<LiveHub>, task: tokio::task::JoinHandle<()>) {
+    hub.shutdown();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+}
+async fn live_event(stream: &mut axum::body::BodyDataStream) -> String {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        let mut text = String::new();
+        while let Some(frame) = stream.next().await {
+            text.push_str(std::str::from_utf8(&frame.unwrap()).unwrap());
+            if text.contains("\n\n") {
+                return text;
+            }
+        }
+        panic!("SSE ended before an event")
+    })
+    .await
+    .expect("SSE event deadline exceeded")
+}
+fn event_name(event: &str) -> &str {
+    event
+        .lines()
+        .find_map(|line| line.strip_prefix("event:"))
+        .unwrap()
+        .trim()
+}
+fn event_id(event: &str) -> &str {
+    event
+        .lines()
+        .find_map(|line| line.strip_prefix("id:"))
+        .unwrap()
+        .trim()
+}
+async fn until_event(stream: &mut axum::body::BodyDataStream, name: &str) -> String {
+    tokio::time::timeout(Duration::from_secs(19), async {
+        loop {
+            let event = live_event(stream).await;
+            if event_name(&event) == name {
+                return event;
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_http_scopes_strict_queries_and_initial_resync_never_expose_ticket_data() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (app, hub, task) = live_app(&f);
+    let url = format!("/api/public/queues/{slug}/events");
+    for suffix in [
+        "?audience=unknown",
+        "?audience=guest&audience=display",
+        "?actor=owner",
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(
+                    Request::get(format!("{url}{suffix}"))
+                        .body(Body::empty())
+                        .unwrap()
+                )
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        app.clone()
+            .oneshot(
+                Request::get(format!("{url}?audience=display"))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(
+                Request::get(&url)
+                    .header("origin", "https://other.test")
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(&url)
+                .header("last-event-id", "old-revision")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(response.headers()["x-accel-buffering"], "no");
+    assert!(
+        !response
+            .headers()
+            .contains_key("access-control-allow-origin")
+    );
+    let mut stream = response.into_body().into_data_stream();
+    let event = live_event(&mut stream).await;
+    assert_eq!(event_name(&event), "refresh");
+    assert_eq!(event_id(&event).len(), 64);
+    for private in [
+        f.tenant.to_string(),
+        f.queue.to_string(),
+        f.owner.to_string(),
+        "old-revision".to_owned(),
+    ] {
+        assert!(!event.contains(&private));
+    }
+    assert_eq!(
+        event
+            .lines()
+            .find_map(|line| line.strip_prefix("data:"))
+            .unwrap()
+            .trim(),
+        "{}"
+    );
+    drop(stream);
+    let auth = f.login(f.owner).await;
+    let staff_url = format!("/api/organizations/{}/queues/{}/events", f.tenant, f.queue);
+    assert_eq!(
+        app.clone()
+            .oneshot(Request::get(&staff_url).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let employee = f.member(Role::Employee).await;
+    let employee_auth = f.login(employee).await;
+    let staff = app
+        .clone()
+        .oneshot(
+            Request::get(&staff_url)
+                .header("cookie", &employee_auth.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(staff.status(), StatusCode::OK);
+    drop(staff);
+    let other = Fixture::new().await;
+    assert_eq!(
+        app.clone()
+            .oneshot(
+                Request::get(format!(
+                    "/api/organizations/{}/queues/{}/events",
+                    other.tenant, other.queue
+                ))
+                .header("cookie", &auth.0)
+                .body(Body::empty())
+                .unwrap()
+            )
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let safe:i64=sqlx::query_scalar("SELECT count(*) FROM pg_proc p WHERE pronamespace='queue'::regnamespace AND proname IN ('live_states','public_stream_target') AND prosecdef AND 'search_path=pg_catalog'=ANY(proconfig) AND NOT EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')").fetch_one(&f.runtime).await.unwrap();
+    assert_eq!(safe, 2);
+    other.close().await;
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_postcommit_notifications_cross_pools_and_reconciliation_use_durable_versions() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (app, hub, task) = live_app(&f);
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/public/queues/{slug}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut stream = response.into_body().into_data_stream();
+    let first = live_event(&mut stream).await;
+    tokio::time::timeout(Duration::from_secs(4), async {
+        while !hub.listener_connected() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut transaction = f.migrator.begin().await.unwrap();
+    sqlx::query("UPDATE queue.queues SET version=version+1 WHERE tenant_id=$1 AND id=$2")
+        .bind(f.tenant)
+        .bind(f.queue)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), async {
+            loop {
+                assert_ne!(event_name(&live_event(&mut stream).await), "refresh");
+            }
+        })
+        .await
+        .is_err()
+    );
+    transaction.rollback().await.unwrap();
+    hub.reconcile().await;
+    let unchanged = live_event(&mut stream).await;
+    assert_eq!(event_id(&unchanged), event_id(&first));
+    let separate = pool("TEST_DATABASE_URL", 1).await;
+    public::issue(&separate, slug, &token().1).await.unwrap();
+    let changed = tokio::time::timeout(Duration::from_secs(3), until_event(&mut stream, "refresh"))
+        .await
+        .unwrap();
+    assert_ne!(event_id(&changed), event_id(&first));
+    sqlx::query(
+        "UPDATE core.locations SET name='Renamed point',version=version+1 WHERE tenant_id=$1",
+    )
+    .bind(f.tenant)
+    .execute(&f.migrator)
+    .await
+    .unwrap();
+    let metadata = until_event(&mut stream, "refresh").await;
+    assert_ne!(event_id(&metadata), event_id(&changed));
+    assert_eq!(
+        public::profile(&f.runtime, slug)
+            .await
+            .unwrap()
+            .location_name,
+        "Renamed point"
+    );
+    drop(stream);
+    hub.reconcile().await;
+    assert_eq!(hub.queue_count(), 0);
+    separate.close().await;
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_display_revocation_is_independent_of_paused_guest_issuance() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    let (app, hub, task) = live_app(&f);
+    let url = format!("/api/public/queues/{slug}/events");
+    let guest = app
+        .clone()
+        .oneshot(Request::get(&url).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let display = app
+        .clone()
+        .oneshot(
+            Request::get(format!("{url}?audience=display"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut guest = guest.into_body().into_data_stream();
+    let mut display = display.into_body().into_data_stream();
+    live_event(&mut guest).await;
+    live_event(&mut display).await;
+    public::configure(&f.runtime, f.owner, f.tenant, f.queue, false, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        event_name(&until_event(&mut guest, "refresh").await),
+        "refresh"
+    );
+    assert_eq!(
+        event_name(&until_event(&mut display, "refresh").await),
+        "refresh"
+    );
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, false, 3)
+        .await
+        .unwrap();
+    assert_eq!(
+        event_name(&until_event(&mut display, "denied").await),
+        "denied"
+    );
+    assert!(display.next().await.is_none());
+    assert_eq!(
+        event_name(&until_event(&mut guest, "refresh").await),
+        "refresh"
+    );
+    drop(guest);
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_staff_revalidates_revoked_expired_sessions_and_removed_membership() {
+    let f = Fixture::new().await;
+    let (app, hub, task) = live_app(&f);
+    let operator = f.member(Role::Operator).await;
+    let employee = f.member(Role::Employee).await;
+    let owner_auth = f.login(f.owner).await;
+    let operator_auth = f.login(operator).await;
+    let employee_auth = f.login(employee).await;
+    let url = format!("/api/organizations/{}/queues/{}/events", f.tenant, f.queue);
+    let mut streams = Vec::new();
+    for auth in [&owner_auth, &operator_auth, &employee_auth] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(&url)
+                    .header("cookie", &auth.0)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut stream = response.into_body().into_data_stream();
+        live_event(&mut stream).await;
+        streams.push(stream);
+    }
+    // Test-only fixtures in the dedicated database. No existing users are edited.
+    sqlx::query("UPDATE auth.sessions SET revoked_at=clock_timestamp() WHERE user_id=$1")
+        .bind(f.owner)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM core.memberships WHERE tenant_id=$1 AND user_id=$2")
+        .bind(f.tenant)
+        .bind(operator)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE auth.sessions SET expires_at=clock_timestamp() WHERE user_id=$1")
+        .bind(employee)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let mut a = streams.remove(0);
+    let mut b = streams.remove(0);
+    let mut c = streams.remove(0);
+    let (a, b, c) = tokio::join!(
+        until_event(&mut a, "denied"),
+        until_event(&mut b, "denied"),
+        until_event(&mut c, "denied")
+    );
+    assert_eq!(
+        (event_name(&a), event_name(&b), event_name(&c)),
+        ("denied", "denied", "denied")
+    );
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_connection_budget_is_released_and_public_clients_cannot_take_staff_slots() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (app, hub, task) = live_app(&f);
+    let url = format!("/api/public/queues/{slug}/events");
+    let mut responses = Vec::new();
+    for _ in 0..96 {
+        let response = app
+            .clone()
+            .oneshot(Request::get(&url).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        responses.push(response);
+    }
+    assert_eq!(hub.queue_count(), 1);
+    assert_eq!(
+        app.clone()
+            .oneshot(Request::get(&url).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    let auth = f.login(f.owner).await;
+    let staff = app
+        .clone()
+        .oneshot(
+            Request::get(format!(
+                "/api/organizations/{}/queues/{}/events",
+                f.tenant, f.queue
+            ))
+            .header("cookie", &auth.0)
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(staff.status(), StatusCode::OK);
+    drop(responses.pop());
+    let replacement = app
+        .oneshot(Request::get(&url).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(replacement.status(), StatusCode::OK);
+    drop(replacement);
+    drop(staff);
+    drop(responses);
+    hub.reconcile().await;
+    assert_eq!(hub.queue_count(), 0);
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn sse_database_failure_and_shutdown_end_streams_without_holding_pool_connections() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (app, hub, task) = live_app(&f);
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/public/queues/{slug}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut stream = response.into_body().into_data_stream();
+    live_event(&mut stream).await;
+    tokio::time::timeout(Duration::from_secs(2), f.runtime.close())
+        .await
+        .expect("SSE held a primary pool connection");
+    hub.reconcile().await;
+    assert_eq!(event_name(&live_event(&mut stream).await), "unavailable");
+    assert!(stream.next().await.is_none());
+    stop_live(hub, task).await;
     f.close().await;
 }

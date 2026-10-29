@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, Route, Routes, useLocation, useOutletContext, useParams } from 'react-router-dom';
-import { api, ApiError, roleLabels } from './api';
+import { api, ApiError, roleLabels, readRecoveryInterval } from './api';
 import type { Organization, Role } from './api';
 import { Brand, ErrorNotice, Icon, Loading } from './components';
 import { useOrganization, useOrganizations } from './queries';
@@ -15,7 +15,7 @@ export type Workspace = { organization: Organization; role: Role; canManage: boo
 export function useWorkspace() { return useOutletContext<Workspace>(); }
 
 export function App() {
-  const session = useQuery({ queryKey: ['session'], queryFn: ({ signal }) => api.session(signal), staleTime: 0 });
+  const session = useQuery({ queryKey: ['session'], queryFn: ({ signal }) => api.session(signal), staleTime: 0, refetchInterval: query => readRecoveryInterval(query.state.error) });
   if (session.isPending) return <div className="entry-state"><Brand/><Loading/></div>;
   if (session.isError) return <div className="entry-state"><Brand/><ErrorNotice error={session.error} retry={() => { void session.refetch(); }}/></div>;
   return <Routes>

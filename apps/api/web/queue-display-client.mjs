@@ -46,6 +46,10 @@ export class DisplayClient {
     if (this.snapshot && this.now() - this.receivedAt >= 15_000) { this.snapshot = null; this.error = new DisplayError('stale'); }
     return this.snapshot;
   }
+  confirmFreshness() {
+    if (!this.snapshot || this.busy) return false;
+    this.receivedAt = this.now(); return true;
+  }
   invalidate(code) {
     this.generation++; this.controller?.abort(); this.busy = false; this.snapshot = null; this.error = new DisplayError(code);
   }

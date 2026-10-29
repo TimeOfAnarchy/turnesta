@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Табло очереди · Turnesta</title>
   <link rel="stylesheet" href="/assets/queue-display.css">
+  <link rel="stylesheet" href="/assets/queue-live.css">
   <script type="module" src="/assets/queue-display.js"></script>
 </head>
 <body>
   <main id="queue-display" data-slug="{{ slug }}">
     <header><span class="brand">turnesta<span aria-hidden="true">•</span></span><span class="display-label">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</span><button type="button" id="fullscreen">На весь экран</button></header>
-    <div class="display-intro"><div><p class="eyebrow" id="display-location">{% if let Some(value) = profile %}{{ value.organization_name }} · {{ value.location_name }}{% endif %}</p><h1 id="display-name">{% if let Some(value) = profile %}{{ value.queue_name }}{% else %}Табло недоступно{% endif %}</h1></div><p class="connection" id="display-connection" role="status" aria-live="polite">Получаем актуальные данные…</p></div>
+    <div class="display-intro"><div><p class="eyebrow" id="display-location">{% if let Some(value) = profile %}{{ value.organization_name }} · {{ value.location_name }}{% endif %}</p><h1 id="display-name">{% if let Some(value) = profile %}{{ value.queue_name }}{% else %}Табло недоступно{% endif %}</h1></div><div class="display-sync"><p class="queue-live-status" id="display-connection" data-state="connecting" role="status" aria-live="polite">Подключаем обновления</p><p class="connection" id="display-updated"></p></div></div>
     <section class="display-main" aria-labelledby="calls-title"><div class="calls-heading"><h2 id="calls-title">Сейчас обслуживаются</h2><span id="display-pagination"></span></div>
       <p id="display-message" role="status" aria-live="polite">Загружаем состояние очереди…</p>
       <div id="display-calls" class="display-calls" hidden></div>

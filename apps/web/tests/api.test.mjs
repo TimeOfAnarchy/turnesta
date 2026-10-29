@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import { afterEach, mock, test } from 'node:test';
-import { api, ApiError, errorMessage, onSignedOut, validateName } from '../src/api.ts';
+import { api, ApiError, errorMessage, onSignedOut, readRecoveryInterval, validateName } from '../src/api.ts';
 
 afterEach(() => {
   mock.restoreAll();
   delete globalThis.document;
+});
+
+test('read recovery retries transient failures and stops for access and validation errors', () => {
+  assert.equal(readRecoveryInterval(null), false);
+  assert.equal(readRecoveryInterval(new TypeError('network')), 5_000);
+  for (const status of [408,429,500,503]) assert.equal(readRecoveryInterval(new ApiError(status,'failure')),5_000);
+  for (const status of [400,401,403,404,409,410]) assert.equal(readRecoveryInterval(new ApiError(status,'failure')),false);
 });
 
 test('names validate Unicode characters, control characters and bounds', () => {

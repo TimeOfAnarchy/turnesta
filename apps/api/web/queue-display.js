@@ -1,9 +1,11 @@
 import { DisplayClient, displayErrorMessage } from '/assets/queue-display-client.js';
+import { watchQueue, liveLabels } from '/assets/queue-live.js';
 
 const client = new DisplayClient(document.getElementById('queue-display').dataset.slug);
 const calls = document.getElementById('display-calls');
 const message = document.getElementById('display-message');
 const connection = document.getElementById('display-connection');
+const updated = document.getElementById('display-updated');
 const waiting = document.getElementById('display-waiting');
 const pagination = document.getElementById('display-pagination');
 const joining = document.getElementById('display-joining');
@@ -11,6 +13,7 @@ const refreshButton = document.getElementById('display-refresh');
 const fullscreen = document.getElementById('fullscreen');
 let pageIndex = 0;
 let shown = false;
+let liveState = 'connecting';
 
 function render() {
   const snapshot = client.view();
@@ -18,17 +21,18 @@ function render() {
   refreshButton.disabled = client.busy;
   calls.replaceChildren(); calls.hidden = !snapshot || snapshot.called.length === 0;
   message.hidden = Boolean(snapshot?.called.length);
-  connection.className = client.error ? 'connection error' : 'connection';
+  connection.dataset.state = liveState;
+  connection.textContent = liveLabels[liveState];
   if (!snapshot) {
     waiting.textContent = '—'; pagination.textContent = ''; joining.textContent = 'Номер и дата вместе обозначают талон.';
     message.textContent = client.error ? displayErrorMessage(client.error) : 'Загружаем состояние очереди…';
-    connection.textContent = client.busy ? 'Обновляем данные…' : 'Актуальность вызовов не подтверждена';
+    updated.textContent = client.busy ? 'Обновляем данные…' : 'Актуальность вызовов не подтверждена';
     return;
   }
   document.getElementById('display-name').textContent = snapshot.queue_name;
   document.getElementById('display-location').textContent = `${snapshot.organization_name} · ${snapshot.location_name}`;
   const time = new Date(snapshot.observed_at).toLocaleTimeString('ru-RU', { timeZone: snapshot.time_zone, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  connection.textContent = `Обновлено в ${time} · ${snapshot.time_zone}`;
+  updated.textContent = `Данные на ${time} · ${snapshot.time_zone}`;
   waiting.textContent = String(snapshot.waiting_count);
   joining.textContent = snapshot.join_open ? 'Номер и дата вместе обозначают талон. Ожидайте своего вызова.' : 'Самостоятельная выдача талонов приостановлена. Обратитесь к сотруднику.';
   message.textContent = 'Сейчас вызванных посетителей нет. Ожидайте своего номера.';
@@ -42,23 +46,24 @@ function render() {
   }
 }
 async function refresh() {
-  if (document.hidden || client.busy || !navigator.onLine) return;
-  const task = client.refresh(); render(); await task; render();
+  if (document.hidden || client.busy || !navigator.onLine) return false;
+  const task = client.refresh(); render(); await task; render(); return Boolean(client.view());
 }
-refreshButton.addEventListener('click', () => { void refresh(); });
-window.addEventListener('offline', () => { client.invalidate('offline'); render(); });
-window.addEventListener('online', () => { void refresh(); });
-document.addEventListener('visibilitychange', () => {
-  client.invalidate('stale'); render(); if (!document.hidden) void refresh();
-});
+refreshButton.addEventListener('click', () => { live.refresh(); });
 fullscreen.hidden = !document.fullscreenEnabled;
 fullscreen.addEventListener('click', async () => {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
-  catch { connection.textContent = 'Не удалось развернуть табло. Используйте полноэкранный режим браузера.'; }
+  catch { updated.textContent = 'Не удалось развернуть табло. Используйте полноэкранный режим браузера.'; }
 });
 document.addEventListener('fullscreenchange', () => { fullscreen.textContent = document.fullscreenElement ? 'Выйти из полного экрана' : 'На весь экран'; });
-setInterval(() => { void refresh(); }, 5_000);
 setInterval(() => { if (shown && !client.view()) render(); }, 1_000);
 setInterval(() => { if (!document.hidden && client.view()) { pageIndex++; render(); } }, 10_000);
 if (!navigator.onLine) client.invalidate('offline');
-render(); void refresh();
+const live = watchQueue({
+  url: `/api/public/queues/${encodeURIComponent(document.getElementById('queue-display').dataset.slug)}/events?audience=display`,
+  refresh,
+  status: value => { liveState = value; render(); },
+  disconnect: () => { client.invalidate(navigator.onLine ? 'stale' : 'offline'); render(); },
+  confirm: () => client.confirmFreshness(),
+});
+render();

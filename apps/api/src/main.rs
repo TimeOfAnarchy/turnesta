@@ -14,6 +14,7 @@ use turnesta_api::{
     database,
     http::{self, AppState},
     payments::MockDispatcher,
+    queue_live::LiveHub,
     telemetry,
 };
 
@@ -103,7 +104,9 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         database::is_runtime_role(&pool).await?,
         "serve requires the restricted runtime database role"
     );
+    let queue_live = LiveHub::new(pool.clone());
     let state = AppState::new(pool.clone(), config.ready_timeout)
+        .with_queue_live(queue_live.clone())
         .with_auth(config.auth.clone())
         .with_payments(config.payments.clone())
         .with_web_dist(config.web_dist.clone());
@@ -112,6 +115,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         .await
         .context("could not bind HTTP listener")?;
     let address = listener.local_addr()?;
+    let queue_live_task = queue_live.start();
     tracing::info!(%address, version = env!("CARGO_PKG_VERSION"), "HTTP server listening");
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
@@ -131,6 +135,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
             tracing::info!("draining HTTP requests");
             return tokio::time::timeout(config.shutdown_timeout, async {
                 (&mut server).await.context("HTTP server failed during shutdown")?;
+                queue_live_task.await.context("live updates task failed during shutdown")?;
                 pool.close().await;
                 Ok::<(), anyhow::Error>(())
             })
@@ -139,9 +144,14 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         }
     };
 
-    tokio::time::timeout(config.shutdown_timeout, pool.close())
-        .await
-        .context("database pool shutdown deadline exceeded")?;
+    queue_live.shutdown();
+    tokio::time::timeout(config.shutdown_timeout, async {
+        queue_live_task.await.context("live updates task failed")?;
+        pool.close().await;
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .context("database pool shutdown deadline exceeded")??;
     result
 }
 
