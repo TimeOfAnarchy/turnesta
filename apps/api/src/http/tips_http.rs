@@ -106,7 +106,7 @@ impl From<TipsError> for ApiError {
 fn not_found() -> ApiError {
     ApiError::new(StatusCode::NOT_FOUND, "not_found", "Tips record not found")
 }
-fn enabled(state: &AppState) -> Result<(), ApiError> {
+pub(super) fn enabled(state: &AppState) -> Result<(), ApiError> {
     if state.payments.enabled() {
         Ok(())
     } else {

@@ -17,6 +17,14 @@ export function validTicket(value) {
     && (value.status === 'waiting' ? Number.isSafeInteger(value.people_ahead) && value.people_ahead >= 0 : value.people_ahead === null);
 }
 
+export function guestTipLink(ticket) {
+  const tip = ticket?.tips;
+  if (ticket?.status !== 'completed' || tip?.environment !== 'mock'
+      || typeof tip.display_name !== 'string' || !tip.display_name.trim()
+      || typeof tip.public_slug !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tip.public_slug)) return null;
+  return { href: `/tips/${encodeURIComponent(tip.public_slug)}`, name: tip.display_name };
+}
+
 function randomToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }

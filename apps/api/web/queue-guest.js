@@ -1,4 +1,4 @@
-import { GuestError, GuestTicketClient, guestErrorMessage, guestRequest } from '/assets/queue-client.js';
+import { GuestError, GuestTicketClient, guestErrorMessage, guestRequest, guestTipLink } from '/assets/queue-client.js';
 import { watchQueue, liveLabels } from '/assets/queue-live.js';
 
 const root = document.getElementById('guest-queue');
@@ -11,6 +11,10 @@ const ahead = document.getElementById('ticket-ahead');
 const notice = document.getElementById('guest-notice');
 const join = document.getElementById('join-button');
 const update = document.getElementById('refresh-button');
+const tipCard = document.getElementById('guest-tip');
+const tipRecipient = document.getElementById('guest-tip-recipient');
+const tipLink = document.getElementById('guest-tip-link');
+let tipFresh = false;
 let client;
 let profile;
 let busy = false;
@@ -23,6 +27,11 @@ function render() {
   const ticket = client?.ticket;
   const pending = busy || Boolean(client?.busy);
   const active = ticket && (ticket.status === 'waiting' || ticket.status === 'called');
+  const tip = tipFresh && !failure && navigator.onLine ? guestTipLink(ticket) : null;
+  tipCard.hidden = !tip;
+  tipLink.removeAttribute('href');
+  tipRecipient.textContent = '';
+  if (tip) { tipLink.href = tip.href; tipRecipient.textContent = tip.name; }
   number.hidden = !ticket; date.hidden = !ticket; ahead.hidden = ticket?.status !== 'waiting';
   if (ticket) {
     number.textContent = `№ ${String(ticket.number).padStart(3, '0')}`;
@@ -65,6 +74,7 @@ async function refresh() {
   ]);
   if (results[0].status === 'fulfilled') profile = results[0].value;
   failure = results.find((result) => result.status === 'rejected')?.reason ?? null;
+  tipFresh = !failure;
   initializing = false; busy = false; render();
   return !failure;
 }
@@ -72,13 +82,14 @@ async function refresh() {
 join.addEventListener('click', async () => {
   if (!client || busy || client.busy || !navigator.onLine) return;
   busy = true; failure = null; render();
-  try { await client.join(client.canStartNew()); }
-  catch (error) { failure = error; }
+  try { await client.join(client.canStartNew()); tipFresh = true; }
+  catch (error) { failure = error; tipFresh = false; }
   finally { busy = false; render(); }
 });
 update.addEventListener('click', () => live.refresh());
 const live = watchQueue({
   url: `/api/public/queues/${encodeURIComponent(slug)}/events?audience=guest`, refresh,
+  disconnect: () => { tipFresh = false; render(); },
   status: value => {
     const badge = document.getElementById('guest-live-status'); badge.dataset.state = value; badge.textContent = liveLabels[value]; render();
   },

@@ -195,6 +195,509 @@ fn guest_request(slug: Uuid, secret: &str, method: &str) -> Request<Body> {
         .unwrap()
 }
 
+fn tip_configuration(f: &Fixture, login: &(String, String), body: Value) -> Request<Body> {
+    Request::put(format!(
+        "/api/organizations/{}/queues/{}/tips",
+        f.tenant, f.queue
+    ))
+    .header("cookie", &login.0)
+    .header("origin", ORIGIN)
+    .header("x-csrf-token", &login.1)
+    .header("content-type", "application/json")
+    .body(Body::from(body.to_string()))
+    .unwrap()
+}
+
+fn mock_app(f: &Fixture) -> Router {
+    router(
+        AppState::new(f.runtime.clone(), Duration::from_secs(1)).with_payments(
+            turnesta_api::payments::PaymentConfig::mock(
+                &"37".repeat(32),
+                "http://127.0.0.1:8080/hooks/tips/mock",
+            )
+            .unwrap(),
+        ),
+    )
+}
+
+async fn queue_recipient(f: &Fixture, name: &str) -> turnesta_api::tips::Recipient {
+    let point = queue::get(&f.runtime, f.owner, f.tenant, f.queue)
+        .await
+        .unwrap()
+        .location_id;
+    turnesta_api::tips::create_recipient(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        point,
+        &Name::parse(name).unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn queue_tips_settings_enforce_roles_location_tenant_and_optimistic_version() {
+    use turnesta_api::queue_tips;
+    let f = Fixture::new().await;
+    let initial = queue_tips::settings(&f.runtime, f.owner, f.tenant, f.queue)
+        .await
+        .unwrap();
+    assert_eq!(initial.version, 0);
+    assert!(initial.recipient_id.is_none());
+    let recipient = queue_recipient(&f, "Team").await;
+    for role in [Role::Operator, Role::Employee] {
+        let user = f.member(role).await;
+        assert!(
+            queue_tips::settings(&f.runtime, user, f.tenant, f.queue)
+                .await
+                .is_err()
+        );
+        assert!(
+            queue_tips::configure(&f.runtime, user, f.tenant, f.queue, Some(recipient.id), 0)
+                .await
+                .is_err()
+        );
+        let mut tx = TenantSession::begin(&f.runtime, user, f.tenant)
+            .await
+            .unwrap();
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM queue.tip_settings")
+            .fetch_one(tx.connection())
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        let error = sqlx::query("INSERT INTO queue.tip_settings (tenant_id,queue_id,location_id,recipient_id) SELECT tenant_id,id,location_id,$3 FROM queue.queues WHERE tenant_id=$1 AND id=$2")
+            .bind(f.tenant).bind(f.queue).bind(recipient.id).execute(tx.connection()).await.unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("42501")
+        );
+    }
+    let manager = f.member(Role::Manager).await;
+    let (a, b) = tokio::join!(
+        queue_tips::configure(
+            &f.runtime,
+            manager,
+            f.tenant,
+            f.queue,
+            Some(recipient.id),
+            0
+        ),
+        queue_tips::configure(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Some(recipient.id),
+            0
+        ),
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    let actual = queue_tips::settings(&f.runtime, f.owner, f.tenant, f.queue)
+        .await
+        .unwrap();
+    assert_eq!(actual.version, 1);
+    assert_eq!(actual.public_slug, Some(recipient.public_slug));
+    for role in [Role::Operator, Role::Employee] {
+        let user = f.member(role).await;
+        let mut tx = TenantSession::begin(&f.runtime, user, f.tenant)
+            .await
+            .unwrap();
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM queue.tip_settings")
+            .fetch_one(tx.connection())
+            .await
+            .unwrap();
+        assert_eq!(
+            rows, 0,
+            "private settings became visible after configuration"
+        );
+        let updated = sqlx::query("UPDATE queue.tip_settings SET recipient_id=NULL")
+            .execute(tx.connection())
+            .await
+            .unwrap();
+        assert_eq!(updated.rows_affected(), 0);
+        tx.commit().await.unwrap();
+    }
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let elsewhere = tx
+        .create_location(&Name::parse("Other point").unwrap(), "UTC")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let wrong_point = turnesta_api::tips::create_recipient(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        elsewhere.id,
+        &Name::parse("Elsewhere").unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        queue_tips::configure(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Some(wrong_point.id),
+            1
+        )
+        .await,
+        Err(PublicQueueError::NotFound)
+    ));
+    let other = Fixture::new().await;
+    let foreign = queue_recipient(&other, "Foreign").await;
+    assert!(matches!(
+        queue_tips::configure(&f.runtime, f.owner, f.tenant, f.queue, Some(foreign.id), 1).await,
+        Err(PublicQueueError::NotFound)
+    ));
+    assert!(
+        queue_tips::settings(&f.runtime, other.owner, f.tenant, f.queue)
+            .await
+            .is_err()
+    );
+    let error =
+        sqlx::query("UPDATE tips.recipients SET location_id=$3 WHERE tenant_id=$1 AND id=$2")
+            .bind(f.tenant)
+            .bind(recipient.id)
+            .bind(elsewhere.id)
+            .execute(&f.migrator)
+            .await
+            .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let error = sqlx::query(
+        "UPDATE queue.tip_settings SET recipient_id=$3 WHERE tenant_id=$1 AND queue_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(f.queue)
+    .bind(wrong_point.id)
+    .execute(tx.connection())
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    drop(tx);
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn completed_guest_tips_keep_capability_ttl_and_disabled_mode_boundaries() {
+    use turnesta_api::queue_tips;
+    let mut f = Fixture::new().await;
+    let disabled_app = f.app.clone();
+    f.app = mock_app(&f);
+    let slug = f.publish().await;
+    let recipient = queue_recipient(&f, "Team <script>").await;
+    queue_tips::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some(recipient.id),
+        0,
+    )
+    .await
+    .unwrap();
+    let (secret, hash) = token();
+    let (_, waiting) = f.json(guest_request(slug, &secret, "POST")).await;
+    assert!(waiting["tips"].is_null());
+    let called = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    assert!(f.json(guest_request(slug, &secret, "GET")).await.1["tips"].is_null());
+    f.staff(Command::Complete {
+        ticket_id: called.id,
+    })
+    .await;
+    let (_, done) = f.json(guest_request(slug, &secret, "GET")).await;
+    assert_eq!(
+        done["tips"],
+        json!({"public_slug":recipient.public_slug,"display_name":"Team <script>","environment":"mock"})
+    );
+    assert!(!done.to_string().contains(&secret));
+    assert!(!done.to_string().contains(&recipient.id.to_string()));
+    assert_eq!(f.json(guest_request(slug, &secret, "POST")).await.1, done);
+    let disabled = disabled_app
+        .oneshot(guest_request(slug, &secret, "GET"))
+        .await
+        .unwrap();
+    let disabled: Value =
+        serde_json::from_slice(&to_bytes(disabled.into_body(), 64 * 1024).await.unwrap()).unwrap();
+    assert!(disabled["tips"].is_null());
+    assert_eq!(
+        f.json(guest_request(slug, &token().0, "GET")).await.0,
+        StatusCode::NOT_FOUND
+    );
+    let replacement = queue_recipient(&f, "New team").await;
+    queue_tips::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some(replacement.id),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        public::ticket(&f.runtime, slug, &hash)
+            .await
+            .unwrap()
+            .tips
+            .unwrap()
+            .public_slug,
+        replacement.public_slug
+    );
+    queue_tips::configure(&f.runtime, f.owner, f.tenant, f.queue, None, 2)
+        .await
+        .unwrap();
+    assert!(f.json(guest_request(slug, &secret, "GET")).await.1["tips"].is_null());
+    queue_tips::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some(recipient.id),
+        3,
+    )
+    .await
+    .unwrap();
+    let (_, cancelled_hash) = token();
+    public::issue(&f.runtime, slug, &cancelled_hash)
+        .await
+        .unwrap();
+    let cancelled = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    f.staff(Command::Cancel {
+        ticket_id: cancelled.id,
+    })
+    .await;
+    assert!(
+        public::ticket(&f.runtime, slug, &cancelled_hash)
+            .await
+            .unwrap()
+            .tips
+            .is_none()
+    );
+    // Same terminal TTL as the ticket; tip access cannot extend it.
+    sqlx::query("UPDATE queue.tickets SET closed_at=clock_timestamp()-interval '25 hours' WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant).bind(f.queue).bind(called.id).execute(&f.migrator).await.unwrap();
+    assert_eq!(
+        f.json(guest_request(slug, &secret, "GET")).await.0,
+        StatusCode::GONE
+    );
+    assert_eq!(
+        f.json(guest_request(slug, &secret, "POST")).await.0,
+        StatusCode::GONE
+    );
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let attempts: i64 = sqlx::query_scalar("SELECT count(*) FROM tips.attempts WHERE tenant_id=$1")
+        .bind(f.tenant)
+        .fetch_one(tx.connection())
+        .await
+        .unwrap();
+    assert_eq!(
+        attempts, 0,
+        "reading or configuring a link created a payment attempt"
+    );
+    tx.commit().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn queue_tips_http_requires_management_csrf_and_explicit_nullable_recipient() {
+    let mut f = Fixture::new().await;
+    let disabled_app = f.app.clone();
+    f.app = mock_app(&f);
+    let spec = f
+        .json(Request::get("/openapi.json").body(Body::empty()).unwrap())
+        .await
+        .1;
+    assert!(
+        spec["components"]["schemas"]["ConfigureTipsRequest"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("recipient_id"))
+    );
+    let login = f.login(f.owner).await;
+    let recipient = queue_recipient(&f, "Team").await;
+    let url = format!("/api/organizations/{}/queues/{}/tips", f.tenant, f.queue);
+    assert_eq!(
+        f.json(Request::get(&url).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    for role in [Role::Operator, Role::Employee] {
+        let user = f.member(role).await;
+        let member = f.login(user).await;
+        assert_eq!(
+            f.json(
+                Request::get(&url)
+                    .header("cookie", &member.0)
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            f.json(tip_configuration(
+                &f,
+                &member,
+                json!({"recipient_id":null,"expected_version":0})
+            ))
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    let mut missing_csrf = tip_configuration(
+        &f,
+        &login,
+        json!({"recipient_id":null,"expected_version":0}),
+    );
+    missing_csrf.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(missing_csrf).await.0, StatusCode::FORBIDDEN);
+    let mut wrong_origin = tip_configuration(
+        &f,
+        &login,
+        json!({"recipient_id":null,"expected_version":0}),
+    );
+    wrong_origin
+        .headers_mut()
+        .insert("origin", "https://wrong.example".parse().unwrap());
+    assert_eq!(f.json(wrong_origin).await.0, StatusCode::FORBIDDEN);
+    for body in [
+        json!({"expected_version":0}),
+        json!({"recipient_id":"bad","expected_version":0}),
+        json!({"recipient_id":false,"expected_version":0}),
+        json!({"recipient_id":null,"expected_version":-1}),
+        json!({"recipient_id":null,"expected_version":0,"extra":true}),
+    ] {
+        assert_eq!(
+            f.json(tip_configuration(&f, &login, body)).await.0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (status, saved) = f
+        .json(tip_configuration(
+            &f,
+            &login,
+            json!({"recipient_id":recipient.id,"expected_version":0}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["version"], 1);
+    assert_eq!(saved["recipient_name"], "Team");
+    assert_eq!(
+        f.json(tip_configuration(
+            &f,
+            &login,
+            json!({"recipient_id":null,"expected_version":0})
+        ))
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        f.json(tip_configuration(
+            &f,
+            &login,
+            json!({"recipient_id":null,"expected_version":1})
+        ))
+        .await
+        .1["recipient_id"],
+        Value::Null
+    );
+    let disabled = disabled_app
+        .oneshot(
+            Request::get(url)
+                .header("cookie", &login.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(disabled.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let acl: bool = sqlx::query_scalar("SELECT has_function_privilege('turnesta_runtime','queue.public_ticket_with_tips(uuid,bytea)','EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_proc p, LATERAL aclexplode(p.proacl) a WHERE p.oid='queue.public_ticket_with_tips(uuid,bytea)'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE')")
+        .fetch_one(&f.migrator).await.unwrap();
+    assert!(acl);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn queue_tips_settings_wake_sse_without_publishing_recipient_or_financial_data() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let recipient = queue_recipient(&f, "Team").await;
+    let (app, hub, task) = live_app(&f);
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/public/queues/{slug}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut stream = response.into_body().into_data_stream();
+    let initial = until_event(&mut stream, "refresh").await;
+    turnesta_api::queue_tips::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some(recipient.id),
+        0,
+    )
+    .await
+    .unwrap();
+    let changed = until_event(&mut stream, "refresh").await;
+    assert_ne!(initial, changed);
+    assert!(!changed.contains(&recipient.id.to_string()));
+    assert!(!changed.contains(&recipient.public_slug.to_string()));
+    let profile = f
+        .json(
+            Request::get(format!("/api/public/queues/{slug}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .1;
+    assert!(profile.get("tips").is_none());
+    assert!(
+        !profile
+            .to_string()
+            .contains(&recipient.public_slug.to_string())
+    );
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    assert!(
+        !serde_json::to_string(&public::display(&f.runtime, slug, 0).await.unwrap())
+            .unwrap()
+            .contains(&recipient.public_slug.to_string())
+    );
+    drop(stream);
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn publication_requires_manager_and_keeps_optimistic_versions_and_tenant_isolation() {
@@ -622,7 +1125,8 @@ async fn anonymous_http_requires_capability_origin_and_strict_body_without_leaki
             "number",
             "people_ahead",
             "service_date",
-            "status"
+            "status",
+            "tips"
         ]
     );
     assert!(!created.to_string().contains(&secret));

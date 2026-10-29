@@ -384,6 +384,19 @@ body:has(dialog[open]) { overflow: hidden; }
 .queue-public-content { flex: 1; min-width: 0; }
 .queue-display-settings { padding: 27px; margin-bottom: 25px; min-width: 0; }
 .queue-display-settings h2 { font-size: 19px; line-height: 1.5; margin-bottom: 12px; }
+.queue-tips-settings { margin-bottom: 24px; padding: clamp(20px, 3vw, 30px); }
+.queue-tips-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; cursor: pointer; list-style: none; }
+.queue-tips-heading::-webkit-details-marker { display: none; }
+.queue-tips-heading > .icon { transition: transform .15s; }
+.queue-tips-settings[open] .queue-tips-heading > .icon { transform: rotate(90deg); }
+.queue-tips-settings[open] > p { margin-top: 20px; }
+.queue-tips-heading > div { flex: 1; min-width: 160px; }
+.queue-tips-heading h2 { font-size: 19px; line-height: 1.5; margin: 5px 0 0; }
+.queue-tips-symbol { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #edf4e7; color: var(--green); }
+.queue-tips-settings > p { max-width: 65ch; font-size: 13px; line-height: 1.9; color: var(--muted); }
+.queue-tips-settings form { margin-top: 22px; max-width: 640px; }
+.queue-tips-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; margin-top: 20px; }
+.queue-tips-actions .text-button { font-size: 12px; }
 .queue-display-settings p { font-size: 12px; line-height: 1.9; color: var(--muted); }
 .queue-public-access h2 { font-size: 19px; line-height: 1.5; margin-bottom: 12px; }
 .queue-public-access p { font-size: 12px; line-height: 1.9; color: var(--muted); }

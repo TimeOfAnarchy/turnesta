@@ -7,5 +7,6 @@ pub mod payments;
 pub mod queue;
 pub mod queue_live;
 pub mod queue_public;
+pub mod queue_tips;
 pub mod telemetry;
 pub mod tips;

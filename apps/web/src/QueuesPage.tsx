@@ -9,6 +9,7 @@ import { ErrorNotice, Icon, Loading, Modal, SuccessNotice } from './components';
 import { keys, useLocations, useQueues, useQueueTickets } from './queries';
 import { QueueCommands, canCloseTicket, commandError, commandLabel, ticketLabel, ticketStatusLabels } from './queueCommands';
 import { QueuePublicAccess } from './QueuePublicAccess';
+import { QueueTips } from './QueueTips';
 import { watchQueue, liveLabels } from './queueLive.mjs';
 import type { LiveStatus } from './queueLive.mjs';
 import './queueLive.css';
@@ -156,6 +157,7 @@ function QueueWorkplace({ tenant, queueId }: { tenant: string; queueId: string }
     <div className="page-heading queue-workplace-heading"><div><p className="eyebrow">РАБОЧЕЕ МЕСТО ОПЕРАТОРА</p><h1>{queue.data.name}<span className="heading-dot">.</span></h1><p className="page-intro">{point?.name ?? 'Очередь точки'}{point ? ` · ${point.time_zone.replaceAll('_', ' ')}` : ''}</p></div><button type="button" className="button secondary" onClick={() => { void refresh(); }} disabled={queue.isFetching || tickets.isFetching || mine.isFetching}><Icon name="refresh"/>Обновить</button></div>
     <div className="queue-update-hint"><span className="queue-live-status" data-state={liveStatus} role="status" aria-live="polite">{liveLabels[liveStatus]}</span></div>
     <QueuePublicAccess tenant={tenant} queue={queueId} canManage={canManage}/>
+    {canManage && <QueueTips tenant={tenant} queue={queueId} location={queue.data.location_id}/>}
     {!online && <div className="conflict-notice" role="status"><strong>Нет подключения</strong><p>Действия недоступны. После восстановления связи повторите нужное действие вручную.</p></div>}
     {queue.isError && <ErrorNotice error={queue.error} retry={() => { void refresh(); }}/>}
     {canOperate && mine.isError && <ErrorNotice error={mine.error} retry={() => { void mine.refetch(); }}/>}

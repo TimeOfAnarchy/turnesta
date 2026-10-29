@@ -59,13 +59,22 @@ pub struct PublicProfile {
     pub join_open: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, sqlx::FromRow, ToSchema)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+pub struct PublicTipLink {
+    pub public_slug: Uuid,
+    pub display_name: String,
+    pub environment: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 pub struct PublicTicket {
     pub number: i32,
     pub service_date: String,
     pub status: TicketStatus,
     pub issued_at: String,
     pub people_ahead: Option<i64>,
+    #[serde(default)]
+    pub tips: Option<PublicTipLink>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -229,11 +238,13 @@ pub async fn ticket(
     slug: Uuid,
     token_hash: &[u8; 32],
 ) -> Result<PublicTicket, PublicQueueError> {
-    Ok(sqlx::query_as("SELECT * FROM queue.public_ticket($1, $2)")
-        .bind(slug)
-        .bind(token_hash.as_slice())
-        .fetch_one(pool)
-        .await?)
+    let result: sqlx::types::Json<PublicTicket> =
+        sqlx::query_scalar("SELECT queue.public_ticket_with_tips($1, $2)")
+            .bind(slug)
+            .bind(token_hash.as_slice())
+            .fetch_one(pool)
+            .await?;
+    Ok(result.0)
 }
 
 pub async fn issue(
@@ -245,11 +256,24 @@ pub async fn issue(
     sqlx::query("SET LOCAL lock_timeout = '2s'")
         .execute(&mut *tx)
         .await?;
-    let result = sqlx::query_as("SELECT * FROM queue.public_issue($1, $2)")
+    let result: sqlx::types::Json<PublicTicket> =
+        sqlx::query_scalar("SELECT to_jsonb(ticket) FROM queue.public_issue($1, $2) ticket")
+            .bind(slug)
+            .bind(token_hash.as_slice())
+            .fetch_one(&mut *tx)
+            .await?;
+    let result = if result.0.status == TicketStatus::Completed {
+        sqlx::query_scalar::<_, sqlx::types::Json<PublicTicket>>(
+            "SELECT queue.public_ticket_with_tips($1, $2)",
+        )
         .bind(slug)
         .bind(token_hash.as_slice())
         .fetch_one(&mut *tx)
-        .await?;
+        .await?
+        .0
+    } else {
+        result.0
+    };
     tx.commit().await?;
     Ok(result)
 }

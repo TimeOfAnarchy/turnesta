@@ -27,6 +27,7 @@ mod api;
 mod queue_events;
 mod queue_http;
 mod queue_public_http;
+mod queue_tips_http;
 mod tips_http;
 
 #[derive(Clone)]
@@ -148,6 +149,8 @@ struct ErrorResponse {
         queue_public_http::settings,
         queue_public_http::configure,
         queue_public_http::configure_display,
+        queue_tips_http::settings,
+        queue_tips_http::configure,
         queue_public_http::display,
         queue_events::staff,
         queue_events::public,
@@ -198,6 +201,9 @@ struct ErrorResponse {
         queue_public_http::IssueRequest,
         crate::queue_public::PublicProfile,
         crate::queue_public::PublicTicket,
+        crate::queue_public::PublicTipLink,
+        crate::queue_tips::TipSettings,
+        queue_tips_http::ConfigureTipsRequest,
         crate::queue_public::DisplayTicket,
         crate::queue_public::PublicDisplay
     ))
@@ -226,6 +232,7 @@ pub fn router(state: AppState) -> Router {
         .merge(queue_http::routes())
         .merge(queue_events::routes())
         .merge(queue_public_http::routes())
+        .merge(queue_tips_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)

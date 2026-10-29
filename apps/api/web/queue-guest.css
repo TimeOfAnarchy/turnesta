@@ -28,5 +28,13 @@ button { font: inherit; cursor: pointer; min-height: 49px; border: 1px solid #d9
 button:disabled { cursor: not-allowed; opacity: .6; }
 :focus-visible { outline: 3px solid #5b8971; outline-offset: 4px; }
 .privacy-note, footer { font-size: 11px; line-height: 1.9; color: #718074; margin: 24px 6px; }
+.guest-tip { margin-top: 20px; padding: clamp(20px, 5vw, 28px); border-radius: 18px; border: 1px solid #dce6d2; background: #edf4e7; }
+.guest-tip-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.guest-tip-heart { font-size: 32px; line-height: 1; color: #477452; }
+.guest-tip-badge { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #586e51; }
+.guest-tip h2 { font-size: clamp(20px, 5vw, 23px); margin-bottom: 12px; }
+.guest-tip p { font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.guest-tip-link { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 17px; border-radius: 9px; margin: 20px 0 14px; font-size: 14px; font-weight: 600; line-height: 1.6; text-decoration: none; }
+.guest-tip .guest-tip-note { color: #61745a; font-size: 11px; margin-bottom: 0; }
 footer { border-top: 1px solid #e1e6dd; padding-top: 22px; margin-top: 36px; text-align: center; }
 @media (max-width: 380px) { .guest-page { padding: 25px 18px; } .ticket-card { padding: 24px 20px; } h1 { font-size: 28px; } }

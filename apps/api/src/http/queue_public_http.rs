@@ -419,9 +419,11 @@ pub(super) async fn ticket(
 ) -> Result<Json<PublicTicket>, ApiError> {
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
-    Ok(Json(
-        bounded(queue_public::ticket(&state.pool, slug, &access.0)).await?,
-    ))
+    let mut ticket = bounded(queue_public::ticket(&state.pool, slug, &access.0)).await?;
+    if !state.payments.enabled() {
+        ticket.tips = None;
+    }
+    Ok(Json(ticket))
 }
 
 #[utoipa::path(post, path="/api/public/queues/{slug}/ticket", tag="queue-public", security(("queueTicket"=[])), params(("slug"=Uuid,Path)), request_body=IssueRequest, responses((status=200,body=PublicTicket),(status=409,description="Issuance paused"),(status=429,description="Queue budget or waiting capacity exceeded")))]
@@ -436,9 +438,11 @@ pub(super) async fn issue(
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Json(_) = body.map_err(|_| ApiError::bad_request())?;
-    Ok(Json(
-        bounded(queue_public::issue(&state.pool, slug, &access.0)).await?,
-    ))
+    let mut ticket = bounded(queue_public::issue(&state.pool, slug, &access.0)).await?;
+    if !state.payments.enabled() {
+        ticket.tips = None;
+    }
+    Ok(Json(ticket))
 }
 
 #[derive(Template)]
