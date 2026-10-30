@@ -23,6 +23,551 @@ use uuid::Uuid;
 
 const ORIGIN: &str = "http://127.0.0.1:8080";
 
+async fn service(f: &Fixture, name: &str) -> turnesta_api::catalog::Service {
+    turnesta_api::catalog::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        None,
+        turnesta_api::catalog::ServiceDraft {
+            name: &Name::parse(name).unwrap(),
+            description: "What to bring",
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap()
+}
+fn service_write(
+    f: &Fixture,
+    login: &(String, String),
+    id: Option<Uuid>,
+    body: Value,
+) -> Request<Body> {
+    let base = format!(
+        "/api/organizations/{}/queues/{}/services",
+        f.tenant, f.queue
+    );
+    Request::builder()
+        .method(if id.is_some() { "PATCH" } else { "POST" })
+        .uri(id.map(|id| format!("{base}/{id}")).unwrap_or(base))
+        .header("cookie", &login.0)
+        .header("origin", ORIGIN)
+        .header("x-csrf-token", &login.1)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn catalog_roles_rls_versions_and_point_links_are_enforced() {
+    use turnesta_api::catalog::{self, ServiceDraft};
+    let f = Fixture::new().await;
+    let other = Fixture::new().await;
+    let s = service(&f, "Repair").await;
+    let foreign = service(&other, "Foreign").await;
+    for role in [Role::Operator, Role::Employee] {
+        let user = f.member(role).await;
+        assert_eq!(
+            catalog::list(&f.runtime, user, f.tenant, f.queue, None, 50)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            catalog::save(
+                &f.runtime,
+                user,
+                f.tenant,
+                f.queue,
+                Some((s.id, 1)),
+                ServiceDraft {
+                    name: &Name::parse("Changed").unwrap(),
+                    description: "",
+                    enabled: false
+                }
+            )
+            .await
+            .is_err()
+        );
+        let mut tx = TenantSession::begin(&f.runtime, user, f.tenant)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query("UPDATE catalog.services SET enabled=false")
+                .execute(tx.connection())
+                .await
+                .unwrap()
+                .rows_affected(),
+            0
+        );
+        tx.commit().await.unwrap();
+    }
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+        .bind(other.tenant.to_string())
+        .execute(tx.connection())
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM catalog.services")
+            .fetch_one(tx.connection())
+            .await
+            .unwrap(),
+        0
+    );
+    tx.commit().await.unwrap();
+    let error=sqlx::query("INSERT INTO queue.service_links (tenant_id,queue_id,location_id,service_id) SELECT tenant_id,id,location_id,$3 FROM queue.queues WHERE tenant_id=$1 AND id=$2")
+        .bind(f.tenant).bind(f.queue).bind(foreign.id).execute(&f.migrator).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    // Keep an owned Name for the asynchronous draft borrow.
+    let name = Name::parse("New name").unwrap();
+    let manager = f.member(Role::Manager).await;
+    let (a, b) = tokio::join!(
+        catalog::save(
+            &f.runtime,
+            manager,
+            f.tenant,
+            f.queue,
+            Some((s.id, 1)),
+            ServiceDraft {
+                name: &name,
+                description: "",
+                enabled: false
+            }
+        ),
+        catalog::save(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Some((s.id, 1)),
+            ServiceDraft {
+                name: &name,
+                description: "",
+                enabled: false
+            }
+        )
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    assert_eq!(
+        catalog::list(&f.runtime, f.owner, f.tenant, f.queue, None, 50)
+            .await
+            .unwrap()[0]
+            .version,
+        2
+    );
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn services_preserve_ticket_snapshots_staff_replay_and_legacy_json() {
+    use turnesta_api::catalog::{self, ServiceDraft};
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let s = service(&f, "Original name").await;
+    let key = Uuid::new_v4();
+    let command = Command::Issue {
+        service_id: Some(s.id),
+    };
+    let original = queue::execute(&f.runtime, f.owner, f.tenant, f.queue, key, command.clone())
+        .await
+        .unwrap();
+    let (_, hash) = token();
+    let guest = public::issue_for_service(&f.runtime, slug, &hash, Some(s.id))
+        .await
+        .unwrap();
+    assert_eq!(guest.service_name.as_deref(), Some("Original name"));
+    let mut legacy = serde_json::to_value(&original).unwrap();
+    legacy["ticket"]
+        .as_object_mut()
+        .unwrap()
+        .remove("service_id");
+    legacy["ticket"]
+        .as_object_mut()
+        .unwrap()
+        .remove("service_name");
+    let restored: queue::CommandResult = serde_json::from_value(legacy).unwrap();
+    assert!(restored.ticket.unwrap().service_name.is_none());
+    let legacy_command: Command = serde_json::from_value(json!({"type":"issue"})).unwrap();
+    assert_eq!(
+        serde_json::to_value(&legacy_command).unwrap(),
+        json!({"type":"issue"})
+    );
+    catalog::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some((s.id, 1)),
+        ServiceDraft {
+            name: &Name::parse("Renamed").unwrap(),
+            description: "",
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        queue::execute(&f.runtime, f.owner, f.tenant, f.queue, key, command)
+            .await
+            .unwrap(),
+        original
+    );
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            key,
+            Command::Issue { service_id: None }
+        )
+        .await,
+        Err(queue::QueueError::IdempotencyConflict)
+    ));
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Uuid::new_v4(),
+            Command::Issue {
+                service_id: Some(s.id)
+            }
+        )
+        .await,
+        Err(queue::QueueError::ServiceUnavailable)
+    ));
+    public::configure(&f.runtime, f.owner, f.tenant, f.queue, false, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        public::issue_for_service(&f.runtime, slug, &hash, Some(Uuid::new_v4()))
+            .await
+            .unwrap(),
+        guest
+    );
+    assert_eq!(
+        public::ticket(&f.runtime, slug, &hash)
+            .await
+            .unwrap()
+            .service_name
+            .as_deref(),
+        Some("Original name")
+    );
+    let list = queue::tickets(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        queue::TicketPage {
+            limit: 50,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        list.iter()
+            .all(|t| t.service_name.as_deref() == Some("Original name"))
+    );
+    assert_eq!(
+        f.staff(Command::Issue { service_id: None })
+            .await
+            .ticket
+            .unwrap()
+            .service_name,
+        None
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_service_race_has_one_visit_and_different_queue_cannot_be_selected() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let a = service(&f, "A").await;
+    let b = service(&f, "B").await;
+    let (_, hash) = token();
+    let (first, second) = tokio::join!(
+        public::issue_for_service(&f.runtime, slug, &hash, Some(a.id)),
+        public::issue_for_service(&f.runtime, slug, &hash, Some(b.id))
+    );
+    let first = first.unwrap();
+    assert_eq!(first, second.unwrap());
+    assert_eq!(first.number, 1);
+    assert!([Some("A"), Some("B")].contains(&first.service_name.as_deref()));
+    let point = queue::get(&f.runtime, f.owner, f.tenant, f.queue)
+        .await
+        .unwrap()
+        .location_id;
+    let other_queue = queue::create(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        point,
+        &Name::parse("Other queue").unwrap(),
+    )
+    .await
+    .unwrap();
+    let other_slug = public::configure(&f.runtime, f.owner, f.tenant, other_queue.id, true, 0)
+        .await
+        .unwrap()
+        .public_slug
+        .unwrap();
+    let (_, invalid) = token();
+    assert!(matches!(
+        public::issue_for_service(&f.runtime, other_slug, &invalid, Some(a.id)).await,
+        Err(PublicQueueError::ServiceUnavailable)
+    ));
+    assert_eq!(
+        public::issue(&f.runtime, other_slug, &invalid)
+            .await
+            .unwrap()
+            .number,
+        1,
+        "failed service issuance consumed a number"
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM queue.guest_claims WHERE tenant_id=$1 AND queue_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(f.queue)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn service_archive_serializes_before_public_issue_without_leaving_a_claim() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let s = service(&f, "Repair").await;
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM queue.queues WHERE tenant_id=$1 AND id=$2 FOR UPDATE")
+        .bind(f.tenant)
+        .bind(f.queue)
+        .execute(tx.connection())
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE catalog.services SET enabled=false,version=version+1 WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(f.tenant)
+    .bind(s.id)
+    .execute(tx.connection())
+    .await
+    .unwrap();
+    let pool = f.runtime.clone();
+    let (_, hash) = token();
+    let mut task =
+        tokio::spawn(
+            async move { public::issue_for_service(&pool, slug, &hash, Some(s.id)).await },
+        );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut task)
+            .await
+            .is_err()
+    );
+    tx.commit().await.unwrap();
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(PublicQueueError::ServiceUnavailable)
+    ));
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM queue.guest_claims WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(
+        public::issue(&f.runtime, slug, &hash).await.unwrap().number,
+        1
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn services_http_checks_management_origin_strict_payloads_and_public_projection() {
+    let f = Fixture::new().await;
+    let login = f.login(f.owner).await;
+    let payload =
+        json!({"name":"Consultation <script>","description":"Bring a document","enabled":true});
+    let mut request = service_write(&f, &login, None, payload.clone());
+    request.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(request).await.0, StatusCode::FORBIDDEN);
+    for role in [Role::Operator, Role::Employee] {
+        let member = f.member(role).await;
+        let login = f.login(member).await;
+        assert_eq!(
+            f.json(service_write(&f, &login, None, payload.clone()))
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    for invalid in [
+        json!({"name":"","description":"","enabled":true}),
+        json!({"name":"Name","description":"bad\nline","enabled":true}),
+        json!({"name":"Name","description":"","enabled":true,"extra":true}),
+    ] {
+        assert_eq!(
+            f.json(service_write(&f, &login, None, invalid)).await.0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (status, saved) = f.json(service_write(&f, &login, None, payload)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = Uuid::parse_str(saved["id"].as_str().unwrap()).unwrap();
+    let slug = f.publish().await;
+    let url = format!("/api/public/queues/{slug}/services");
+    let (status, page) = f
+        .json(Request::get(&url).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["items"][0].as_object().unwrap().len(), 3);
+    for suffix in [
+        "?limit=0",
+        "?limit=101",
+        "?after=bad",
+        "?extra=1",
+        "?limit=1&limit=2",
+    ] {
+        assert_eq!(
+            f.json(
+                Request::get(format!("{url}{suffix}"))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        f.json(
+            Request::get(format!("/api/public/queues/{}/services", Uuid::new_v4()))
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (secret, _) = token();
+    let mut issue = guest_request(slug, &secret, "POST");
+    *issue.body_mut() = Body::from(json!({"service_id":id}).to_string());
+    let (_, ticket) = f.json(issue).await;
+    assert_eq!(ticket["service_name"], "Consultation <script>");
+    assert!(ticket.get("service_id").is_none());
+    let changed = json!({"name":"New name","description":"","enabled":false,"expected_version":1});
+    assert_eq!(
+        f.json(service_write(&f, &login, Some(id), changed.clone()))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.json(service_write(&f, &login, Some(id), changed)).await.0,
+        StatusCode::CONFLICT
+    );
+    assert!(
+        f.json(Request::get(url).body(Body::empty()).unwrap())
+            .await
+            .1["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        f.json(guest_request(slug, &secret, "GET")).await.1["service_name"],
+        "Consultation <script>"
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn services_keyset_pages_and_sse_revision_do_not_publish_service_on_display() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let s = service(&f, "A").await;
+    service(&f, "B").await;
+    let first = public::services(&f.runtime, slug, None, 1).await.unwrap();
+    assert_eq!(first.len(), 2);
+    let next = public::services(&f.runtime, slug, Some(first[0].id), 1)
+        .await
+        .unwrap();
+    assert_eq!(next.len(), 1);
+    assert_ne!(first[0].id, next[0].id);
+    let (app, hub, task) = live_app(&f);
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/public/queues/{slug}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut stream = response.into_body().into_data_stream();
+    let before = until_event(&mut stream, "refresh").await;
+    turnesta_api::catalog::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some((s.id, 1)),
+        turnesta_api::catalog::ServiceDraft {
+            name: &Name::parse("Changed service").unwrap(),
+            description: "",
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+    let after = until_event(&mut stream, "refresh").await;
+    assert_ne!(before, after);
+    assert!(!after.contains(&s.id.to_string()));
+    assert!(!after.contains("Changed service"));
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    let active = public::services(&f.runtime, slug, None, 50).await.unwrap();
+    let (_, hash) = token();
+    public::issue_for_service(&f.runtime, slug, &hash, Some(active[0].id))
+        .await
+        .unwrap();
+    assert!(f.staff(Command::CallNext {}).await.ticket.is_some());
+    let display =
+        serde_json::to_value(public::display(&f.runtime, slug, 0).await.unwrap()).unwrap();
+    for called in display["called"].as_array().unwrap() {
+        assert_eq!(called.as_object().unwrap().len(), 2);
+    }
+    drop(stream);
+    stop_live(hub, task).await;
+    f.close().await;
+}
+
 async fn pool(variable: &str, connections: u32) -> PgPool {
     let pool = PgPoolOptions::new()
         .max_connections(connections)
@@ -755,7 +1300,11 @@ async fn publication_requires_manager_and_keeps_optimistic_versions_and_tenant_i
 async fn guest_replay_and_staff_share_fifo_numbers_and_current_private_ticket_state() {
     let f = Fixture::new().await;
     let slug = f.publish().await;
-    let staff = f.staff(Command::Issue {}).await.ticket.unwrap();
+    let staff = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
     let (_, first) = token();
     let (_, second) = token();
     let (a, b) = tokio::join!(
@@ -1040,12 +1589,12 @@ async fn private_grants_and_narrow_functions_work_without_a_tenant_context() {
         .await
         .unwrap();
     assert_eq!(hidden, 0);
-    let grants_safe: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.pronamespace='queue'::regnamespace AND p.proname IN ('public_profile','public_ticket','public_issue','allocate_ticket') AND a.grantee=0 AND a.privilege_type='EXECUTE')")
+    let grants_safe: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) a WHERE p.pronamespace='queue'::regnamespace AND p.proname IN ('public_profile','public_ticket','public_issue','allocate_ticket','public_ticket_with_tips','public_ticket_with_service','public_services') AND a.grantee=0 AND a.privilege_type='EXECUTE')")
         .fetch_one(&f.runtime).await.unwrap();
     assert!(grants_safe);
-    let functions_safe: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_proc WHERE pronamespace='queue'::regnamespace AND proname IN ('public_profile','public_ticket','public_issue') AND prosecdef AND 'search_path=pg_catalog'=ANY(proconfig)")
+    let functions_safe: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_proc WHERE pronamespace='queue'::regnamespace AND proname IN ('public_profile','public_ticket','public_issue','public_ticket_with_tips','public_ticket_with_service','public_services') AND prosecdef AND 'search_path=pg_catalog'=ANY(proconfig)")
         .fetch_one(&f.runtime).await.unwrap();
-    assert_eq!(functions_safe, 3);
+    assert_eq!(functions_safe, 7);
     let employee = f.member(Role::Employee).await;
     let mut tx = TenantSession::begin(&f.runtime, employee, f.tenant)
         .await
@@ -1125,6 +1674,7 @@ async fn anonymous_http_requires_capability_origin_and_strict_body_without_leaki
             "number",
             "people_ahead",
             "service_date",
+            "service_name",
             "status",
             "tips"
         ]
@@ -1383,10 +1933,18 @@ async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_
     public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
         .await
         .unwrap();
-    let old = f.staff(Command::Issue {}).await.ticket.unwrap();
+    let old = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
     sqlx::query("UPDATE queue.tickets SET service_date=service_date-1 WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
         .bind(f.tenant).bind(f.queue).bind(old.id).execute(&f.migrator).await.unwrap();
-    let new = f.staff(Command::Issue {}).await.ticket.unwrap();
+    let new = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
     sqlx::query("UPDATE queue.tickets SET number=1 WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
         .bind(f.tenant)
         .bind(f.queue)
@@ -1406,7 +1964,7 @@ async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_
     )
     .await
     .unwrap();
-    f.staff(Command::Issue {}).await;
+    f.staff(Command::Issue { service_id: None }).await;
     let snapshot = public::display(&f.runtime, slug, 0).await.unwrap();
     assert_eq!(snapshot.called_count, 2);
     assert_eq!(snapshot.waiting_count, 1);
@@ -1536,7 +2094,7 @@ async fn display_http_is_anonymous_strict_and_never_cached_even_when_disabled() 
     public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
         .await
         .unwrap();
-    f.staff(Command::Issue {}).await;
+    f.staff(Command::Issue { service_id: None }).await;
     f.staff(Command::CallNext {}).await;
     let (status, body) = f
         .json(Request::get(&url).body(Body::empty()).unwrap())

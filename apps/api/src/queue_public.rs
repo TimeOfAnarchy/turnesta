@@ -25,6 +25,8 @@ pub enum PublicQueueError {
     RateLimit,
     #[error("queue waiting capacity exceeded")]
     Capacity,
+    #[error("selected service is unavailable")]
+    ServiceUnavailable,
 }
 
 impl From<sqlx::Error> for PublicQueueError {
@@ -36,6 +38,7 @@ impl From<sqlx::Error> for PublicQueueError {
             Some("Q2004") => Self::Closed,
             Some("Q2005") => Self::RateLimit,
             Some("Q2006") => Self::Capacity,
+            Some("Q2010") => Self::ServiceUnavailable,
             _ => Self::Database(error),
         }
     }
@@ -75,6 +78,32 @@ pub struct PublicTicket {
     pub people_ahead: Option<i64>,
     #[serde(default)]
     pub tips: Option<PublicTipLink>,
+    #[serde(default)]
+    pub service_name: Option<String>,
+}
+
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
+pub struct PublicService {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+}
+
+pub async fn services(
+    pool: &PgPool,
+    slug: Uuid,
+    after: Option<Uuid>,
+    limit: i32,
+) -> Result<Vec<PublicService>, PublicQueueError> {
+    profile(pool, slug).await?;
+    Ok(
+        sqlx::query_as("SELECT * FROM queue.public_services($1,$2,$3)")
+            .bind(slug)
+            .bind(after)
+            .bind(limit.clamp(1, 100))
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -239,7 +268,7 @@ pub async fn ticket(
     token_hash: &[u8; 32],
 ) -> Result<PublicTicket, PublicQueueError> {
     let result: sqlx::types::Json<PublicTicket> =
-        sqlx::query_scalar("SELECT queue.public_ticket_with_tips($1, $2)")
+        sqlx::query_scalar("SELECT queue.public_ticket_with_service($1, $2)")
             .bind(slug)
             .bind(token_hash.as_slice())
             .fetch_one(pool)
@@ -252,28 +281,26 @@ pub async fn issue(
     slug: Uuid,
     token_hash: &[u8; 32],
 ) -> Result<PublicTicket, PublicQueueError> {
+    issue_for_service(pool, slug, token_hash, None).await
+}
+
+pub async fn issue_for_service(
+    pool: &PgPool,
+    slug: Uuid,
+    token_hash: &[u8; 32],
+    service: Option<Uuid>,
+) -> Result<PublicTicket, PublicQueueError> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL lock_timeout = '2s'")
         .execute(&mut *tx)
         .await?;
     let result: sqlx::types::Json<PublicTicket> =
-        sqlx::query_scalar("SELECT to_jsonb(ticket) FROM queue.public_issue($1, $2) ticket")
+        sqlx::query_scalar("SELECT queue.public_issue($1,$2,$3)")
             .bind(slug)
             .bind(token_hash.as_slice())
+            .bind(service)
             .fetch_one(&mut *tx)
             .await?;
-    let result = if result.0.status == TicketStatus::Completed {
-        sqlx::query_scalar::<_, sqlx::types::Json<PublicTicket>>(
-            "SELECT queue.public_ticket_with_tips($1, $2)",
-        )
-        .bind(slug)
-        .bind(token_hash.as_slice())
-        .fetch_one(&mut *tx)
-        .await?
-        .0
-    } else {
-        result.0
-    };
     tx.commit().await?;
-    Ok(result)
+    Ok(result.0)
 }

@@ -141,6 +141,11 @@ impl From<PublicQueueError> for ApiError {
                 "queue_capacity",
                 "Queue waiting capacity reached",
             ),
+            PublicQueueError::ServiceUnavailable => Self::new(
+                StatusCode::CONFLICT,
+                "service_unavailable",
+                "Selected service is unavailable",
+            ),
         }
     }
 }
@@ -154,7 +159,7 @@ async fn bounded<T>(
         .map_err(Into::into)
 }
 
-fn permit(state: &AppState) -> Result<SemaphorePermit<'_>, ApiError> {
+pub(super) fn permit(state: &AppState) -> Result<SemaphorePermit<'_>, ApiError> {
     state.public_gate.try_acquire().map_err(|_| {
         ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -242,7 +247,9 @@ pub(super) struct DisplayQuery {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub(super) struct IssueRequest {}
+pub(super) struct IssueRequest {
+    service_id: Option<Uuid>,
+}
 
 #[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,body=SettingsResponse)))]
 pub(super) async fn settings(
@@ -437,8 +444,14 @@ pub(super) async fn issue(
     check_origin(&headers, &state.auth)?;
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
-    let Json(_) = body.map_err(|_| ApiError::bad_request())?;
-    let mut ticket = bounded(queue_public::issue(&state.pool, slug, &access.0)).await?;
+    let Json(body) = body.map_err(|_| ApiError::bad_request())?;
+    let mut ticket = bounded(queue_public::issue_for_service(
+        &state.pool,
+        slug,
+        &access.0,
+        body.service_id,
+    ))
+    .await?;
     if !state.payments.enabled() {
         ticket.tips = None;
     }

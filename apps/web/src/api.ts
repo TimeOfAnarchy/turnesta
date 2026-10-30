@@ -9,12 +9,15 @@ export type TipRecipientDraft = { display_name: string; location_id: string };
 export type TipAttemptStatus = 'awaiting_payment' | 'succeeded' | 'failed' | 'expired';
 export type TipAttempt = { id: string; recipient_id: string; recipient_name: string; amount_minor: number; currency: 'RUB'; status: TipAttemptStatus; environment: 'mock'; created_at: string };
 export type Queue = { id: string; tenant_id: string; location_id: string; name: string; version: number };
+export type Service = { id: string; name: string; description: string; enabled: boolean; version: number };
+export type ServiceDraft = Pick<Service, 'name' | 'description' | 'enabled'>;
 export type TicketStatus = 'waiting' | 'called' | 'completed' | 'cancelled';
 export type Ticket = {
   id: string; queue_id: string; position: number; service_date: string; number: number;
   status: TicketStatus; called_by: string | null; issued_at: string; called_at: string | null; closed_at: string | null;
+  service_id?: string | null; service_name?: string | null;
 };
-export type QueueCommand = { type: 'issue' } | { type: 'call_next' } | { type: 'complete'; ticket_id: string } | { type: 'cancel'; ticket_id: string };
+export type QueueCommand = { type: 'issue'; service_id?: string } | { type: 'call_next' } | { type: 'complete'; ticket_id: string } | { type: 'cancel'; ticket_id: string };
 export type QueueCommandResult = { queue_id: string; version: number; ticket: Ticket | null };
 export type QueuePublicAccess = { public_url: string | null; qr_url: string | null; join_open: boolean; display_enabled: boolean; display_url: string | null; version: number };
 export type QueueTipSettings = { recipient_id: string | null; recipient_name: string | null; public_slug: string | null; version: number };
@@ -109,6 +112,9 @@ export const api = {
   queue: (tenant: string, queue: string, signal: AbortSignal) => request<Queue>(queueUrl(tenant, queue), { signal }),
   queueEventsUrl: (tenant: string, queue: string) => `${queueUrl(tenant, queue)}/events`,
   queuePublicAccess: (tenant: string, queue: string, signal: AbortSignal) => request<QueuePublicAccess>(`${queueUrl(tenant, queue)}/public-access`, { signal }),
+  queueServices: (tenant: string, queue: string, after: string | null, signal: AbortSignal) => request<Page<Service>>(pageUrl(`${queueUrl(tenant, queue)}/services`, after), { signal }),
+  createService: (tenant: string, queue: string, draft: ServiceDraft) => request<Service>(`${queueUrl(tenant, queue)}/services`, { method: 'POST', body: JSON.stringify(draft) }),
+  updateService: (tenant: string, queue: string, service: string, draft: ServiceDraft, expected_version: number) => request<Service>(`${queueUrl(tenant, queue)}/services/${encodeURIComponent(service)}`, { method: 'PATCH', body: JSON.stringify({ ...draft, expected_version }) }),
   queueTipSettings: (tenant: string, queue: string, signal: AbortSignal) => request<QueueTipSettings>(`${queueUrl(tenant, queue)}/tips`, { signal }),
   configureQueueTips: (tenant: string, queue: string, recipient_id: string | null, expected_version: number) => request<QueueTipSettings>(`${queueUrl(tenant, queue)}/tips`, {
     method: 'PUT', body: JSON.stringify({ recipient_id, expected_version }),

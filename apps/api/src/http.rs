@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod catalog_http;
 mod queue_events;
 mod queue_http;
 mod queue_public_http;
@@ -151,6 +152,10 @@ struct ErrorResponse {
         queue_public_http::configure_display,
         queue_tips_http::settings,
         queue_tips_http::configure,
+        catalog_http::services,
+        catalog_http::create,
+        catalog_http::update,
+        catalog_http::public_services,
         queue_public_http::display,
         queue_events::staff,
         queue_events::public,
@@ -201,6 +206,12 @@ struct ErrorResponse {
         queue_public_http::IssueRequest,
         crate::queue_public::PublicProfile,
         crate::queue_public::PublicTicket,
+        crate::catalog::Service,
+        crate::queue_public::PublicService,
+        catalog_http::ServicePage,
+        catalog_http::PublicServicePage,
+        catalog_http::ServiceInput,
+        catalog_http::UpdateInput,
         crate::queue_public::PublicTipLink,
         crate::queue_tips::TipSettings,
         queue_tips_http::ConfigureTipsRequest,
@@ -233,6 +244,7 @@ pub fn router(state: AppState) -> Router {
         .merge(queue_events::routes())
         .merge(queue_public_http::routes())
         .merge(queue_tips_http::routes())
+        .merge(catalog_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)

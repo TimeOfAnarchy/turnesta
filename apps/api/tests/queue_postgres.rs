@@ -229,7 +229,7 @@ async fn concurrent_issue_and_call_preserve_fifo_and_unique_numbers() {
                 tenant,
                 queue,
                 Uuid::new_v4(),
-                Command::Issue {},
+                Command::Issue { service_id: None },
             )
             .await
             .unwrap()
@@ -287,8 +287,8 @@ async fn idempotency_replays_original_results_and_empty_calls() {
     assert!(empty.ticket.is_none());
     let issue_key = Uuid::new_v4();
     let (a, b) = tokio::join!(
-        f.command(f.owner, issue_key, Command::Issue {}),
-        f.command(f.owner, issue_key, Command::Issue {})
+        f.command(f.owner, issue_key, Command::Issue { service_id: None }),
+        f.command(f.owner, issue_key, Command::Issue { service_id: None })
     );
     let issued = a.unwrap();
     assert_eq!(issued, b.unwrap());
@@ -314,7 +314,7 @@ async fn idempotency_replays_original_results_and_empty_calls() {
         .unwrap();
     assert_eq!(completed.ticket.unwrap().status, TicketStatus::Completed);
     assert_eq!(
-        f.command(f.owner, issue_key, Command::Issue {})
+        f.command(f.owner, issue_key, Command::Issue { service_id: None })
             .await
             .unwrap(),
         issued
@@ -329,7 +329,7 @@ async fn idempotency_replays_original_results_and_empty_calls() {
     assert_eq!(f.tickets(None).await[0].status, TicketStatus::Completed);
     // Keys belong to an actor and queue, not the entire organization.
     let operator = f.member(Role::Operator).await;
-    f.command(operator, issue_key, Command::Issue {})
+    f.command(operator, issue_key, Command::Issue { service_id: None })
         .await
         .unwrap();
     let other = queue::create(
@@ -347,7 +347,7 @@ async fn idempotency_replays_original_results_and_empty_calls() {
         f.tenant,
         other.id,
         issue_key,
-        Command::Issue {},
+        Command::Issue { service_id: None },
     )
     .await
     .unwrap();
@@ -362,7 +362,11 @@ async fn lifecycle_enforces_assignment_and_serializes_terminal_races() {
     let operator = f.member(Role::Operator).await;
     let other = f.member(Role::Operator).await;
     let id = f
-        .command(operator, Uuid::new_v4(), Command::Issue {})
+        .command(
+            operator,
+            Uuid::new_v4(),
+            Command::Issue { service_id: None },
+        )
         .await
         .unwrap()
         .ticket
@@ -421,7 +425,11 @@ async fn lifecycle_enforces_assignment_and_serializes_terminal_races() {
         .unwrap();
     assert!(result.ticket.is_none());
     let waiting = f
-        .command(operator, Uuid::new_v4(), Command::Issue {})
+        .command(
+            operator,
+            Uuid::new_v4(),
+            Command::Issue { service_id: None },
+        )
         .await
         .unwrap()
         .ticket
@@ -470,7 +478,7 @@ async fn old_day_tickets_remain_first_while_daily_number_restarts() {
         .bind(f.tenant).bind(f.queue).execute(tx.connection()).await.unwrap();
     tx.commit().await.unwrap();
     let new = f
-        .command(f.owner, Uuid::new_v4(), Command::Issue {})
+        .command(f.owner, Uuid::new_v4(), Command::Issue { service_id: None })
         .await
         .unwrap()
         .ticket
@@ -496,9 +504,15 @@ async fn rls_roles_and_composite_references_isolate_queue_data() {
     let employee = f.member(Role::Employee).await;
     let operator = f.member(Role::Operator).await;
     let key = Uuid::new_v4();
-    f.command(f.owner, key, Command::Issue {}).await.unwrap();
+    f.command(f.owner, key, Command::Issue { service_id: None })
+        .await
+        .unwrap();
     other
-        .command(other.owner, Uuid::new_v4(), Command::Issue {})
+        .command(
+            other.owner,
+            Uuid::new_v4(),
+            Command::Issue { service_id: None },
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -509,7 +523,8 @@ async fn rls_roles_and_composite_references_isolate_queue_data() {
         1
     );
     assert!(matches!(
-        f.command(employee, key, Command::Issue {}).await,
+        f.command(employee, key, Command::Issue { service_id: None })
+            .await,
         Err(QueueError::Forbidden)
     ));
     assert!(matches!(
@@ -601,7 +616,7 @@ async fn queue_lock_timeout_rolls_back_and_other_queues_continue() {
         .unwrap();
     let key = Uuid::new_v4();
     let (blocked, independent) = tokio::join!(
-        f.command(f.owner, key, Command::Issue {}),
+        f.command(f.owner, key, Command::Issue { service_id: None }),
         tokio::time::timeout(
             Duration::from_secs(1),
             queue::execute(
@@ -610,7 +625,7 @@ async fn queue_lock_timeout_rolls_back_and_other_queues_continue() {
                 f.tenant,
                 other.id,
                 Uuid::new_v4(),
-                Command::Issue {}
+                Command::Issue { service_id: None }
             )
         ),
     );
@@ -622,7 +637,7 @@ async fn queue_lock_timeout_rolls_back_and_other_queues_continue() {
     lock.commit().await.unwrap();
     assert!(f.tickets(None).await.is_empty());
     let ticket = f
-        .command(f.owner, key, Command::Issue {})
+        .command(f.owner, key, Command::Issue { service_id: None })
         .await
         .unwrap()
         .ticket
@@ -813,7 +828,7 @@ async fn http_setup_pagination_roles_and_openapi_match_contract() {
     assert!(second.1["next_cursor"].is_null());
     assert_ne!(first.1["items"][0]["id"], second.1["items"][0]["id"]);
     for _ in 0..3 {
-        f.command(f.owner, Uuid::new_v4(), Command::Issue {})
+        f.command(f.owner, Uuid::new_v4(), Command::Issue { service_id: None })
             .await
             .unwrap();
     }
@@ -891,7 +906,7 @@ async fn http_mine_filter_uses_authenticated_actor_and_preserves_shared_read_acc
     let f = Fixture::new().await;
     let operator = f.member(Role::Operator).await;
     for _ in 0..2 {
-        f.command(f.owner, Uuid::new_v4(), Command::Issue {})
+        f.command(f.owner, Uuid::new_v4(), Command::Issue { service_id: None })
             .await
             .unwrap();
     }

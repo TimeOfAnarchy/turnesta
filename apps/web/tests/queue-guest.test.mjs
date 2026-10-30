@@ -6,12 +6,65 @@ import { GuestError, GuestTicketClient, validTicket } from '../../api/web/queue-
 afterEach(() => { mock.restoreAll(); delete globalThis.document; });
 const slug = '12be86da-ec57-48ba-b831-05a4430737d4';
 const secretA = 'ab'.repeat(32), secretB = 'cd'.repeat(32);
+const serviceA='4e6bf8ac-6d1e-4e6d-aefb-f81b74d724cc',serviceB='4200b74b-3029-4e50-985d-6f0457efcc1e';
 const waiting = { number: 7, service_date: '2026-10-28', status: 'waiting', issued_at: '2026-10-28T12:00:00.000Z', people_ahead: 1 };
 function storage() { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; }
 function locks() {
   let previous = Promise.resolve();
   return { request: (_key, callback) => { const result = previous.then(callback); previous = result.catch(() => {}); return result; } };
 }
+
+test('service intention and credential persist atomically before POST, and reload retries the original choice', async()=>{
+  const saved=storage(),lock=locks();let first;
+  first=new GuestTicketClient(slug,saved,lock,async(method,token,service)=>{
+    assert.deepEqual(JSON.parse(saved.getItem(first.storageKey)),{version:2,token:secretA,service_id:serviceA});
+    assert.equal(service,serviceA);throw new TypeError('lost reply');
+  },()=>secretA);
+  await assert.rejects(first.join(false,serviceA));
+  let requests=0;
+  const restored=new GuestTicketClient(slug,saved,lock,async(method,token,service)=>{requests++;assert.equal(token,secretA);assert.equal(service,serviceA);return {...waiting,service_name:'Repair'};},()=>secretB);
+  assert.equal(requests,0);
+  await restored.join(false,serviceB);
+  assert.equal(restored.ticket.service_name,'Repair');assert.equal(requests,1);
+});
+test('an explicit service rejection permits another choice with the SAME visit key',async()=>{
+  const saved=storage(),sent=[];let count=0;
+  const client=new GuestTicketClient(slug,saved,locks(),async(method,token,service)=>{sent.push([token,service]);if(!count++)throw new GuestError(409,'service_unavailable');return {...waiting,service_name:'Consultation'};},()=>secretA);
+  await assert.rejects(client.join(false,serviceA));assert.equal(client.serviceRejected,true);
+  await client.join(false,serviceB);
+  assert.deepEqual(sent,[[secretA,serviceA],[secretA,serviceB]]);assert.equal(client.serviceRejected,false);
+});
+test('two tabs share the first persisted service choice and legacy credentials stay unclassified',async()=>{
+  const saved=storage(),lock=locks(),seen=[];
+  const send=async(method,token,service)=>{seen.push([token,service]);return waiting;};
+  const a=new GuestTicketClient(slug,saved,lock,send,()=>secretA),b=new GuestTicketClient(slug,saved,lock,send,()=>secretB);
+  await Promise.all([a.join(false,serviceA),b.join(false,serviceB)]);
+  assert.deepEqual(seen,[[secretA,serviceA],[secretA,serviceA]]);
+  const old=storage();old.setItem(a.storageKey,secretA);
+  const legacy=new GuestTicketClient(slug,old,lock,async(method,token,service)=>{assert.equal(service,null);return waiting;});
+  await legacy.join(false,serviceB);
+});
+test('failed atomic service persistence prevents POST; malformed service records cannot be restored',async()=>{
+  let sent=0;
+  const client=new GuestTicketClient(slug,{getItem:()=>null,setItem:()=>{throw new Error('quota');}},locks(),async()=>{sent++;return waiting;},()=>secretA);
+  await assert.rejects(client.join(false,serviceA));assert.equal(sent,0);
+  for(const record of [{version:2,token:secretA,service_id:'wrong'},{version:2,token:[secretA],service_id:serviceA}]) {
+    assert.throws(()=>new GuestTicketClient(slug,{getItem:()=>JSON.stringify(record)},locks()),error=>error.code==='saved_ticket_invalid');
+  }
+});
+
+test('a service rejection from the old visit cannot overwrite another tab\'s new service intention',async()=>{
+  const saved=storage();let count=0;
+  const client=new GuestTicketClient(slug,saved,locks(),async(method,token,service)=>{
+    if(!count++)throw new GuestError(409,'service_unavailable');
+    assert.equal(token,secretB);assert.equal(service,serviceB);return waiting;
+  },()=>secretA);
+  await assert.rejects(client.join(false,serviceA));
+  const newRecord=JSON.stringify({version:2,token:secretB,service_id:serviceB});
+  saved.setItem(client.storageKey,newRecord);
+  await client.join(false,serviceA);
+  assert.equal(saved.getItem(client.storageKey),newRecord);
+});
 
 test('credential is stored before issuance; lost response and reload never auto-issue', async () => {
   const saved = storage(), lock = locks(); const requests = [];

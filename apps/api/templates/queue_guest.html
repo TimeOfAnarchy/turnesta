@@ -20,9 +20,17 @@
       <h2 id="ticket-heading" aria-live="polite" aria-atomic="true">Загружаем очередь…</h2>
       <p class="ticket-number" id="ticket-number" hidden></p>
       <p id="ticket-date" hidden></p>
+      <p class="ticket-service" id="ticket-service" hidden></p>
       <p class="ticket-message" id="ticket-message"></p>
       <p id="ticket-ahead" hidden></p>
       <p class="guest-notice" id="guest-notice" role="status" aria-live="polite"></p>
+      <div class="guest-service-choice" id="guest-service-choice" hidden>
+        <label for="guest-service">С чем вы пришли? <span>· необязательно</span></label>
+        <select id="guest-service"><option value="">Без уточнения услуги</option></select>
+        <p id="guest-service-description"></p>
+        <button type="button" class="service-more secondary" id="guest-service-more" hidden>Показать ещё услуги</button>
+        <p>Выбор поможет сотруднику подготовиться. Порядок очереди остаётся общим.</p>
+      </div>
       <div class="guest-actions">
         <button type="button" class="primary" id="join-button" hidden>Получить талон</button>
         <button type="button" class="secondary" id="refresh-button">Обновить</button>

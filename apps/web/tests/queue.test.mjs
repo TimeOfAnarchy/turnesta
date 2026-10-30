@@ -14,6 +14,15 @@ function storage() {
   return { entries, getItem: (key) => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value), removeItem: (key) => entries.delete(key) };
 }
 
+test('operator service choice survives journal reload unchanged and definitive unavailability clears it',async()=>{
+  const saved=storage(),service_id='4e6bf8ac-6d1e-4e6d-aefb-f81b74d724cc';
+  const first=new QueueCommands(scope,saved,async()=>{throw new TypeError('lost reply');});
+  await assert.rejects(first.run({type:'issue',service_id}));
+  const oldKey=first.pending.key;
+  const restored=new QueueCommands(scope,saved,async(s,p)=>{assert.equal(p.key,oldKey);assert.deepEqual(p.command,{type:'issue',service_id});throw new ApiError(409,'service_unavailable');});
+  await assert.rejects(restored.run());assert.equal(restored.pending,null);
+});
+
 test('lost response survives reload; only explicit retry sends the same key and payload', async () => {
   const saved = storage();
   const requests = [];

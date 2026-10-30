@@ -68,6 +68,11 @@ impl From<QueueError> for ApiError {
                 "active_ticket",
                 "Complete or cancel your current ticket first",
             ),
+            QueueError::ServiceUnavailable => Self::new(
+                StatusCode::CONFLICT,
+                "service_unavailable",
+                "Selected service is unavailable",
+            ),
         }
     }
 }

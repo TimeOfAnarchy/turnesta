@@ -11,7 +11,14 @@ export const keys = {
   queues: (tenant: string, location: string) => ['organization', tenant, 'queues', location] as const,
   queue: (tenant: string, queue: string) => ['organization', tenant, 'queue', queue] as const,
   tickets: (tenant: string, queue: string) => [...keys.queue(tenant, queue), 'tickets'] as const,
+  services: (tenant: string, queue: string) => [...keys.queue(tenant, queue), 'services'] as const,
 };
+
+export function useQueueServices(tenant: string, queue: string) {
+  return useInfiniteQuery({ queryKey: keys.services(tenant, queue), initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => api.queueServices(tenant, queue, pageParam, signal),
+    getNextPageParam: page => page.next_cursor ?? undefined, retry: false });
+}
 
 export function useOrganizations() {
   return useInfiniteQuery({

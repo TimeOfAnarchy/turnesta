@@ -20,6 +20,13 @@ h2 { font-size: 22px; line-height: 1.4; margin: 0 0 17px; }
 .guest-notice { font-size: 13px; line-height: 1.8; color: #718074; margin: 16px 0; }
 .guest-error { color: #965844; background: #fcf3ee; border: 1px solid #edd3c8; border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.8; }
 .guest-actions { display: grid; gap: 12px; margin-top: 24px; }
+.ticket-service { font-size:14px; font-weight:650; color:#234b39; line-height:1.8; overflow-wrap:anywhere; }
+.guest-service-choice { border-top:1px solid #e1e6dd; padding-top:20px; margin-top:20px; }
+.guest-service-choice label { display:block; font-size:14px; font-weight:650; line-height:1.7; margin-bottom:10px; }
+.guest-service-choice label span { font-weight:400; color:#718074; font-size:12px; }
+.guest-service-choice select { display:block; width:100%; max-width:100%; min-width:0; font:inherit; font-size:14px; min-height:49px; border:1px solid #d9e1d2; border-radius:9px; background:#f9fbf6; color:#234b39; padding:12px; }
+.guest-service-choice p { font-size:11px; color:#718074; line-height:1.8; margin-bottom:0; overflow-wrap:anywhere; }
+.guest-service-choice .service-more { font-size:12px; padding:8px 12px; min-height:40px; margin-top:12px; }
 button { font: inherit; cursor: pointer; min-height: 49px; border: 1px solid #d9e1d2; border-radius: 9px; padding: 12px 17px; line-height: 1.6; font-size: 14px; font-weight: 600; }
 .primary { background: #234b39; border-color: #234b39; color: #fff; }
 .primary:hover:not(:disabled) { background: #183c2c; }
