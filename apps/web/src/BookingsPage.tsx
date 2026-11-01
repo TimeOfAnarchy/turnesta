@@ -6,6 +6,7 @@ import { ApiError, errorMessage } from './api';
 import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
 import { keys, useLocations } from './queries';
 import { OfferEditor, CatalogEditor } from './BookingEditors';
+import { PublicBookingSettings } from './PublicBookingSettings';
 import {
   RecordAppointmentEditor,
   AppointmentEditor,
@@ -711,6 +712,11 @@ function Schedule({
           open={(item) => open({ kind: 'appointment', item })}
         />
       )}
+      <PublicBookingSettings
+        tenant={tenant}
+        location={location}
+        canManage={canManage}
+      />
       <details className="booking-settings panel">
         <summary>
           <Icon name="settings" />

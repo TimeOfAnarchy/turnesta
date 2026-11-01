@@ -14,6 +14,10 @@ use turnesta_api::{
     bookings::{
         self, BookingCommand as Command, BookingError, BookingResource, OfferState, Timing,
     },
+    bookings_public::{
+        self as public_bookings, BookingFieldKind, BookingForm, BookingFormField,
+        PublicBookingError as PubError, PublicBookingInput,
+    },
     core::{CoreError, LocationId, Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
 };
@@ -268,7 +272,7 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
     assert_eq!(item.phone, "+7 (900) 000-00-00");
     assert_eq!(item.email, "client@example.test");
     assert_eq!(item.note, "Позвонить перед визитом\nПосле 10:00");
-    assert_eq!(item.created_by, f.owner);
+    assert_eq!(item.created_by, Some(f.owner));
     assert_eq!(item.starts_at, timed.starts_at);
     assert_eq!(item.specialist_name, "Doctor");
     let cancelled = appointment_execute(
@@ -729,7 +733,7 @@ async fn appointments_operator_permissions_rls_scope_and_replay_revocation() {
     let a = appointment_execute(&f, operator, key, cmd.clone())
         .await
         .unwrap();
-    assert_eq!(a.created_by, operator);
+    assert_eq!(a.created_by, Some(operator));
     assert!(matches!(
         appointments::get(&f.runtime, employee, f.tenant, f.point, a.id).await,
         Err(BookingError::Core(CoreError::Forbidden))
@@ -1848,5 +1852,766 @@ async fn booking_database_mode_constraints_and_independent_specialists() {
     ));
     let denied:bool=sqlx::query_scalar("SELECT NOT has_schema_privilege('turnesta_worker','bookings','USAGE') AND NOT has_table_privilege('turnesta_runtime','bookings.offers','DELETE')").fetch_one(&f.runtime).await.unwrap();
     assert!(denied);
+    f.close().await;
+}
+
+fn future_day(zone: &str, days: i64) -> String {
+    jiff::Timestamp::now()
+        .checked_add(jiff::SignedDuration::from_hours(days * 24))
+        .unwrap()
+        .in_tz(zone)
+        .unwrap()
+        .strftime("%Y-%m-%d")
+        .to_string()
+}
+fn public_input(offer: &bookings::Offer) -> PublicBookingInput {
+    PublicBookingInput {
+        offer_id: offer.id,
+        offer_version: offer.version,
+        specialist_version: 1,
+        form_version: 1,
+        time_zone: offer.time_zone.clone(),
+        answers: std::collections::BTreeMap::from([
+            ("client_name".into(), "Private Customer".into()),
+            ("phone".into(), "+7 (900) 000-00-00".into()),
+            ("email".into(), "private@example.test".into()),
+            ("note".into(), "Private note".into()),
+        ]),
+    }
+}
+async fn publish(f: &Fixture, form: BookingForm) -> Uuid {
+    public_bookings::configure(&f.runtime, f.owner, f.tenant, f.point, true, form, 0)
+        .await
+        .unwrap()
+        .public_slug
+        .unwrap()
+}
+async fn public_day(
+    f: &Fixture,
+    slug: Uuid,
+    date: &str,
+    specialist: Option<Uuid>,
+    after: Option<Uuid>,
+    version: Option<&str>,
+    limit: i32,
+) -> Result<public_bookings::BookingAvailability, PubError> {
+    public_bookings::availability(
+        &f.runtime,
+        slug,
+        public_bookings::AvailabilityQuery {
+            month: &date[..7],
+            date,
+            specialist,
+            after,
+            version,
+            limit,
+        },
+    )
+    .await
+}
+fn public_post(slug: Uuid, token: &str, body: Value) -> Request<Body> {
+    Request::post(format!("/api/public/bookings/{slug}/receipt"))
+        .header("origin", "http://127.0.0.1:8080")
+        .header("x-booking-access", token)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[test]
+fn public_booking_input_has_no_actor_or_client_status_fields() {
+    let body = json!({"offer_id":Uuid::new_v4(),"offer_version":1,"specialist_version":1,"form_version":1,"time_zone":"UTC","answers":{"client_name":"Client"}});
+    assert!(serde_json::from_value::<PublicBookingInput>(body.clone()).is_ok());
+    for field in ["source", "status", "created_by", "tenant_id", "location_id"] {
+        let mut bad = body.clone();
+        bad[field] = json!(Uuid::new_v4());
+        assert!(serde_json::from_value::<PublicBookingInput>(bad).is_err());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_opt_in_roles_versions_and_form_validation() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let initial = public_bookings::settings(&f.runtime, f.owner, f.tenant, f.point)
+        .await
+        .unwrap();
+    assert!(!initial.enabled && initial.public_slug.is_none());
+    assert_eq!(initial.version, 0);
+    assert!(matches!(
+        public_bookings::profile(&f.runtime, Uuid::new_v4()).await,
+        Err(PubError::NotFound)
+    ));
+    let operator = f.member(Role::Operator).await;
+    assert!(matches!(
+        public_bookings::configure(
+            &f.runtime,
+            operator,
+            f.tenant,
+            f.point,
+            true,
+            BookingForm::default(),
+            0
+        )
+        .await,
+        Err(PubError::Core(CoreError::Forbidden))
+    ));
+    for fields in [
+        vec![],
+        vec![BookingFormField {
+            key: "client_name".into(),
+            label: "Name".into(),
+            kind: BookingFieldKind::ClientName,
+            required: false,
+            options: vec![],
+        }],
+        vec![BookingFormField {
+            key: "field_custom".into(),
+            label: "Choice".into(),
+            kind: BookingFieldKind::Select,
+            required: true,
+            options: vec![],
+        }],
+    ] {
+        assert!(matches!(
+            public_bookings::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                f.point,
+                true,
+                BookingForm { fields },
+                0
+            )
+            .await,
+            Err(PubError::Invalid)
+        ));
+    }
+    let slug = publish(&f, BookingForm::default()).await;
+    assert!(
+        public_bookings::profile(&f.runtime, slug)
+            .await
+            .unwrap()
+            .enabled
+    );
+    assert!(matches!(
+        public_bookings::configure(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.point,
+            false,
+            BookingForm::default(),
+            0
+        )
+        .await,
+        Err(PubError::Core(CoreError::VersionConflict))
+    ));
+    let paused = public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        false,
+        BookingForm::default(),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(paused.public_slug, Some(slug));
+    let p = public_bookings::profile(&f.runtime, slug).await.unwrap();
+    assert!(!p.enabled && p.form.is_none() && p.specialists.is_empty());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_calendar_is_chronological_scoped_and_version_guarded() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let other = f.specialist().await;
+    let day = future_day("Europe/Moscow", 3);
+    let late = saved_offer(
+        &f,
+        spec.id,
+        interval(&format!("{day}T15:00"), &format!("{day}T15:30")),
+    )
+    .await;
+    let early = saved_offer(
+        &f,
+        spec.id,
+        interval(&format!("{day}T10:00"), &format!("{day}T10:30")),
+    )
+    .await;
+    saved_offer(
+        &f,
+        other.id,
+        Timing::StartOnly {
+            starts_local: format!("{day}T11:00"),
+        },
+    )
+    .await;
+    saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 4,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let page = public_day(&f, slug, &day, Some(spec.id), None, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(page.items[0].id, early.id);
+    assert_eq!(page.days[0].count, 2);
+    let next = public_day(
+        &f,
+        slug,
+        &day,
+        Some(spec.id),
+        page.next_cursor,
+        Some(&page.version),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(next.items[0].id, late.id);
+    let all = public_day(&f, slug, &day, None, None, None, 100)
+        .await
+        .unwrap();
+    assert_eq!(all.items.len(), 4);
+    public_bookings::book(&f.runtime, slug, &[1; 32], public_input(&early))
+        .await
+        .unwrap();
+    assert!(matches!(
+        public_day(
+            &f,
+            slug,
+            &day,
+            Some(spec.id),
+            page.next_cursor,
+            Some(&page.version),
+            1
+        )
+        .await,
+        Err(PubError::Changed)
+    ));
+    assert!(matches!(
+        public_day(&f, slug, &day, Some(Uuid::new_v4()), None, None, 50).await,
+        Err(PubError::Changed)
+    ));
+    assert!(matches!(
+        public_bookings::availability(
+            &f.runtime,
+            slug,
+            public_bookings::AvailabilityQuery {
+                month: "2026-99",
+                date: "2026-99-01",
+                specialist: None,
+                after: None,
+                version: None,
+                limit: 50
+            }
+        )
+        .await,
+        Err(PubError::Invalid)
+    ));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_snapshot_answers_privacy_and_replay_after_pause() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 4,
+        },
+    )
+    .await;
+    let mut form = BookingForm::default();
+    form.fields.push(BookingFormField {
+        key: "field_visit".into(),
+        label: "Цель визита".into(),
+        kind: BookingFieldKind::Select,
+        required: true,
+        options: vec!["Первый визит".into(), "Повторный".into()],
+    });
+    let slug = publish(&f, form.clone()).await;
+    let mut input = public_input(&o);
+    input
+        .answers
+        .insert("field_visit".into(), "Первый визит".into());
+    let receipt = public_bookings::book(&f.runtime, slug, &[2; 32], input.clone())
+        .await
+        .unwrap();
+    assert_eq!(receipt.status, "confirmed");
+    let raw = serde_json::to_string(&receipt).unwrap();
+    for private in [
+        "Private Customer",
+        "private@example.test",
+        "Private note",
+        "Первый визит",
+        "client_name",
+        "phone",
+        "answers",
+        "tenant_id",
+    ] {
+        assert!(!raw.contains(private));
+    }
+    let a = appointments::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: spec.id,
+            date: &future_day("Europe/Moscow", 1),
+            after: None,
+            limit: 50,
+            include_cancelled: true,
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    assert_eq!(a.source, "public");
+    assert_eq!(a.created_by, None);
+    assert_eq!(a.answers.0["field_visit"], "Первый визит");
+    assert!(a.form_snapshot.is_some());
+    form.fields.push(BookingFormField {
+        key: "field_new".into(),
+        label: "Новое поле".into(),
+        kind: BookingFieldKind::Text,
+        required: true,
+        options: vec![],
+    });
+    public_bookings::configure(&f.runtime, f.owner, f.tenant, f.point, false, form, 1)
+        .await
+        .unwrap();
+    let replay = public_bookings::book(&f.runtime, slug, &[2; 32], input.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.reference, receipt.reference);
+    let mut changed = input;
+    changed
+        .answers
+        .insert("client_name".into(), "Different".into());
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[2; 32], changed).await,
+        Err(PubError::IdempotencyConflict)
+    ));
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::UpdateClient {
+            id: a.id,
+            specialist_id: spec.id,
+            expected_version: 1,
+            client: client("Updated by staff"),
+        },
+    )
+    .await
+    .unwrap();
+    let updated = appointments::get(&f.runtime, f.owner, f.tenant, f.point, a.id)
+        .await
+        .unwrap();
+    assert_eq!(updated.source, "public");
+    assert_eq!(updated.created_by, None);
+    assert_eq!(updated.updated_by, Some(f.owner));
+    assert_eq!(updated.answers.0["client_name"], "Private Customer");
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: a.id,
+            specialist_id: spec.id,
+            expected_version: 2,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        public_bookings::receipt(&f.runtime, slug, &[2; 32])
+            .await
+            .unwrap()
+            .status,
+        "cancelled"
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_staff_race_and_alternative_share_occupancy() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let day = future_day("Europe/Moscow", 4);
+    let x = saved_offer(
+        &f,
+        spec.id,
+        interval(&format!("{day}T10:00"), &format!("{day}T11:00")),
+    )
+    .await;
+    let y = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: format!("{day}T10:30"),
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let (public, staff) = tokio::join!(
+        public_bookings::book(&f.runtime, slug, &[3; 32], public_input(&x)),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, y.id, 1, "Staff")
+        )
+    );
+    assert_eq!(usize::from(public.is_ok()) + usize::from(staff.is_ok()), 1);
+    assert!(
+        matches!(public, Err(PubError::Busy)) || matches!(staff, Err(BookingError::SpecialistBusy))
+    );
+    let available = public_day(&f, slug, &day, None, None, None, 100)
+        .await
+        .unwrap();
+    assert!(available.items.is_empty());
+    let agreement = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 1,
+        },
+    )
+    .await;
+    let (a, b) = tokio::join!(
+        public_bookings::book(&f.runtime, slug, &[4; 32], public_input(&agreement)),
+        public_bookings::book(&f.runtime, slug, &[5; 32], public_input(&agreement))
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert!(matches!(a, Err(PubError::Full)) || matches!(b, Err(PubError::Full)));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_reject_stale_versions_unknown_answers_and_past_offers() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 10,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let mut stale = public_input(&o);
+    stale.form_version = 2;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[6; 32], stale).await,
+        Err(PubError::Changed)
+    ));
+    let mut stale = public_input(&o);
+    stale.specialist_version = 2;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[6; 32], stale).await,
+        Err(PubError::Changed)
+    ));
+    for (key, value) in [
+        ("client_name", ""),
+        ("phone", "letters"),
+        ("email", "invalid"),
+        ("field_unknown", "unexpected"),
+    ] {
+        let mut invalid = public_input(&o);
+        invalid.answers.insert(key.into(), value.into());
+        assert!(matches!(
+            public_bookings::book(&f.runtime, slug, &[6; 32], invalid).await,
+            Err(PubError::Invalid)
+        ));
+    }
+    let old = future_day("Europe/Moscow", -3);
+    let past = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: format!("{old}T10:00"),
+        },
+    )
+    .await;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[6; 32], public_input(&past)).await,
+        Err(PubError::Unavailable)
+    ));
+    let foreign = Fixture::new("Europe/Moscow").await;
+    let p = foreign.specialist().await;
+    let other = saved_offer(
+        &foreign,
+        p.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 1,
+        },
+    )
+    .await;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[6; 32], public_input(&other)).await,
+        Err(PubError::Unavailable)
+    ));
+    foreign.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_quota_does_not_block_replay_or_staff() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 50,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    for n in 1..=30 {
+        public_bookings::book(&f.runtime, slug, &[n; 32], public_input(&o))
+            .await
+            .unwrap();
+    }
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[31; 32], public_input(&o)).await,
+        Err(PubError::RateLimit)
+    ));
+    public_bookings::book(&f.runtime, slug, &[1; 32], public_input(&o))
+        .await
+        .unwrap();
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, o.id, 1, "Staff unaffected"),
+    )
+    .await
+    .unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_owner_capability_boundary_cannot_be_spoofed_by_runtime() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 2,
+        },
+    )
+    .await;
+    let mut s = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    sqlx::query("SELECT set_config('app.public_booking','true',true)")
+        .execute(s.connection())
+        .await
+        .unwrap();
+    let error=sqlx::query("INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status,source,form_snapshot) VALUES($1,$2,$3,$4,$5,'Spoof','','','','confirmed','public',$6)").bind(f.tenant).bind(f.point).bind(spec.id).bind(o.id).bind(Uuid::new_v4()).bind(sqlx::types::Json(BookingForm::default())).execute(s.connection()).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    drop(s);
+    let permissions:(bool,bool,bool)=sqlx::query_as("SELECT has_table_privilege('turnesta_api','bookings.public_claims','SELECT'),has_function_privilege('turnesta_admin','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb)','EXECUTE'),has_table_privilege('turnesta_worker','bookings.appointments','SELECT')").fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(permissions, (false, false, false));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_http_capability_origin_body_and_private_projection() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 4,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let token = hex::encode([7; 32]);
+    let body = serde_json::to_value(public_input(&o)).unwrap();
+    let mut request = public_post(slug, &token, body.clone());
+    request.headers_mut().remove("x-booking-access");
+    assert_eq!(f.json(request).await.0, StatusCode::UNAUTHORIZED);
+    let mut request = public_post(slug, &token, body.clone());
+    request
+        .headers_mut()
+        .insert("origin", "https://foreign.example".parse().unwrap());
+    assert_eq!(f.json(request).await.0, StatusCode::FORBIDDEN);
+    let mut bad = body.clone();
+    bad["created_by"] = json!(f.owner);
+    assert_eq!(
+        f.json(public_post(slug, &token, bad)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, receipt) = f.json(public_post(slug, &token, body)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(receipt["reference"].is_string());
+    assert!(receipt.get("client_name").is_none() && receipt.get("answers").is_none());
+    let path = format!("/api/public/bookings/{slug}/receipt");
+    assert_eq!(
+        f.json(Request::get(&path).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let response = f
+        .app
+        .clone()
+        .oneshot(
+            Request::get(&path)
+                .header("x-booking-access", &token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert!(
+        response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors 'none'")
+    );
+    let point = future_day("Europe/Moscow", 1);
+    let path = format!(
+        "/api/public/bookings/{slug}/availability?month={}&date={point}&private=true",
+        &point[..7]
+    );
+    assert_eq!(
+        f.json(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_bookings_calendar_uses_point_timezone_and_receipt_survives_staff_move() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let day = future_day("Europe/Moscow", 4);
+    let o = saved_offer(
+        &f,
+        spec.id,
+        interval(&format!("{day}T10:00"), &format!("{day}T11:00")),
+    )
+    .await;
+    let mut s = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    s.update_location(
+        f.point,
+        &Name::parse("Clinic").unwrap(),
+        "America/New_York",
+        1,
+    )
+    .await
+    .unwrap();
+    s.commit().await.unwrap();
+    let slug = publish(&f, BookingForm::default()).await;
+    let page = public_day(&f, slug, &day, Some(spec.id), None, None, 50)
+        .await
+        .unwrap();
+    assert_eq!(page.items[0].time_zone, "America/New_York");
+    assert_eq!(page.items[0].starts_at, o.starts_at);
+    assert_ne!(page.items[0].starts_local, o.starts_local);
+    let mut input = public_input(&o);
+    input.time_zone = "America/New_York".into();
+    let r = public_bookings::book(&f.runtime, slug, &[8; 32], input)
+        .await
+        .unwrap();
+    assert_eq!(r.starts_local, page.items[0].starts_local);
+    let appointment = appointments::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: spec.id,
+            date: &day,
+            after: None,
+            limit: 10,
+            include_cancelled: false,
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let BookingResource::Offer(next) = f
+        .execute(Command::SaveOffer {
+            id: Uuid::new_v4(),
+            specialist_id: spec.id,
+            time_zone: "America/New_York".into(),
+            title: "Next".into(),
+            timing: Timing::StartOnly {
+                starts_local: format!("{day}T13:00"),
+            },
+            state: OfferState::Ready,
+            expected_version: 0,
+            conflict_token: None,
+        })
+        .await
+        .resource
+    else {
+        panic!("offer expected")
+    };
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::MoveAppointment {
+            id: appointment.id,
+            specialist_id: spec.id,
+            offer_id: next.id,
+            expected_offer_version: 1,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let changed = public_bookings::receipt(&f.runtime, slug, &[8; 32])
+        .await
+        .unwrap();
+    assert_eq!(changed.reference, r.reference);
+    assert_eq!(changed.version, 2);
+    assert_eq!(changed.time_zone, "America/New_York");
     f.close().await;
 }

@@ -489,9 +489,24 @@ export function AppointmentEditor({
                     <dd className="appointment-note">{item.note}</dd>
                   </>
                 )}
+                {item.form_snapshot?.fields
+                  .filter(
+                    (field) => field.kind === 'text' || field.kind === 'select',
+                  )
+                  .map((field) => (
+                    <div className="appointment-extra-answer" key={field.key}>
+                      <dt>{field.label}</dt>
+                      <dd className="appointment-note">
+                        {item.answers?.[field.key] || 'Не указано'}
+                      </dd>
+                    </div>
+                  ))}
               </dl>
               <p className="field-hint">
-                Создана сотрудником ·{' '}
+                {item.source === 'public'
+                  ? 'Онлайн-запись'
+                  : 'Создана сотрудником'}{' '}
+                ·{' '}
                 {new Date(item.created_at).toLocaleString('ru-RU', {
                   timeZone: item.time_zone,
                 })}

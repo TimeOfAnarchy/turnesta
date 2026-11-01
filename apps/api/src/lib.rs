@@ -15,3 +15,4 @@ pub mod tips;
 
 pub mod appointments;
 pub mod bookings;
+pub mod bookings_public;

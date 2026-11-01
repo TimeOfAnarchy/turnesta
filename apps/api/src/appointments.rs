@@ -197,12 +197,18 @@ pub struct Appointment {
     pub starts_at: Option<String>,
     pub ends_at: Option<String>,
     pub time_zone: String,
-    pub created_by: UserId,
-    pub updated_by: UserId,
+    pub created_by: Option<UserId>,
+    pub updated_by: Option<UserId>,
     pub created_at: String,
     pub updated_at: String,
     pub cancelled_at: Option<String>,
     pub version: i32,
+    #[serde(default)]
+    #[schema(value_type=Option<Object>)]
+    pub form_snapshot: Option<Json<serde_json::Value>>,
+    #[serde(default)]
+    #[schema(value_type=Object)]
+    pub answers: Json<serde_json::Value>,
 }
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", content = "item", rename_all = "snake_case")]

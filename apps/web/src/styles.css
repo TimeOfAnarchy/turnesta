@@ -619,6 +619,28 @@ body:has(dialog[open]) { overflow: hidden; }
 .appointment-contact dt { color:var(--muted); }
 .appointment-contact dd { margin:0; overflow-wrap:anywhere; }
 .appointment-note { white-space:pre-wrap; }
+.appointment-extra-answer { display:contents; }
+.booking-public-settings { margin-block:1.5rem; }
+.booking-public-settings > summary { display:flex; align-items:center; gap:.8rem; padding:1.2rem; cursor:pointer; list-style:none; }
+.booking-public-settings > summary::-webkit-details-marker { display:none; }
+.booking-public-settings > summary > span:first-of-type { display:grid; gap:.35rem; flex:1; min-width:0; }
+.booking-public-settings > summary strong { font-size:.9rem; }
+.booking-public-settings > summary span span { font-size:.75rem; color:var(--muted); }
+.booking-public-body { padding:0 clamp(1rem,3vw,1.5rem) 1.5rem; }
+.booking-public-link { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; padding:1rem; margin-bottom:1.3rem; background:#f3f5ed; border:1px solid var(--border); border-radius:.8rem; }
+.booking-public-link > div { display:grid; gap:.5rem; min-width:0; }
+.booking-public-link strong { font-size:.8rem; }
+.booking-public-link a { font-size:.75rem; color:var(--green); overflow-wrap:anywhere; }
+.booking-form-settings-title { margin:1.6rem 0 .7rem; font-size:1rem; }
+.booking-form-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-block:1.25rem; }
+.booking-form-field-config { min-width:0; padding:1rem; border:1px solid var(--border); border-radius:.8rem; }
+.booking-config-field-head { display:flex; justify-content:space-between; align-items:center; gap:.7rem; margin-bottom:.8rem; }
+.booking-config-field-head .text-button { font-size:.75rem; }
+.booking-form-field-config .checkbox-field { font-size:.8rem; }
+.booking-public-body .checkbox-field { display:flex; align-items:center; gap:.65rem; line-height:1.7; font-size:.85rem; }
+.booking-public-body .checkbox-field input { width:1rem; height:1rem; flex-shrink:0; accent-color:var(--green); }
+.booking-add-field { max-width:24rem; }
+@media(max-width:650px) { .booking-form-fields { grid-template-columns:1fr; } .booking-public-settings > summary > .booking-state { display:none; } }
 .appointment-controls { display:flex; flex-wrap:wrap; gap:.6rem; margin:1.25rem 0; align-items:center; }
 .appointment-controls .button { font-size:.75rem; padding:.65rem .8rem; }
 .appointment-cancel { background:#8e443a; color:#fff; border-color:#8e443a; }

@@ -1,6 +1,7 @@
 import { request } from './api.ts';
 import type { Page } from './api.ts';
 import type { Offer } from './bookings.ts';
+import type { BookingForm } from './publicBookings.ts';
 
 export type ClientInput = {
   client_name: string;
@@ -13,7 +14,7 @@ export type Appointment = ClientInput & {
   specialist_id: string;
   offer_id: string;
   status: 'confirmed' | 'cancelled';
-  source: 'staff';
+  source: 'staff' | 'public';
   title: string;
   specialist_name: string;
   mode: Offer['mode'];
@@ -23,12 +24,14 @@ export type Appointment = ClientInput & {
   starts_at: string | null;
   ends_at: string | null;
   time_zone: string;
-  created_by: string;
-  updated_by: string;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
   cancelled_at: string | null;
   version: number;
+  form_snapshot?: BookingForm | null;
+  answers?: Record<string, string> | null;
 };
 export type AppointmentCommand =
   | {
