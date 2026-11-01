@@ -11,6 +11,7 @@ export function validDisplay(value) {
   if (value.next_page !== (remaining > 100 ? value.page + 1 : null)
     || !Array.isArray(value.called) || value.called.length !== Math.min(100, remaining)) return false;
   return value.called.every(ticket => Number.isSafeInteger(ticket?.number) && ticket.number > 0
+    && (ticket.station_name == null || typeof ticket.station_name === 'string' && ticket.station_name.length > 0)
     && typeof ticket.service_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ticket.service_date));
 }
 

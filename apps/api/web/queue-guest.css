@@ -45,3 +45,5 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .guest-tip .guest-tip-note { color: #61745a; font-size: 11px; margin-bottom: 0; }
 footer { border-top: 1px solid #e1e6dd; padding-top: 22px; margin-top: 36px; text-align: center; }
 @media (max-width: 380px) { .guest-page { padding: 25px 18px; } .ticket-card { padding: 24px 20px; } h1 { font-size: 28px; } }
+
+.ticket-destination { font-size:clamp(1.25rem,4vw,1.75rem); font-weight:650; color:#285841; overflow-wrap:anywhere; padding:.75rem; background:#edf3e9; border-radius:.75rem; }

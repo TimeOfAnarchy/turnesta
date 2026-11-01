@@ -172,3 +172,24 @@ test('ticket labels distinguish days; operators close their own calls and manage
   assert.equal(canCloseTicket({ ...called, called_by: scope.user }, 'operator', scope.user), true);
   assert.equal(canCloseTicket({ ...called, status: 'completed' }, 'owner', scope.user), false);
 });
+
+
+test('station choice survives a lost reply and explicit recovery keeps its key and destination', async () => {
+  const saved=storage(), station_id='4e6bf8ac-6d1e-4e6d-aefb-f81b74d724cc';
+  const first=new QueueCommands(scope,saved,async()=>{throw new TypeError('lost reply');});
+  await assert.rejects(first.run({type:'call_next',station_id}));
+  const pending=structuredClone(first.pending);
+  let sends=0;
+  const restored=new QueueCommands(scope,saved,async(s,p)=>{sends++;assert.deepEqual(p,pending);return receipt;});
+  assert.equal(sends,0);await restored.run();assert.equal(sends,1);assert.equal(restored.pending,null);
+});
+
+test('definitive busy or unavailable station releases recovered command for an explicit new choice', async () => {
+  for (const code of ['station_busy','station_unavailable']) {
+    const saved=storage();
+    const first=new QueueCommands(scope,saved,async()=>{throw new TypeError('lost reply');});
+    await assert.rejects(first.run({type:'call_next',station_id:ticketId}));
+    const recovered=new QueueCommands(scope,saved,async()=>{throw new ApiError(409,code);});
+    await assert.rejects(recovered.run());assert.equal(recovered.pending,null);
+  }
+});

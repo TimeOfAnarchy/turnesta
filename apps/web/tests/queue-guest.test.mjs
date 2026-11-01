@@ -185,3 +185,10 @@ test('public configuration uses versioned PUT with CSRF; no visitor credential i
   assert.equal(validTicket({ ...waiting, status: 'called', people_ahead: 0 }), false);
   assert.equal(validTicket({ ...waiting, status: 'called', people_ahead: null }), true);
 });
+
+
+test('guest accepts legacy and current station snapshots but rejects malformed destination', () => {
+  const called={...waiting,status:'called',people_ahead:null,station_name:'Window <1>'};
+  assert.equal(validTicket(called),true);assert.equal(validTicket({...called,station_name:null}),true);
+  for(const station_name of ['',7,{}]) assert.equal(validTicket({...called,station_name}),false);
+});

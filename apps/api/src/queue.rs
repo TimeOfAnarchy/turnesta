@@ -24,6 +24,10 @@ pub enum QueueError {
     ActiveTicket,
     #[error("selected service is unavailable")]
     ServiceUnavailable,
+    #[error("selected station is unavailable")]
+    StationUnavailable,
+    #[error("selected station is busy")]
+    StationBusy,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
@@ -61,6 +65,10 @@ pub struct Ticket {
     pub service_id: Option<Uuid>,
     #[serde(default)]
     pub service_name: Option<String>,
+    #[serde(default)]
+    pub station_id: Option<Uuid>,
+    #[serde(default)]
+    pub station_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -70,7 +78,10 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         service_id: Option<Uuid>,
     },
-    CallNext {},
+    CallNext {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        station_id: Option<Uuid>,
+    },
     Complete {
         ticket_id: Uuid,
     },
@@ -196,7 +207,7 @@ pub async fn tickets(
     }
     let rows = sqlx::query_as(
         "SELECT id, queue_id, position, service_date, number, status, called_by, \
-         issued_at, called_at, closed_at, service_id, service_name FROM queue.ticket_details \
+         issued_at, called_at, closed_at, service_id, service_name, station_id, station_name FROM queue.ticket_details \
          WHERE tenant_id = $1 AND queue_id = $2 AND ($3::bigint IS NULL OR position > $3) \
          AND ($4::text IS NULL OR status = $4) \
          AND ($5::uuid IS NULL OR called_by = $5) ORDER BY position LIMIT $6",
@@ -260,7 +271,9 @@ pub async fn execute(
         Command::Issue { service_id } => {
             Some(issue(&mut session, tenant, queue, service_id).await?)
         }
-        Command::CallNext {} => call_next(&mut session, tenant, queue, user).await?,
+        Command::CallNext { station_id } => {
+            call_next(&mut session, tenant, queue, user, station_id).await?
+        }
         Command::Complete { ticket_id } | Command::Cancel { ticket_id } => {
             close(&mut session, tenant, queue, user, ticket_id, &command).await?;
             Some(ticket_id)
@@ -325,6 +338,7 @@ async fn call_next(
     tenant: TenantId,
     queue: Uuid,
     user: UserId,
+    station: Option<Uuid>,
 ) -> Result<Option<Uuid>, QueueError> {
     let active: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM queue.tickets \
@@ -338,8 +352,20 @@ async fn call_next(
     if active {
         return Err(QueueError::ActiveTicket);
     }
-    Ok(sqlx::query_scalar(
-        "UPDATE queue.tickets SET status = 'called', called_by = $3, called_at = clock_timestamp() \
+    let station_name: Option<String> = if let Some(id) = station {
+        let name = sqlx::query_scalar("SELECT name FROM queue.stations WHERE tenant_id=$1 AND queue_id=$2 AND id=$3 AND enabled")
+            .bind(tenant).bind(queue).bind(id).fetch_optional(session.connection()).await?.ok_or(QueueError::StationUnavailable)?;
+        let busy: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM queue.tickets WHERE tenant_id=$1 AND queue_id=$2 AND station_id=$3 AND status='called')")
+            .bind(tenant).bind(queue).bind(id).fetch_one(session.connection()).await?;
+        if busy {
+            return Err(QueueError::StationBusy);
+        }
+        Some(name)
+    } else {
+        None
+    };
+    sqlx::query_scalar(
+        "UPDATE queue.tickets SET status = 'called', called_by = $3, called_at = clock_timestamp(), station_id=$4, station_name=$5 \
          WHERE tenant_id = $1 AND queue_id = $2 AND id = (SELECT id FROM queue.tickets \
              WHERE tenant_id = $1 AND queue_id = $2 AND status = 'waiting' \
              ORDER BY position LIMIT 1) RETURNING id",
@@ -347,8 +373,17 @@ async fn call_next(
     .bind(tenant)
     .bind(queue)
     .bind(user)
+    .bind(station)
+    .bind(station_name)
     .fetch_optional(session.connection())
-    .await?)
+    .await
+    .map_err(|error: sqlx::Error| {
+        if error.as_database_error().and_then(|e| e.constraint()) == Some("tickets_station_active_idx") {
+            QueueError::StationBusy
+        } else {
+            QueueError::Database(error)
+        }
+    })
 }
 
 async fn read_ticket(
@@ -359,7 +394,7 @@ async fn read_ticket(
 ) -> Result<Ticket, QueueError> {
     sqlx::query_as(
         "SELECT id, queue_id, position, service_date, number, status, called_by, \
-         issued_at, called_at, closed_at, service_id, service_name FROM queue.ticket_details \
+         issued_at, called_at, closed_at, service_id, service_name, station_id, station_name FROM queue.ticket_details \
          WHERE tenant_id = $1 AND queue_id = $2 AND id = $3",
     )
     .bind(tenant)

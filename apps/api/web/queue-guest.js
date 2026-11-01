@@ -49,6 +49,9 @@ function render() {
   tipRecipient.textContent = '';
   if (tip) { tipLink.href = tip.href; tipRecipient.textContent = tip.name; }
   number.hidden = !ticket; date.hidden = !ticket; ahead.hidden = ticket?.status !== 'waiting';
+  const destination = document.getElementById('ticket-destination');
+  destination.hidden = ticket?.status !== 'called' || !ticket?.station_name || !tipFresh || Boolean(failure) || !navigator.onLine;
+  destination.textContent = ticket?.station_name ? `Подойдите: ${ticket.station_name}` : '';
   if (ticket) {
     number.textContent = `№ ${String(ticket.number).padStart(3, '0')}`;
     const [year, month, day] = ticket.service_date.split('-'); date.textContent = `${day}.${month}.${year}`;
@@ -56,7 +59,7 @@ function render() {
       heading.textContent = 'Ваш талон'; message.textContent = 'Ожидайте вызова сотрудника.';
       ahead.textContent = `Ожидающих перед вами: ${ticket.people_ahead}. Это не оценка времени ожидания.`;
     } else if (ticket.status === 'called') {
-      heading.textContent = 'Вас вызывают'; message.textContent = 'Подойдите к сотруднику точки. Ваш талон принят в обслуживание.';
+      heading.textContent = 'Вас вызывают'; message.textContent = ticket.station_name ? 'Ваш талон принят в обслуживание.' : 'Подойдите к сотруднику точки. Ваш талон принят в обслуживание.';
     } else if (ticket.status === 'completed') {
       heading.textContent = 'Обслуживание завершено'; message.textContent = 'Спасибо за визит! При необходимости можно получить новый талон.';
     } else {

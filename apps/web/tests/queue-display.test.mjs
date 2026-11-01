@@ -80,3 +80,11 @@ test('display configuration sends its own versioned PUT with CSRF and never chan
   });
   assert.equal((await api.configureQueueDisplay('tenant','queue',true,3)).join_open,false);
 });
+
+
+test('display keeps optional station labels across pages and rejects malformed labels', async () => {
+  const result=await loadDisplay(async page=>{const data=snapshot(101,page);data.called=data.called.map(t=>({...t,station_name:'Window <1>'}));return data;});
+  assert.equal(result.called[100].station_name,'Window <1>');
+  for(const invalid of ['',42,{}]) {const data=snapshot(1);data.called[0].station_name=invalid;assert.equal(validDisplay(data),false);}
+  const legacy=snapshot(1);assert.equal(validDisplay(legacy),true);
+});

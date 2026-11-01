@@ -14,6 +14,7 @@ export function validTicket(value) {
     && typeof value.service_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.service_date)
     && typeof value.issued_at === 'string' && Number.isFinite(Date.parse(value.issued_at))
     && ['waiting', 'called', 'completed', 'cancelled'].includes(value.status)
+    && (value.station_name == null || typeof value.station_name === 'string' && value.station_name.length > 0)
     && (value.service_name == null || typeof value.service_name === 'string' && value.service_name.length > 0)
     && (value.status === 'waiting' ? Number.isSafeInteger(value.people_ahead) && value.people_ahead >= 0 : value.people_ahead === null);
 }

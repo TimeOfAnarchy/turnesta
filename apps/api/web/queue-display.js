@@ -42,7 +42,9 @@ function render() {
     const card = document.createElement('div'); card.className = 'display-ticket';
     const number = document.createElement('strong'); number.textContent = `№ ${String(ticket.number).padStart(3, '0')}`;
     const date = document.createElement('span'); const [year, month, day] = ticket.service_date.split('-'); date.textContent = `${day}.${month}.${year}`;
-    card.append(number, date); calls.append(card);
+    card.append(number, date);
+    if (ticket.station_name) { const station=document.createElement('p');station.className='display-station';station.textContent=`→ ${ticket.station_name}`;card.append(station); }
+    calls.append(card);
   }
 }
 async function refresh() {

@@ -252,8 +252,16 @@ async fn concurrent_issue_and_call_preserve_fifo_and_unique_numbers() {
     assert_eq!(numbers, (1..=12).collect::<Vec<_>>());
     let operator = f.member(Role::Operator).await;
     let (first, second) = tokio::join!(
-        f.command(f.owner, Uuid::new_v4(), Command::CallNext {}),
-        f.command(operator, Uuid::new_v4(), Command::CallNext {}),
+        f.command(
+            f.owner,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None }
+        ),
+        f.command(
+            operator,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None }
+        ),
     );
     let first = first.unwrap().ticket.unwrap();
     let second = second.unwrap().ticket.unwrap();
@@ -280,7 +288,7 @@ async fn idempotency_replays_original_results_and_empty_calls() {
     let f = Fixture::new().await;
     let empty_key = Uuid::new_v4();
     let empty = f
-        .command(f.owner, empty_key, Command::CallNext {})
+        .command(f.owner, empty_key, Command::CallNext { station_id: None })
         .await
         .unwrap();
     assert_eq!(empty.version, 1);
@@ -293,18 +301,19 @@ async fn idempotency_replays_original_results_and_empty_calls() {
     let issued = a.unwrap();
     assert_eq!(issued, b.unwrap());
     assert_eq!(
-        f.command(f.owner, empty_key, Command::CallNext {})
+        f.command(f.owner, empty_key, Command::CallNext { station_id: None })
             .await
             .unwrap(),
         empty
     );
     assert!(matches!(
-        f.command(f.owner, issue_key, Command::CallNext {}).await,
+        f.command(f.owner, issue_key, Command::CallNext { station_id: None })
+            .await,
         Err(QueueError::IdempotencyConflict)
     ));
     let call_key = Uuid::new_v4();
     let called = f
-        .command(f.owner, call_key, Command::CallNext {})
+        .command(f.owner, call_key, Command::CallNext { station_id: None })
         .await
         .unwrap();
     let id = called.ticket.as_ref().unwrap().id;
@@ -320,7 +329,7 @@ async fn idempotency_replays_original_results_and_empty_calls() {
         issued
     );
     assert_eq!(
-        f.command(f.owner, call_key, Command::CallNext {})
+        f.command(f.owner, call_key, Command::CallNext { station_id: None })
             .await
             .unwrap(),
         called
@@ -385,12 +394,20 @@ async fn lifecycle_enforces_assignment_and_serializes_terminal_races() {
             .version,
         2
     );
-    f.command(operator, Uuid::new_v4(), Command::CallNext {})
-        .await
-        .unwrap();
+    f.command(
+        operator,
+        Uuid::new_v4(),
+        Command::CallNext { station_id: None },
+    )
+    .await
+    .unwrap();
     assert!(matches!(
-        f.command(operator, Uuid::new_v4(), Command::CallNext {})
-            .await,
+        f.command(
+            operator,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None }
+        )
+        .await,
         Err(QueueError::ActiveTicket)
     ));
     assert!(matches!(
@@ -420,7 +437,11 @@ async fn lifecycle_enforces_assignment_and_serializes_terminal_races() {
         4
     );
     let result = f
-        .command(operator, Uuid::new_v4(), Command::CallNext {})
+        .command(
+            operator,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None },
+        )
         .await
         .unwrap();
     assert!(result.ticket.is_none());
@@ -486,7 +507,11 @@ async fn old_day_tickets_remain_first_while_daily_number_restarts() {
     assert_eq!(new.number, 1);
     assert_eq!(new.position, 2);
     let called = f
-        .command(f.owner, Uuid::new_v4(), Command::CallNext {})
+        .command(
+            f.owner,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None },
+        )
         .await
         .unwrap()
         .ticket
@@ -911,13 +936,21 @@ async fn http_mine_filter_uses_authenticated_actor_and_preserves_shared_read_acc
             .unwrap();
     }
     let owner_ticket = f
-        .command(f.owner, Uuid::new_v4(), Command::CallNext {})
+        .command(
+            f.owner,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None },
+        )
         .await
         .unwrap()
         .ticket
         .unwrap();
     let operator_ticket = f
-        .command(operator, Uuid::new_v4(), Command::CallNext {})
+        .command(
+            operator,
+            Uuid::new_v4(),
+            Command::CallNext { station_id: None },
+        )
         .await
         .unwrap()
         .ticket

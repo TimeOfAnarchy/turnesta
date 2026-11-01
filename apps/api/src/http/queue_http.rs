@@ -68,6 +68,16 @@ impl From<QueueError> for ApiError {
                 "active_ticket",
                 "Complete or cancel your current ticket first",
             ),
+            QueueError::StationUnavailable => Self::new(
+                StatusCode::CONFLICT,
+                "station_unavailable",
+                "Selected station is unavailable",
+            ),
+            QueueError::StationBusy => Self::new(
+                StatusCode::CONFLICT,
+                "station_busy",
+                "Selected station is occupied",
+            ),
             QueueError::ServiceUnavailable => Self::new(
                 StatusCode::CONFLICT,
                 "service_unavailable",

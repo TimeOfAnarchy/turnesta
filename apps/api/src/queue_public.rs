@@ -80,6 +80,8 @@ pub struct PublicTicket {
     pub tips: Option<PublicTipLink>,
     #[serde(default)]
     pub service_name: Option<String>,
+    #[serde(default)]
+    pub station_name: Option<String>,
 }
 
 #[derive(Serialize, sqlx::FromRow, ToSchema)]
@@ -110,6 +112,8 @@ pub async fn services(
 pub struct DisplayTicket {
     pub number: i32,
     pub service_date: String,
+    #[serde(default)]
+    pub station_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]

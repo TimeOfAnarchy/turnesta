@@ -500,3 +500,16 @@ body:has(dialog[open]) { overflow: hidden; }
   .queue-pending { padding: 19px; }
   .queue-pending .button { width: 100%; white-space: normal; }
 }
+
+.queue-station-picker { margin-block:1.25rem; max-width:28rem; }
+.queue-station-destination { color:var(--green); font-weight:650; overflow-wrap:anywhere; }
+
+.queue-setup { margin-block:1rem 1.5rem; border:1px solid var(--border); border-radius:12px; background:#f9fbf6; }
+.queue-setup > summary { display:flex; align-items:center; gap:1rem; cursor:pointer; padding:1rem 1.25rem; list-style:none; }
+.queue-setup > summary::-webkit-details-marker { display:none; }
+.queue-setup > summary > span { display:grid; gap:.3rem; flex:1; min-width:0; }
+.queue-setup > summary span span { color:var(--muted); font-size:.8rem; }
+.queue-setup > summary > svg:last-child { transition:transform .15s; }
+.queue-setup[open] > summary > svg:last-child { transform:rotate(180deg); }
+.queue-setup-content { padding:0 clamp(.5rem,2vw,1.25rem) .25rem; }
+.queue-setup-content > .panel { margin-block:1rem; }

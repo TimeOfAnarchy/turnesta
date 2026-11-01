@@ -26,6 +26,8 @@ export function commandLabel(command: QueueCommand): string {
 
 export function commandError(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
+  if (error.code === 'station_busy') return 'Окно уже занято. Выберите свободное окно или дождитесь завершения обслуживания.';
+  if (error.code === 'station_unavailable') return 'Окно выключено или недоступно. Проверьте выбранное окно перед вызовом.';
   if (error.code === 'active_ticket') return 'У вас уже есть вызванный посетитель. Завершите или отмените его обслуживание.';
   if (error.code === 'service_unavailable') return 'Услуга недоступна. Выберите другую или выдайте талон без уточнения услуги.';
   if (error.code === 'state_conflict') return 'Состояние талона уже изменилось. Список обновлён — проверьте его перед следующим действием.';
@@ -36,7 +38,7 @@ export function commandError(error: unknown): string | undefined {
 function validCommand(value: unknown): value is QueueCommand {
   if (!value || typeof value !== 'object' || !('type' in value)) return false;
   const keys = Object.keys(value);
-  if (value.type === 'call_next') return keys.length === 1;
+  if (value.type === 'call_next') return keys.length === 1 || keys.length === 2 && 'station_id' in value && typeof value.station_id === 'string' && uuid.test(value.station_id);
   if (value.type === 'issue') return keys.length === 1 || keys.length === 2 && 'service_id' in value && typeof value.service_id === 'string' && uuid.test(value.service_id);
   return (value.type === 'complete' || value.type === 'cancel') && keys.length === 2
     && 'ticket_id' in value && typeof value.ticket_id === 'string' && uuid.test(value.ticket_id);
@@ -98,7 +100,7 @@ export class QueueCommands {
         // prove rollback. Retain the original key and payload for explicit retry.
         if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 401
           && error.code !== 'idempotency_conflict'
-          && (!recovering || ['state_conflict', 'active_ticket', 'service_unavailable'].includes(error.code))) this.clear();
+          && (!recovering || ['state_conflict', 'active_ticket', 'service_unavailable', 'station_busy', 'station_unavailable'].includes(error.code))) this.clear();
         throw error;
       }
       this.clear();

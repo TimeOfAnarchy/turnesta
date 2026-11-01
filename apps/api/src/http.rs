@@ -28,6 +28,7 @@ mod catalog_http;
 mod queue_events;
 mod queue_http;
 mod queue_public_http;
+mod queue_stations_http;
 mod queue_tips_http;
 mod tips_http;
 
@@ -152,6 +153,9 @@ struct ErrorResponse {
         queue_public_http::configure_display,
         queue_tips_http::settings,
         queue_tips_http::configure,
+        queue_stations_http::stations,
+        queue_stations_http::create,
+        queue_stations_http::update,
         catalog_http::services,
         catalog_http::create,
         catalog_http::update,
@@ -206,6 +210,10 @@ struct ErrorResponse {
         queue_public_http::IssueRequest,
         crate::queue_public::PublicProfile,
         crate::queue_public::PublicTicket,
+        crate::queue_stations::Station,
+        queue_stations_http::StationPage,
+        queue_stations_http::StationInput,
+        queue_stations_http::UpdateStationInput,
         crate::catalog::Service,
         crate::queue_public::PublicService,
         catalog_http::ServicePage,
@@ -245,6 +253,7 @@ pub fn router(state: AppState) -> Router {
         .merge(queue_public_http::routes())
         .merge(queue_tips_http::routes())
         .merge(catalog_http::routes())
+        .merge(queue_stations_http::routes())
         .merge(cabinet)
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)

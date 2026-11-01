@@ -13,7 +13,7 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use turnesta_api::{
     auth::login::{self, Email},
-    core::{Name, Provisioner, Role, TenantId, TenantSession, UserId},
+    core::{CoreError, Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
     queue::{self, Command, TicketStatus},
     queue_live::LiveHub,
@@ -557,11 +557,16 @@ async fn services_keyset_pages_and_sse_revision_do_not_publish_service_on_displa
     public::issue_for_service(&f.runtime, slug, &hash, Some(active[0].id))
         .await
         .unwrap();
-    assert!(f.staff(Command::CallNext {}).await.ticket.is_some());
+    assert!(
+        f.staff(Command::CallNext { station_id: None })
+            .await
+            .ticket
+            .is_some()
+    );
     let display =
         serde_json::to_value(public::display(&f.runtime, slug, 0).await.unwrap()).unwrap();
     for called in display["called"].as_array().unwrap() {
-        assert_eq!(called.as_object().unwrap().len(), 2);
+        assert_eq!(called.as_object().unwrap().len(), 3);
     }
     drop(stream);
     stop_live(hub, task).await;
@@ -600,6 +605,587 @@ struct Fixture {
     owner: UserId,
     queue: Uuid,
     app: Router,
+}
+
+async fn station(f: &Fixture, name: &str) -> turnesta_api::queue_stations::Station {
+    turnesta_api::queue_stations::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        None,
+        turnesta_api::queue_stations::StationDraft {
+            name: &Name::parse(name).unwrap(),
+            enabled: true,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn station_concurrent_calls_reserve_once_and_release_after_close() {
+    use turnesta_api::queue_stations;
+    let f = Fixture::new().await;
+    let s = station(&f, "Window 1").await;
+    let other = station(&f, "Window 2").await;
+    let operator = f.member(Role::Operator).await;
+    let first = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
+    let second = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
+    let call = Command::CallNext {
+        station_id: Some(s.id),
+    };
+    let (a, b) = tokio::join!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Uuid::new_v4(),
+            call.clone()
+        ),
+        queue::execute(
+            &f.runtime,
+            operator,
+            f.tenant,
+            f.queue,
+            Uuid::new_v4(),
+            call
+        )
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let (called, loser) = match (a, b) {
+        (Ok(result), Err(queue::QueueError::StationBusy)) => (result.ticket.unwrap(), operator),
+        (Err(queue::QueueError::StationBusy), Ok(result)) => (result.ticket.unwrap(), f.owner),
+        result => panic!("unexpected concurrent calls: {result:?}"),
+    };
+    assert_eq!(called.id, first.id);
+    let called2 = queue::execute(
+        &f.runtime,
+        loser,
+        f.tenant,
+        f.queue,
+        Uuid::new_v4(),
+        Command::CallNext {
+            station_id: Some(other.id),
+        },
+    )
+    .await
+    .unwrap()
+    .ticket
+    .unwrap();
+    assert_eq!(called2.id, second.id);
+    let states = queue_stations::list(&f.runtime, f.owner, f.tenant, f.queue, None, 50)
+        .await
+        .unwrap();
+    assert!(states.iter().all(|s| s.busy));
+    let mut raw = f.migrator.begin().await.unwrap();
+    let error = sqlx::query("UPDATE queue.tickets SET station_id=$4,station_name='Collision' WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant).bind(f.queue).bind(called2.id).bind(s.id).execute(&mut *raw).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().constraint(),
+        Some("tickets_station_active_idx")
+    );
+    raw.rollback().await.unwrap();
+    f.staff(Command::Complete {
+        ticket_id: called.id,
+    })
+    .await;
+    f.staff(Command::Cancel {
+        ticket_id: called2.id,
+    })
+    .await;
+    let third = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
+    assert_eq!(
+        f.staff(Command::CallNext {
+            station_id: Some(s.id)
+        })
+        .await
+        .ticket
+        .unwrap()
+        .id,
+        third.id
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn station_archive_serializes_with_call_and_leaves_waiting_ticket_untouched() {
+    let f = Fixture::new().await;
+    let s = station(&f, "Window 1").await;
+    let ticket = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM queue.queues WHERE tenant_id=$1 AND id=$2 FOR UPDATE")
+        .bind(f.tenant)
+        .bind(f.queue)
+        .execute(tx.connection())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE queue.stations SET enabled=false,version=version+1 WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant).bind(f.queue).bind(s.id).execute(tx.connection()).await.unwrap();
+    let pool = f.runtime.clone();
+    let owner = f.owner;
+    let tenant = f.tenant;
+    let queue = f.queue;
+    let mut task = tokio::spawn(async move {
+        queue::execute(
+            &pool,
+            owner,
+            tenant,
+            queue,
+            Uuid::new_v4(),
+            Command::CallNext {
+                station_id: Some(s.id),
+            },
+        )
+        .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut task)
+            .await
+            .is_err()
+    );
+    tx.commit().await.unwrap();
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(queue::QueueError::StationUnavailable)
+    ));
+    let result = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
+    assert_eq!(result.id, ticket.id);
+    assert!(result.station_name.is_none());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn station_changes_wake_sse_with_only_opaque_revision_hints() {
+    use turnesta_api::queue_stations::{self, StationDraft};
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let (app, hub, task) = live_app(&f);
+    let response = app
+        .oneshot(
+            Request::get(format!("/api/public/queues/{slug}/events"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut stream = response.into_body().into_data_stream();
+    let initial = until_event(&mut stream, "refresh").await;
+    let s = station(&f, "Window private-to-stream").await;
+    let created = until_event(&mut stream, "refresh").await;
+    assert_ne!(initial, created);
+    assert!(!created.contains(&s.id.to_string()));
+    assert!(!created.contains("Window"));
+    queue_stations::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some((s.id, s.version)),
+        StationDraft {
+            name: &Name::parse("Renamed").unwrap(),
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+    let updated = until_event(&mut stream, "refresh").await;
+    assert_ne!(created, updated);
+    assert!(!updated.contains("Renamed"));
+    drop(stream);
+    hub.shutdown();
+    task.await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn station_snapshot_replay_disable_and_public_projections() {
+    use turnesta_api::queue_stations::{self, StationDraft};
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    public::configure_display(&f.runtime, f.owner, f.tenant, f.queue, true, 1)
+        .await
+        .unwrap();
+    let s = station(&f, "Window <1>").await;
+    let (_, hash) = token();
+    assert!(
+        public::issue(&f.runtime, slug, &hash)
+            .await
+            .unwrap()
+            .station_name
+            .is_none()
+    );
+    let key = Uuid::new_v4();
+    let command = Command::CallNext {
+        station_id: Some(s.id),
+    };
+    let receipt = queue::execute(&f.runtime, f.owner, f.tenant, f.queue, key, command.clone())
+        .await
+        .unwrap();
+    let saved = queue_stations::save(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        Some((s.id, s.version)),
+        StationDraft {
+            name: &Name::parse("Renamed").unwrap(),
+            enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(saved.busy);
+    let guest = public::ticket(&f.runtime, slug, &hash).await.unwrap();
+    assert_eq!(guest.station_name.as_deref(), Some("Window <1>"));
+    let guest_json = serde_json::to_value(&guest).unwrap();
+    assert!(guest_json.get("station_id").is_none());
+    let display =
+        serde_json::to_value(public::display(&f.runtime, slug, 0).await.unwrap()).unwrap();
+    assert_eq!(display["called"][0]["station_name"], "Window <1>");
+    assert_eq!(display["called"][0].as_object().unwrap().len(), 3);
+    assert!(!display.to_string().contains(&s.id.to_string()));
+    assert_eq!(
+        queue::execute(&f.runtime, f.owner, f.tenant, f.queue, key, command)
+            .await
+            .unwrap(),
+        receipt
+    );
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            key,
+            Command::CallNext { station_id: None }
+        )
+        .await,
+        Err(queue::QueueError::IdempotencyConflict)
+    ));
+    f.staff(Command::Complete {
+        ticket_id: receipt.ticket.unwrap().id,
+    })
+    .await;
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Uuid::new_v4(),
+            Command::CallNext {
+                station_id: Some(s.id)
+            }
+        )
+        .await,
+        Err(queue::QueueError::StationUnavailable)
+    ));
+    assert_eq!(
+        public::ticket(&f.runtime, slug, &hash)
+            .await
+            .unwrap()
+            .station_name
+            .as_deref(),
+        Some("Window <1>")
+    );
+    assert!(
+        public::display(&f.runtime, slug, 0)
+            .await
+            .unwrap()
+            .called
+            .is_empty()
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn stations_roles_rls_fk_versions_and_pagination() {
+    use turnesta_api::queue_stations::{self, StationDraft};
+    let f = Fixture::new().await;
+    let foreign = Fixture::new().await;
+    let s = station(&f, "Window").await;
+    let foreign_station = station(&foreign, "Foreign window").await;
+    let operator = f.member(Role::Operator).await;
+    let employee = f.member(Role::Employee).await;
+    let manager = f.member(Role::Manager).await;
+    for user in [operator, employee] {
+        assert_eq!(
+            queue_stations::list(&f.runtime, user, f.tenant, f.queue, None, 50)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(matches!(
+            queue_stations::save(
+                &f.runtime,
+                user,
+                f.tenant,
+                f.queue,
+                None,
+                StationDraft {
+                    name: &Name::parse("No").unwrap(),
+                    enabled: true
+                }
+            )
+            .await,
+            Err(queue::QueueError::Forbidden)
+        ));
+        let mut tx = TenantSession::begin(&f.runtime, user, f.tenant)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query("UPDATE queue.stations SET enabled=false")
+                .execute(tx.connection())
+                .await
+                .unwrap()
+                .rows_affected(),
+            0
+        );
+        tx.commit().await.unwrap();
+    }
+    let mut tx = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true)")
+        .bind(foreign.tenant.to_string())
+        .execute(tx.connection())
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM queue.stations")
+            .fetch_one(tx.connection())
+            .await
+            .unwrap(),
+        0
+    );
+    tx.commit().await.unwrap();
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Uuid::new_v4(),
+            Command::CallNext {
+                station_id: Some(foreign_station.id)
+            }
+        )
+        .await,
+        Err(queue::QueueError::StationUnavailable)
+    ));
+    let name = Name::parse("Changed").unwrap();
+    let (a, b) = tokio::join!(
+        queue_stations::save(
+            &f.runtime,
+            manager,
+            f.tenant,
+            f.queue,
+            Some((s.id, s.version)),
+            StationDraft {
+                name: &name,
+                enabled: true
+            }
+        ),
+        queue_stations::save(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            Some((s.id, s.version)),
+            StationDraft {
+                name: &name,
+                enabled: false
+            }
+        )
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert!(
+        matches!(a, Err(queue::QueueError::Core(CoreError::VersionConflict)))
+            || matches!(b, Err(queue::QueueError::Core(CoreError::VersionConflict)))
+    );
+    station(&f, "Second").await;
+    let page = queue_stations::list(&f.runtime, f.owner, f.tenant, f.queue, None, 1)
+        .await
+        .unwrap();
+    assert_eq!(page.len(), 2);
+    let next = queue_stations::list(&f.runtime, f.owner, f.tenant, f.queue, Some(page[0].id), 1)
+        .await
+        .unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].id, page[1].id);
+    let ticket = f
+        .staff(Command::Issue { service_id: None })
+        .await
+        .ticket
+        .unwrap();
+    let mut raw = f.migrator.begin().await.unwrap();
+    let error=sqlx::query("UPDATE queue.tickets SET station_id=$4,station_name='Foreign',status='called',called_by=$5,called_at=clock_timestamp() WHERE tenant_id=$1 AND queue_id=$2 AND id=$3")
+        .bind(f.tenant).bind(f.queue).bind(ticket.id).bind(foreign_station.id).bind(f.owner).execute(&mut *raw).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    raw.rollback().await.unwrap();
+    let mut raw = f.migrator.begin().await.unwrap();
+    let error = sqlx::query(
+        "INSERT INTO queue.stations(tenant_id,queue_id,id,name) VALUES($1,$2,$3,'bad\nname')",
+    )
+    .bind(f.tenant)
+    .bind(f.queue)
+    .bind(Uuid::new_v4())
+    .execute(&mut *raw)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    raw.rollback().await.unwrap();
+    foreign.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn station_http_requires_management_csrf_and_strict_payloads() {
+    let f = Fixture::new().await;
+    let url = format!(
+        "/api/organizations/{}/queues/{}/stations",
+        f.tenant, f.queue
+    );
+    let owner = f.login(f.owner).await;
+    let operator = f.member(Role::Operator).await;
+    let operator = f.login(operator).await;
+    let post = |login: &(String, String), body: Value| {
+        Request::post(&url)
+            .header("cookie", &login.0)
+            .header("origin", ORIGIN)
+            .header("x-csrf-token", &login.1)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let body = json!({"name":"Window 1","enabled":true});
+    assert_eq!(
+        f.json(post(&operator, body.clone())).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let mut no_origin = post(&owner, body.clone());
+    no_origin.headers_mut().remove("origin");
+    assert_eq!(f.json(no_origin).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(
+        f.json(post(
+            &owner,
+            json!({"name":"Window","enabled":true,"queue_id":f.queue})
+        ))
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        f.json(post(&owner, json!({"name":"\n","enabled":true})))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, s) = f.json(post(&owner, body)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let patch = || {
+        Request::patch(format!("{url}/{}", s["id"].as_str().unwrap()))
+            .header("cookie", &owner.0)
+            .header("origin", ORIGIN)
+            .header("x-csrf-token", &owner.1)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"name":"Renamed","enabled":false,"expected_version":1}).to_string(),
+            ))
+            .unwrap()
+    };
+    assert_eq!(f.json(patch()).await.0, StatusCode::OK);
+    assert_eq!(f.json(patch()).await.0, StatusCode::CONFLICT);
+    for query in ["?unexpected=1", "?limit=0", "?limit=1&limit=2"] {
+        assert_eq!(
+            f.json(
+                Request::get(format!("{url}{query}"))
+                    .header("cookie", &owner.0)
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (status, page) = f
+        .json(
+            Request::get(&url)
+                .header("cookie", &operator.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["items"][0]["enabled"], false);
+    let command_url = format!(
+        "/api/organizations/{}/queues/{}/commands",
+        f.tenant, f.queue
+    );
+    let request = Request::post(command_url)
+        .header("cookie", &owner.0)
+        .header("origin", ORIGIN)
+        .header("x-csrf-token", &owner.1)
+        .header("idempotency-key", Uuid::new_v4().to_string())
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"type":"call_next","station_id":s["id"]}).to_string(),
+        ))
+        .unwrap();
+    let (status, error) = f.json(request).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["code"], "station_unavailable");
+    f.close().await;
+}
+
+#[test]
+fn legacy_call_and_receipt_decode_without_station() {
+    let command: Command = serde_json::from_value(json!({"type":"call_next"})).unwrap();
+    assert_eq!(command, Command::CallNext { station_id: None });
+    assert_eq!(
+        serde_json::to_value(&command).unwrap(),
+        json!({"type":"call_next"})
+    );
+    let ticket:queue::Ticket=serde_json::from_value(json!({"id":Uuid::new_v4(),"queue_id":Uuid::new_v4(),"position":1,"service_date":"2026-11-01","number":1,"status":"called","called_by":Uuid::new_v4(),"issued_at":"x","called_at":"x","closed_at":null})).unwrap();
+    assert!(ticket.station_id.is_none() && ticket.station_name.is_none());
 }
 impl Fixture {
     async fn new() -> Self {
@@ -959,7 +1545,11 @@ async fn completed_guest_tips_keep_capability_ttl_and_disabled_mode_boundaries()
     let (secret, hash) = token();
     let (_, waiting) = f.json(guest_request(slug, &secret, "POST")).await;
     assert!(waiting["tips"].is_null());
-    let called = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    let called = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
     assert!(f.json(guest_request(slug, &secret, "GET")).await.1["tips"].is_null());
     f.staff(Command::Complete {
         ticket_id: called.id,
@@ -1022,7 +1612,11 @@ async fn completed_guest_tips_keep_capability_ttl_and_disabled_mode_boundaries()
     public::issue(&f.runtime, slug, &cancelled_hash)
         .await
         .unwrap();
-    let cancelled = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    let cancelled = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
     f.staff(Command::Cancel {
         ticket_id: cancelled.id,
     })
@@ -1321,7 +1915,11 @@ async fn guest_replay_and_staff_share_fifo_numbers_and_current_private_ticket_st
     let local_date: String = sqlx::query_scalar("SELECT to_char(($1::text::timestamptz AT TIME ZONE 'Pacific/Kiritimati')::date, 'YYYY-MM-DD')")
         .bind(&a.issued_at).fetch_one(&f.runtime).await.unwrap();
     assert_eq!(a.service_date, local_date);
-    let called = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    let called = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
     assert_eq!(called.id, staff.id);
     assert_eq!(
         public::ticket(&f.runtime, slug, &first)
@@ -1334,7 +1932,11 @@ async fn guest_replay_and_staff_share_fifo_numbers_and_current_private_ticket_st
         ticket_id: called.id,
     })
     .await;
-    let called = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    let called = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
     assert_eq!(called.number, 2);
     let actual = public::issue(&f.runtime, slug, &first).await.unwrap();
     assert_eq!(actual.status, TicketStatus::Called);
@@ -1537,7 +2139,11 @@ async fn active_access_outlives_age_but_terminal_expiry_never_reuses_a_credentia
             .number,
         first.number
     );
-    let called = f.staff(Command::CallNext {}).await.ticket.unwrap();
+    let called = f
+        .staff(Command::CallNext { station_id: None })
+        .await
+        .ticket
+        .unwrap();
     f.staff(Command::Complete {
         ticket_id: called.id,
     })
@@ -1675,6 +2281,7 @@ async fn anonymous_http_requires_capability_origin_and_strict_body_without_leaki
             "people_ahead",
             "service_date",
             "service_name",
+            "station_name",
             "status",
             "tips"
         ]
@@ -1952,7 +2559,7 @@ async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_
         .execute(&f.migrator)
         .await
         .unwrap();
-    f.staff(Command::CallNext {}).await;
+    f.staff(Command::CallNext { station_id: None }).await;
     let operator = f.member(Role::Operator).await;
     queue::execute(
         &f.runtime,
@@ -1960,7 +2567,7 @@ async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_
         f.tenant,
         f.queue,
         Uuid::new_v4(),
-        Command::CallNext {},
+        Command::CallNext { station_id: None },
     )
     .await
     .unwrap();
@@ -1998,7 +2605,7 @@ async fn display_snapshot_distinguishes_dates_and_excludes_terminal_and_private_
             "waiting_count"
         ]
     );
-    assert_eq!(value["called"][0].as_object().unwrap().len(), 2);
+    assert_eq!(value["called"][0].as_object().unwrap().len(), 3);
     let serialized = value.to_string();
     for private in [
         f.tenant.to_string(),
@@ -2095,7 +2702,7 @@ async fn display_http_is_anonymous_strict_and_never_cached_even_when_disabled() 
         .await
         .unwrap();
     f.staff(Command::Issue { service_id: None }).await;
-    f.staff(Command::CallNext {}).await;
+    f.staff(Command::CallNext { station_id: None }).await;
     let (status, body) = f
         .json(Request::get(&url).body(Body::empty()).unwrap())
         .await;
