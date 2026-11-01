@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod bookings_http;
 mod catalog_http;
 mod queue_events;
 mod queue_http;
@@ -123,6 +124,11 @@ struct ErrorResponse {
 #[openapi(
     info(title = "Turnesta API", description = "Turnesta operational endpoints"),
     paths(
+        bookings_http::specialists,
+        bookings_http::presets,
+        bookings_http::offers,
+        bookings_http::command,
+        bookings_http::suggest_time,
         health,
         ready,
         api::login,
@@ -169,6 +175,21 @@ struct ErrorResponse {
         queue_public_http::issue
     ),
     components(schemas(
+        crate::bookings::Specialist,
+        crate::bookings::Preset,
+        crate::bookings::Offer,
+        crate::bookings::Timing,
+        crate::bookings::TimeSuggestion,
+        crate::bookings::OfferState,
+        crate::bookings::BookingCommand,
+        crate::bookings::BookingReceipt,
+        crate::bookings::BookingResource,
+        crate::bookings::Conflict,
+        crate::bookings::ConflictNotice,
+        bookings_http::BookingSpecialistPage,
+        bookings_http::BookingPresetPage,
+        bookings_http::BookingOfferPage,
+        bookings_http::OverlapResponse,
         HealthResponse,
         HealthStatus,
         ErrorResponse,
@@ -253,6 +274,7 @@ pub fn router(state: AppState) -> Router {
         .merge(queue_public_http::routes())
         .merge(queue_tips_http::routes())
         .merge(catalog_http::routes())
+        .merge(bookings_http::routes())
         .merge(queue_stations_http::routes())
         .merge(cabinet)
         .fallback(not_found)

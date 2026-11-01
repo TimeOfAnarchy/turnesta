@@ -32,11 +32,13 @@ export const roleLabels: Record<Role, string> = {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string) {
+  readonly details?: unknown;
+  constructor(status: number, code: string, details?: unknown) {
     super(code);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -58,7 +60,7 @@ function csrfToken(): string {
   return '';
 }
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.method && options.method !== 'GET') {
     headers.set('X-CSRF-Token', csrfToken());
@@ -73,7 +75,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const body: unknown = await response.json().catch(() => null);
     const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string'
       ? body.code : 'request_failed';
-    throw new ApiError(response.status, code);
+    throw new ApiError(response.status, code, body && typeof body === 'object' && 'details' in body ? body.details : undefined);
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }

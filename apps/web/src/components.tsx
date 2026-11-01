@@ -2,9 +2,12 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { errorMessage } from './api';
 
-type IconName = 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue';
+type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue';
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h1m6 0h1"/></>,
+    users: <><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m2-17a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 4v3"/></>,
+    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></>,
     queue: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h2m4 0h4M7 15h2m4 0h4"/></>,
     locations: <><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     settings: <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></>,

@@ -17,6 +17,7 @@ getrandom.workspace = true
 futures-util.workspace = true
 hex.workspace = true
 hmac.workspace = true
+jiff.workspace = true
 qrcode.workspace = true
 lettre.workspace = true
 serde.workspace = true
