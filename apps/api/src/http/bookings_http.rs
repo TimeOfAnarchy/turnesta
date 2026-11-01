@@ -3,6 +3,7 @@ use super::{
     api::{ApiError, SignedIn, check_mutation, single_header},
 };
 use crate::{
+    appointments::{self, Appointment, AppointmentCommand, AppointmentReceipt},
     bookings::{
         self, BookingCommand, BookingError, BookingReceipt, ConflictNotice, Offer, Preset,
         Specialist,
@@ -25,6 +26,18 @@ use uuid::Uuid;
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}",
+            get(appointment),
+        )
+        .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments",
+            get(appointments),
+        )
+        .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/commands",
+            post(appointment_command),
+        )
         .route(
             "/api/organizations/{tenant_id}/locations/{location_id}/bookings/specialists",
             get(specialists),
@@ -95,6 +108,36 @@ impl From<BookingError> for BookingHttpError {
                 "idempotency_conflict",
                 "Key has different command",
             ),
+            BookingError::InvalidClient => ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "invalid_client",
+                "Check client contact fields",
+            ),
+            BookingError::OfferUnavailable => ApiError::new(
+                StatusCode::CONFLICT,
+                "offer_unavailable",
+                "Offer is closed or specialist is disabled",
+            ),
+            BookingError::OfferFull => ApiError::new(
+                StatusCode::CONFLICT,
+                "offer_full",
+                "Offer has no remaining places",
+            ),
+            BookingError::SpecialistBusy => ApiError::new(
+                StatusCode::CONFLICT,
+                "specialist_busy",
+                "Specialist is already booked",
+            ),
+            BookingError::OfferOccupied => ApiError::new(
+                StatusCode::CONFLICT,
+                "offer_occupied",
+                "Move or cancel appointments before changing occupied time or capacity",
+            ),
+            BookingError::AppointmentClosed => ApiError::new(
+                StatusCode::CONFLICT,
+                "appointment_closed",
+                "Appointment is already cancelled",
+            ),
             BookingError::Overlap(details) => return Self::Overlap(details),
         })
     }
@@ -143,6 +186,93 @@ pub(super) struct OffersQuery {
     after: Option<Uuid>,
     limit: Option<i32>,
     include_withdrawn: Option<bool>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AppointmentsQuery {
+    specialist_id: Uuid,
+    date: String,
+    after: Option<Uuid>,
+    limit: Option<i32>,
+    include_cancelled: Option<bool>,
+}
+#[utoipa::path(get,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("appointment_id"=Uuid,Path)),responses((status=200,body=Appointment),(status=403,description="Role cannot access client contacts")))]
+pub(super) async fn appointment(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    path: Result<Path<(TenantId, LocationId, Uuid)>, PathRejection>,
+) -> Result<Json<Appointment>, BookingHttpError> {
+    let Path((tenant, location, id)) = path.map_err(|_| ApiError::bad_request())?;
+    Ok(Json(
+        bounded(appointments::get(
+            &state.pool,
+            signed.user_id,
+            tenant,
+            location,
+            id,
+        ))
+        .await?,
+    ))
+}
+#[derive(Serialize, ToSchema)]
+pub(super) struct AppointmentPage {
+    items: Vec<Appointment>,
+    next_cursor: Option<Uuid>,
+}
+
+#[utoipa::path(get,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("specialist_id"=Uuid,Query),("date"=String,Query),("after"=Option<Uuid>,Query),("limit"=Option<i32>,Query),("include_cancelled"=Option<bool>,Query)),responses((status=200,body=AppointmentPage),(status=403,description="Role cannot access client contacts")))]
+pub(super) async fn appointments(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    path: Result<Path<(TenantId, LocationId)>, PathRejection>,
+    query: Result<Query<AppointmentsQuery>, QueryRejection>,
+) -> Result<Json<AppointmentPage>, BookingHttpError> {
+    let Path((tenant, location)) = path.map_err(|_| ApiError::bad_request())?;
+    let Query(q) = query.map_err(|_| ApiError::bad_request())?;
+    let limit = limit(q.limit)?;
+    let mut items = bounded(appointments::list(
+        &state.pool,
+        signed.user_id,
+        tenant,
+        location,
+        appointments::AppointmentPage {
+            specialist: q.specialist_id,
+            date: &q.date,
+            after: q.after,
+            limit: limit as i64,
+            include_cancelled: q.include_cancelled.unwrap_or(false),
+        },
+    ))
+    .await?;
+    let next_cursor = cursor(&mut items, limit, |a| a.id);
+    Ok(Json(AppointmentPage { items, next_cursor }))
+}
+
+#[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/commands",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=AppointmentCommand,responses((status=200,body=AppointmentReceipt),(status=409,description="Occupancy, version or idempotency conflict")))]
+pub(super) async fn appointment_command(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    headers: HeaderMap,
+    path: Result<Path<(TenantId, LocationId)>, PathRejection>,
+    body: Result<Json<AppointmentCommand>, JsonRejection>,
+) -> Result<Json<AppointmentReceipt>, BookingHttpError> {
+    check_mutation(&headers, &state.auth, &signed)?;
+    let Path((tenant, location)) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(command) = body.map_err(|_| ApiError::bad_request())?;
+    let key = single_header(&headers, "idempotency-key")?
+        .parse()
+        .map_err(|_| ApiError::bad_request())?;
+    Ok(Json(
+        bounded(appointments::execute(
+            &state.pool,
+            signed.user_id,
+            tenant,
+            location,
+            key,
+            command,
+        ))
+        .await?,
+    ))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

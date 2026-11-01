@@ -13,4 +13,5 @@ pub mod queue_tips;
 pub mod telemetry;
 pub mod tips;
 
+pub mod appointments;
 pub mod bookings;

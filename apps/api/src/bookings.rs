@@ -30,6 +30,18 @@ pub enum BookingError {
     IdempotencyConflict,
     #[error("overlap needs acknowledgement")]
     Overlap(ConflictNotice),
+    #[error("invalid client contact")]
+    InvalidClient,
+    #[error("offer unavailable for booking")]
+    OfferUnavailable,
+    #[error("offer has no remaining places")]
+    OfferFull,
+    #[error("specialist already booked")]
+    SpecialistBusy,
+    #[error("occupied offer requires explicit rescheduling")]
+    OfferOccupied,
+    #[error("appointment is no longer active")]
+    AppointmentClosed,
 }
 impl From<sqlx::Error> for BookingError {
     fn from(error: sqlx::Error) -> Self {
@@ -37,6 +49,12 @@ impl From<sqlx::Error> for BookingError {
             Some("B2001") => Self::Invalid,
             Some("B2002") => Self::TimeGap,
             Some("B2003") => Self::TimeFold,
+            Some("B2101") => Self::NotFound,
+            Some("B2102") => Self::AppointmentClosed,
+            Some("B2103") => Self::OfferUnavailable,
+            Some("B2104") => Self::OfferFull,
+            Some("B2105") => Self::SpecialistBusy,
+            Some("B2106") => Self::OfferOccupied,
             _ => Self::Database(error),
         }
     }
@@ -73,6 +91,10 @@ pub struct Offer {
     pub places: i32,
     pub state: OfferState,
     pub version: i32,
+    #[serde(default)]
+    pub reserved_places: Option<i64>,
+    #[serde(default)]
+    pub blocked_by_booking: Option<bool>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
@@ -268,6 +290,21 @@ async fn location_zone(
     .ok_or(BookingError::NotFound)
 }
 
+pub(crate) async fn lock_calendar(
+    session: &mut TenantSession,
+    location: LocationId,
+    specialist: Uuid,
+) -> Result<(), BookingError> {
+    let tenant = session.tenant_id();
+    sqlx::query_scalar::<_, i64>("SELECT revision FROM bookings.calendars WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 FOR UPDATE")
+        .bind(tenant).bind(location).bind(specialist).fetch_optional(session.connection()).await?.ok_or(BookingError::NotFound)?;
+    Ok(())
+}
+
+// No contacts enter the schedule projection. Employee sees unknown occupancy,
+// rather than a false zero caused by the private appointment RLS policy.
+const OFFER_PROJECTION: &str = "SELECT v.*, CASE WHEN $8 THEN (SELECT count(*) FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed') END AS reserved_places, CASE WHEN $8 THEN EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.specialist_id=v.specialist_id AND a.offer_id<>v.id AND a.status='confirmed' AND bookings.times_conflict(a.starts_at,a.ends_at,v.starts_at::timestamptz,v.ends_at::timestamptz)) END AS blocked_by_booking FROM bookings.offer_details v WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=to_char(bookings.valid_date($4),'YYYY-MM-DD') OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR state<>'withdrawn' OR EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed')) ORDER BY id LIMIT $7";
+
 pub async fn specialists(
     pool: &PgPool,
     user: UserId,
@@ -319,8 +356,18 @@ pub async fn offers(
     if !exists {
         return Err(BookingError::NotFound);
     }
-    let rows=sqlx::query_as("SELECT * FROM bookings.offer_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=to_char(bookings.valid_date($4),'YYYY-MM-DD') OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR state<>'withdrawn') ORDER BY id LIMIT $7")
-        .bind(tenant).bind(location).bind(page.specialist).bind(page.date).bind(page.after).bind(page.include_withdrawn).bind(page.limit.clamp(1,100)+1).fetch_all(s.connection()).await?;
+    let staff = s.role() != crate::core::Role::Employee;
+    let rows = sqlx::query_as(OFFER_PROJECTION)
+        .bind(tenant)
+        .bind(location)
+        .bind(page.specialist)
+        .bind(page.date)
+        .bind(page.after)
+        .bind(page.include_withdrawn)
+        .bind(page.limit.clamp(1, 100) + 1)
+        .bind(staff)
+        .fetch_all(s.connection())
+        .await?;
     // Validate even when an empty relation lets the planner skip the predicate.
     sqlx::query("SELECT bookings.valid_date($1)")
         .bind(page.date)
@@ -357,6 +404,17 @@ pub async fn execute(
         }
         s.commit().await?;
         return Ok(result);
+    }
+    match &command {
+        BookingCommand::SaveSpecialist {
+            id,
+            expected_version,
+            ..
+        } if *expected_version > 0 => lock_calendar(&mut s, location, *id).await?,
+        BookingCommand::SaveOffer { specialist_id, .. } => {
+            lock_calendar(&mut s, location, *specialist_id).await?
+        }
+        _ => {}
     }
     let resource = match &command {
         BookingCommand::SaveSpecialist {
@@ -491,7 +549,7 @@ async fn save_offer(
     sqlx::query("UPDATE bookings.specialists SET schedule_version=schedule_version+1 WHERE tenant_id=$1 AND id=$2")
         .bind(tenant).bind(specialist_id).execute(s.connection()).await?;
     Ok(
-        sqlx::query_as("SELECT * FROM bookings.offer_details WHERE tenant_id=$1 AND id=$2")
+        sqlx::query_as("SELECT *,NULL::bigint AS reserved_places,NULL::boolean AS blocked_by_booking FROM bookings.offer_details WHERE tenant_id=$1 AND id=$2")
             .bind(tenant)
             .bind(id)
             .fetch_one(s.connection())

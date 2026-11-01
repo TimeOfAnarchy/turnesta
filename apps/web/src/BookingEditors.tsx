@@ -342,6 +342,9 @@ export function OfferEditor({
   const [invalid, setInvalid] = useState<string>();
   const conflict = Boolean(!copy && current && current.version !== version);
   const timezone = initial && !copy ? initial.time_zone : zone;
+  const occupied = copy
+    ? 0
+    : (current?.reserved_places ?? initial?.reserved_places ?? 0);
   const client = useQueryClient();
   const [calculatedFor, setCalculatedFor] = useState<string | null>(null);
   const [calculationError, setCalculationError] = useState<unknown>(null);
@@ -494,6 +497,13 @@ export function OfferEditor({
       close={close}
     >
       <form className="booking-form" onSubmit={submit} noValidate>
+        {occupied > 0 && (
+          <p className="conflict-notice">
+            На талон записаны клиенты: {occupied}. Время можно изменить после
+            переноса или отмены их записей. Можно изменить название, увеличить
+            лимит или закрыть талон для новых записей.
+          </p>
+        )}
         <fieldset disabled={busy || Boolean(journal.pending)}>
           <div
             className="booking-mode"
@@ -503,6 +513,7 @@ export function OfferEditor({
             <button
               type="button"
               aria-pressed={!draft.agreement}
+              disabled={occupied > 0}
               onClick={() => update({ agreement: false })}
             >
               <Icon name="clock" />
@@ -511,6 +522,7 @@ export function OfferEditor({
             <button
               type="button"
               aria-pressed={draft.agreement}
+              disabled={occupied > 0}
               onClick={() => update({ agreement: true })}
             >
               <Icon name="users" />
@@ -537,6 +549,7 @@ export function OfferEditor({
               <label htmlFor="offer-preset">Заготовка приёма</label>
               <select
                 id="offer-preset"
+                disabled={occupied > 0}
                 value={presetId}
                 onChange={(e) => choosePreset(e.target.value)}
               >
@@ -570,6 +583,7 @@ export function OfferEditor({
                   </label>
                   <input
                     id="offer-agreement-date"
+                    disabled={occupied > 0}
                     type="date"
                     value={draft.agreementDate}
                     onChange={(e) => update({ agreementDate: e.target.value })}
@@ -580,7 +594,7 @@ export function OfferEditor({
                   <input
                     id="offer-places"
                     type="number"
-                    min="1"
+                    min={Math.max(1, occupied)}
                     max="1000"
                     value={draft.places}
                     onChange={(e) => update({ places: e.target.value })}
@@ -599,6 +613,7 @@ export function OfferEditor({
                   <label htmlFor="offer-date">Дата начала</label>
                   <input
                     id="offer-date"
+                    disabled={occupied > 0}
                     type="date"
                     value={draft.date}
                     onChange={(e) =>
@@ -615,6 +630,7 @@ export function OfferEditor({
                   <label htmlFor="offer-start">Начало</label>
                   <input
                     id="offer-start"
+                    disabled={occupied > 0}
                     type="time"
                     value={draft.start}
                     onChange={(e) => update({ start: e.target.value })}
@@ -626,6 +642,7 @@ export function OfferEditor({
                   </label>
                   <input
                     id="offer-end"
+                    disabled={occupied > 0}
                     type="time"
                     value={draft.end}
                     onChange={(e) => {
@@ -639,6 +656,7 @@ export function OfferEditor({
                     <label htmlFor="offer-end-date">Дата окончания</label>
                     <input
                       id="offer-end-date"
+                      disabled={occupied > 0}
                       type="date"
                       value={draft.endDate}
                       onChange={(e) => {

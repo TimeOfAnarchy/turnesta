@@ -7,6 +7,13 @@ import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
 import { keys, useLocations } from './queries';
 import { OfferEditor, CatalogEditor } from './BookingEditors';
 import {
+  RecordAppointmentEditor,
+  AppointmentEditor,
+  AppointmentsPanel,
+} from './AppointmentEditors';
+import { canRecord, occupancyLabel, isAppointmentAction } from './appointments';
+import type { Appointment } from './appointments';
+import {
   bookingApi,
   BookingCommands,
   bookingError,
@@ -71,7 +78,7 @@ export function BookingsPage() {
             Расписание приёмов<span className="heading-dot">.</span>
           </h1>
           <p className="page-intro">
-            Подготовьте время для посетителей — вручную или с помощью заготовок.
+            Управляйте расписанием и записями клиентов — всё в одном месте.
           </p>
         </div>
         <span className="booking-heading-icon" aria-hidden="true">
@@ -152,6 +159,8 @@ export function BookingsPage() {
   );
 }
 type Editor =
+  | { kind: 'record'; offer: Offer; specialist: Specialist }
+  | { kind: 'appointment'; item: Appointment }
   | { kind: 'specialist'; item: Specialist | null }
   | { kind: 'preset'; item: Preset | null }
   | {
@@ -169,7 +178,8 @@ function Schedule({
   location: string;
   zone: string;
 }) {
-  const { canManage, userId } = useWorkspace();
+  const { canManage, userId, role } = useWorkspace();
+  const canBook = role !== 'employee';
   const client = useQueryClient();
   const base = bookingKey(tenant, location);
   const profiles = useInfiniteQuery({
@@ -261,6 +271,14 @@ function Schedule({
   );
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
+  useEffect(() => {
+    if (
+      editor &&
+      ((['record', 'appointment'].includes(editor.kind) && !canBook) ||
+        (!['record', 'appointment'].includes(editor.kind) && !canManage))
+    )
+      setEditor(null);
+  }, [canBook, canManage, editor]);
   const [success, setSuccess] = useState('');
   const [pageError, setPageError] = useState<unknown>(null);
   const [, render] = useState(0);
@@ -276,30 +294,53 @@ function Schedule({
   }, []);
   const disabled =
     busy || !online || Boolean(journal.storageError) || !canManage;
+  const bookingDisabled =
+    busy ||
+    !online ||
+    Boolean(journal.storageError) ||
+    !canBook ||
+    Boolean(journal.pending);
   async function run(command?: BookingCommand): Promise<BookingReceipt> {
-    if (!canManage) throw new ApiError(403, 'forbidden');
+    if (
+      !canBook ||
+      (!canManage &&
+        !isAppointmentAction(command ?? journal.pending?.command ?? {}))
+    )
+      throw new ApiError(403, 'forbidden');
     if (!navigator.onLine) throw new ApiError(0, 'offline');
     setBusy(true);
     setPageError(null);
     setSuccess('');
     try {
       const receipt = await journal.run(command);
-      if (receipt.resource.kind === 'offer') {
+      if (
+        receipt.resource.kind === 'offer' ||
+        receipt.resource.kind === 'appointment'
+      ) {
         const item = receipt.resource.item;
         setChosen(item.specialist_id);
         if (item.date) setDate(item.date);
-        if (item.state === 'withdrawn') setWithdrawn(true);
+        if (
+          receipt.resource.kind === 'offer' &&
+          receipt.resource.item.state === 'withdrawn'
+        )
+          setWithdrawn(true);
       } else if (
         receipt.resource.kind === 'specialist' &&
-        command?.expected_version === 0
+        command?.type === 'save_specialist' &&
+        command.expected_version === 0
       )
         setChosen(receipt.resource.item.id);
       setSuccess(
-        receipt.resource.kind === 'offer'
-          ? 'Талон сохранён в расписании.'
-          : receipt.resource.kind === 'preset'
-            ? 'Заготовка сохранена. Ранее созданные талоны не изменились.'
-            : 'Профиль специалиста сохранён.',
+        receipt.resource.kind === 'appointment'
+          ? receipt.resource.item.status === 'cancelled'
+            ? 'Запись отменена. Место освобождено.'
+            : 'Запись клиента сохранена.'
+          : receipt.resource.kind === 'offer'
+            ? 'Талон сохранён в расписании.'
+            : receipt.resource.kind === 'preset'
+              ? 'Заготовка сохранена. Ранее созданные талоны не изменились.'
+              : 'Профиль специалиста сохранён.',
       );
       return receipt;
     } finally {
@@ -355,26 +396,52 @@ function Schedule({
             <span className={`booking-state state-${item.state}`}>
               {offerStateLabels[item.state]}
             </span>
-            {canManage && (
+            {canBook && (
               <div className="booking-offer-actions">
+                <span className="appointment-occupancy">
+                  {occupancyLabel(item)}
+                </span>
                 <button
-                  className="text-button"
                   type="button"
-                  disabled={actionsDisabled}
-                  onClick={() => openOffer(item)}
-                  aria-label={`Изменить талон ${item.title || 'Приём'} ${timeLabel(item)}`}
+                  className="button primary appointment-book"
+                  disabled={
+                    bookingDisabled ||
+                    !canRecord(item, selected?.enabled ?? false)
+                  }
+                  onClick={() => {
+                    if (selected)
+                      open({
+                        kind: 'record',
+                        offer: item,
+                        specialist: selected,
+                      });
+                  }}
+                  aria-label={`Записать клиента: ${item.title || 'Приём'} ${timeLabel(item)}`}
                 >
-                  Изменить
+                  Записать клиента
                 </button>
-                <button
-                  className="text-button"
-                  type="button"
-                  disabled={actionsDisabled}
-                  onClick={() => openOffer(item, true)}
-                  aria-label={`Создать похожий талон ${item.title || 'Приём'} ${timeLabel(item)}`}
-                >
-                  Создать похожий
-                </button>
+                {canManage && (
+                  <>
+                    <button
+                      className="text-button"
+                      type="button"
+                      disabled={actionsDisabled}
+                      onClick={() => openOffer(item)}
+                      aria-label={`Изменить талон ${item.title || 'Приём'} ${timeLabel(item)}`}
+                    >
+                      Изменить
+                    </button>
+                    <button
+                      className="text-button"
+                      type="button"
+                      disabled={actionsDisabled}
+                      onClick={() => openOffer(item, true)}
+                      aria-label={`Создать похожий талон ${item.title || 'Приём'} ${timeLabel(item)}`}
+                    >
+                      Создать похожий
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </article>
@@ -403,11 +470,11 @@ function Schedule({
             Повтор восстановит тот же запрос. Новое сохранение доступно после
             получения результата.
           </p>
-          {canManage && (
+          {canBook && (
             <button
               type="button"
               className="button secondary"
-              disabled={disabled}
+              disabled={busy || !online || Boolean(journal.storageError)}
               onClick={() => {
                 void run().catch(setPageError);
               }}
@@ -634,6 +701,16 @@ function Schedule({
           )}
         </>
       )}
+      {canBook && selected && (
+        <AppointmentsPanel
+          tenant={tenant}
+          location={location}
+          specialist={selected.id}
+          date={date}
+          disabled={bookingDisabled}
+          open={(item) => open({ kind: 'appointment', item })}
+        />
+      )}
       <details className="booking-settings panel">
         <summary>
           <Icon name="settings" />
@@ -764,7 +841,32 @@ function Schedule({
         </div>
       </details>
       {editor &&
-        (editor.kind === 'offer' ? (
+        (editor.kind === 'record' ? (
+          <RecordAppointmentEditor
+            key={`record:${editor.offer.id}`}
+            offer={editor.offer}
+            current={items.find((i) => i.id === editor.offer.id)}
+            specialist={
+              specialists.find((s) => s.id === editor.specialist.id) ??
+              editor.specialist
+            }
+            busy={busy}
+            journal={journal}
+            run={run}
+            close={() => setEditor(null)}
+          />
+        ) : editor.kind === 'appointment' ? (
+          <AppointmentEditor
+            key={`appointment:${editor.item.id}`}
+            tenant={tenant}
+            location={location}
+            initial={editor.item}
+            busy={busy}
+            journal={journal}
+            run={run}
+            close={() => setEditor(null)}
+          />
+        ) : editor.kind === 'offer' ? (
           <OfferEditor
             tenant={tenant}
             location={location}

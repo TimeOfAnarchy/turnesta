@@ -1,5 +1,10 @@
 import { ApiError, request } from './api.ts';
 import type { Page } from './api.ts';
+import {
+  isAppointmentAction,
+  validAppointmentCommand,
+} from './appointments.ts';
+import type { Appointment, AppointmentCommand } from './appointments.ts';
 
 export type Specialist = {
   id: string;
@@ -34,8 +39,11 @@ export type Offer = {
   places: number;
   state: OfferState;
   version: number;
+  reserved_places: number | null;
+  blocked_by_booking: boolean | null;
 };
 export type BookingCommand =
+  | AppointmentCommand
   | {
       type: 'save_specialist';
       id: string;
@@ -67,7 +75,8 @@ export type BookingReceipt = {
   resource:
     | { kind: 'specialist'; item: Specialist }
     | { kind: 'preset'; item: Preset }
-    | { kind: 'offer'; item: Offer };
+    | { kind: 'offer'; item: Offer }
+    | { kind: 'appointment'; item: Appointment };
 };
 export type ConflictNotice = {
   token: string;
@@ -149,7 +158,7 @@ export const bookingApi = {
     ),
   command: async (scope: Scope, pending: BookingPending) => {
     const result = await request<BookingReceipt>(
-      `${base(scope.tenant, scope.location)}/commands`,
+      `${base(scope.tenant, scope.location)}/${isAppointmentAction(pending.command) ? 'appointments/' : ''}commands`,
       {
         method: 'POST',
         signal: AbortSignal.timeout(10_000),
@@ -159,7 +168,9 @@ export const bookingApi = {
     );
     if (
       !result?.resource ||
-      !['specialist', 'preset', 'offer'].includes(result.resource.kind) ||
+      !['specialist', 'preset', 'offer', 'appointment'].includes(
+        result.resource.kind,
+      ) ||
       !uuid.test(result.resource.item?.id) ||
       !Number.isInteger(result.resource.item.version) ||
       result.resource.item.version < 1
@@ -171,6 +182,7 @@ export const bookingApi = {
 function validCommand(value: unknown): value is BookingCommand {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
+  if (isAppointmentAction(v)) return validAppointmentCommand(v);
   if (
     typeof v.id !== 'string' ||
     !uuid.test(v.id) ||
@@ -315,6 +327,12 @@ export class BookingCommands {
               'time_fold',
               'specialist_disabled',
               'booking_time_zone_changed',
+              'invalid_client',
+              'offer_unavailable',
+              'offer_full',
+              'specialist_busy',
+              'offer_occupied',
+              'appointment_closed',
             ].includes(error.code))
         )
           this.clear();
@@ -357,6 +375,16 @@ export function bookingError(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   return (
     {
+      invalid_client: 'Проверьте имя, телефон, email и длину комментария.',
+      offer_unavailable:
+        'Талон закрыт для новых записей или специалист выключен. Выберите другой талон.',
+      offer_full:
+        'Последнее место уже заняли. Обновите расписание и выберите другой талон.',
+      specialist_busy:
+        'В это время у специалиста уже есть клиент. Выберите другой талон.',
+      offer_occupied:
+        'На талон уже записаны клиенты. Для изменения времени сначала перенесите или отмените их записи; лимит не может быть меньше числа записей.',
+      appointment_closed: 'Запись уже отменена. Обновите данные.',
       offline:
         'Нет подключения. После восстановления связи сохраните изменения вручную.',
       booking_time_zone_changed:

@@ -9,6 +9,7 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 use tower::ServiceExt;
 use turnesta_api::{
+    appointments::{self, AppointmentCommand as AppointmentCmd, AppointmentResource, ClientInput},
     auth::login::{self, Email},
     bookings::{
         self, BookingCommand as Command, BookingError, BookingResource, OfferState, Timing,
@@ -31,6 +32,871 @@ async fn pool(key: &str, size: u32) -> PgPool {
         .unwrap();
     assert!(name.ends_with("_test"));
     pool
+}
+
+fn client(name: &str) -> ClientInput {
+    ClientInput {
+        client_name: name.into(),
+        phone: " +7 (900) 000-00-00 ".into(),
+        email: " CLIENT@EXAMPLE.TEST ".into(),
+        note: " Позвонить перед визитом\r\nПосле 10:00 ".into(),
+    }
+}
+fn record(specialist: Uuid, offer: Uuid, version: i32, name: &str) -> AppointmentCmd {
+    AppointmentCmd::RecordAppointment {
+        id: Uuid::new_v4(),
+        specialist_id: specialist,
+        offer_id: offer,
+        expected_offer_version: version,
+        client: client(name),
+    }
+}
+async fn appointment_execute(
+    f: &Fixture,
+    user: UserId,
+    key: Uuid,
+    command: AppointmentCmd,
+) -> Result<appointments::Appointment, BookingError> {
+    let receipt = appointments::execute(&f.runtime, user, f.tenant, f.point, key, command).await?;
+    let AppointmentResource::Appointment(item) = receipt.resource;
+    Ok(item)
+}
+async fn saved_offer(f: &Fixture, specialist: Uuid, timing: Timing) -> bookings::Offer {
+    let mut command = offer(specialist, timing);
+    let receipt = match bookings::execute(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        Uuid::new_v4(),
+        command.clone(),
+    )
+    .await
+    {
+        Ok(receipt) => receipt,
+        Err(BookingError::Overlap(notice)) => {
+            if let Command::SaveOffer { conflict_token, .. } = &mut command {
+                *conflict_token = Some(notice.token);
+            }
+            bookings::execute(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                f.point,
+                Uuid::new_v4(),
+                command,
+            )
+            .await
+            .unwrap()
+        }
+        Err(e) => panic!("offer creation failed: {e:?}"),
+    };
+    let BookingResource::Offer(item) = receipt.resource else {
+        panic!("offer expected")
+    };
+    item
+}
+fn appointment_post(
+    f: &Fixture,
+    login: &(String, String),
+    key: Uuid,
+    body: Value,
+) -> Request<Body> {
+    Request::post(f.url("appointments/commands"))
+        .header("cookie", &login.0)
+        .header("origin", "http://127.0.0.1:8080")
+        .header("x-csrf-token", &login.1)
+        .header("idempotency-key", key.to_string())
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[test]
+fn appointment_payload_rejects_spoofed_snapshot_and_transition_fields() {
+    let command = record(Uuid::new_v4(), Uuid::new_v4(), 1, "Client");
+    for field in ["created_by", "status", "starts_at", "source"] {
+        let mut body = serde_json::to_value(&command).unwrap();
+        body[field] = json!("spoofed");
+        assert!(serde_json::from_value::<AppointmentCmd>(body).is_err());
+    }
+    let mut body = serde_json::to_value(command).unwrap();
+    body["client"]["diagnosis"] = json!("unknown field");
+    assert!(serde_json::from_value::<AppointmentCmd>(body).is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_schedule_edit_race_has_no_silent_client_rescheduling() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-16T10:00", "2026-11-16T11:00"),
+    )
+    .await;
+    let edit = Command::SaveOffer {
+        id: o.id,
+        specialist_id: spec.id,
+        time_zone: o.time_zone.clone(),
+        title: o.title.clone(),
+        timing: interval("2026-11-16T12:00", "2026-11-16T13:00"),
+        state: OfferState::Ready,
+        expected_version: 1,
+        conflict_token: None,
+    };
+    let (edited, booked) = tokio::join!(
+        bookings::execute(&f.runtime, f.owner, f.tenant, f.point, Uuid::new_v4(), edit),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, o.id, 1, "Race")
+        )
+    );
+    assert_eq!(usize::from(edited.is_ok()) + usize::from(booked.is_ok()), 1);
+    if let Ok(booked) = booked {
+        assert_eq!(booked.starts_at, o.starts_at);
+        assert!(matches!(edited, Err(BookingError::OfferOccupied)));
+    } else {
+        assert!(matches!(
+            booked,
+            Err(BookingError::Core(CoreError::VersionConflict))
+        ));
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_database_guards_prevent_direct_capacity_and_snapshot_bypass() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-17T10:00", "2026-11-17T11:00"),
+    )
+    .await;
+    let operator = f.member(Role::Operator).await;
+    let a = appointment_execute(
+        &f,
+        operator,
+        Uuid::new_v4(),
+        record(spec.id, o.id, 1, "Existing"),
+    )
+    .await
+    .unwrap();
+    let mut s = TenantSession::begin(&f.runtime, operator, f.tenant)
+        .await
+        .unwrap();
+    let error=sqlx::query("INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status,starts_at) VALUES($1,$2,$3,$4,$5,'Direct','','','','confirmed','2099-01-01Z')")
+        .bind(f.tenant).bind(f.point).bind(spec.id).bind(o.id).bind(Uuid::new_v4()).execute(s.connection()).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("B2104")
+    );
+    drop(s);
+    let mut s = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let error=sqlx::query("UPDATE bookings.offers SET starts_local='2026-11-17 12:00',starts_at='2026-11-17 09:00Z',ends_local='2026-11-17 13:00',ends_at='2026-11-17 10:00Z' WHERE tenant_id=$1 AND id=$2").bind(f.tenant).bind(o.id).execute(s.connection()).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("B2106")
+    );
+    drop(s);
+    let mut s = TenantSession::begin(&f.runtime, operator, f.tenant)
+        .await
+        .unwrap();
+    let error = sqlx::query(
+        "UPDATE bookings.appointments SET starts_at='2099-01-01Z' WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(f.tenant)
+    .bind(a.id)
+    .execute(s.connection())
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    drop(s);
+    assert!(matches!(
+        bookings::execute(
+            &f.runtime,
+            operator,
+            f.tenant,
+            f.point,
+            Uuid::new_v4(),
+            Command::SaveSpecialist {
+                id: spec.id,
+                name: "Wrong".into(),
+                description: String::new(),
+                enabled: false,
+                expected_version: 1
+            }
+        )
+        .await,
+        Err(BookingError::Core(CoreError::Forbidden))
+    ));
+    let unchanged = appointments::get(&f.runtime, f.owner, f.tenant, f.point, a.id)
+        .await
+        .unwrap();
+    assert_eq!(unchanged.starts_at, o.starts_at);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let timed = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-10T10:00", "2026-11-10T10:30"),
+    )
+    .await;
+    let command = record(spec.id, timed.id, timed.version, "  Client One  ");
+    let key = Uuid::new_v4();
+    let item = appointment_execute(&f, f.owner, key, command.clone())
+        .await
+        .unwrap();
+    assert_eq!(item.client_name, "Client One");
+    assert_eq!(item.phone, "+7 (900) 000-00-00");
+    assert_eq!(item.email, "client@example.test");
+    assert_eq!(item.note, "Позвонить перед визитом\nПосле 10:00");
+    assert_eq!(item.created_by, f.owner);
+    assert_eq!(item.starts_at, timed.starts_at);
+    assert_eq!(item.specialist_name, "Doctor");
+    let cancelled = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: item.id,
+            specialist_id: spec.id,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cancelled.status, "cancelled");
+    assert!(cancelled.cancelled_at.is_some());
+    let replay = appointment_execute(&f, f.owner, key, command.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.status, "confirmed");
+    assert_eq!(replay.version, 1);
+    assert_eq!(replay.created_at, item.created_at);
+    let mut different = command.clone();
+    if let AppointmentCmd::RecordAppointment { client, .. } = &mut different {
+        client.client_name = "Other".into();
+    }
+    assert!(matches!(
+        appointment_execute(&f, f.owner, key, different).await,
+        Err(BookingError::IdempotencyConflict)
+    ));
+    let start = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2026-11-10T11:00".into(),
+        },
+    )
+    .await;
+    let a = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, start.id, 1, "No end"),
+    )
+    .await
+    .unwrap();
+    assert!(a.ends_at.is_none());
+    let agreement = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 2,
+        },
+    )
+    .await;
+    let a = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, agreement.id, 1, "No date"),
+    )
+    .await
+    .unwrap();
+    assert!(a.date.is_none() && a.starts_at.is_none());
+    let offers = f.offers(spec.id, "2026-11-10").await;
+    assert_eq!(
+        offers
+            .iter()
+            .find(|o| o.id == agreement.id)
+            .unwrap()
+            .reserved_places,
+        Some(1)
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_last_place_and_overlapping_alternatives_serialize() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let agreement = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: Some("2026-11-11".into()),
+            places: 2,
+        },
+    )
+    .await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, agreement.id, 1, "First"),
+    )
+    .await
+    .unwrap();
+    let (a, b) = tokio::join!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, agreement.id, 1, "A")
+        ),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, agreement.id, 1, "B")
+        )
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert!(matches!(a, Err(BookingError::OfferFull)) || matches!(b, Err(BookingError::OfferFull)));
+    let x = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-11T10:00", "2026-11-11T11:00"),
+    )
+    .await;
+    let y = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-11T10:30", "2026-11-11T11:30"),
+    )
+    .await;
+    let (a, b) = tokio::join!(
+        appointment_execute(&f, f.owner, Uuid::new_v4(), record(spec.id, x.id, 1, "X")),
+        appointment_execute(&f, f.owner, Uuid::new_v4(), record(spec.id, y.id, 1, "Y"))
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert!(
+        matches!(a, Err(BookingError::SpecialistBusy))
+            || matches!(b, Err(BookingError::SpecialistBusy))
+    );
+    let winner = if a.is_ok() { x.id } else { y.id };
+    let other = if winner == x.id { y.id } else { x.id };
+    let offers = f.offers(spec.id, "2026-11-11").await;
+    assert_eq!(
+        offers
+            .iter()
+            .find(|o| o.id == other)
+            .unwrap()
+            .blocked_by_booking,
+        Some(true)
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_start_only_checks_both_directions_and_half_open_boundaries() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let point = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2026-11-12T10:30".into(),
+        },
+    )
+    .await;
+    let range = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-12T10:00", "2026-11-12T11:00"),
+    )
+    .await;
+    let end = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2026-11-12T11:00".into(),
+        },
+    )
+    .await;
+    let point_a = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, point.id, 1, "Point"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, range.id, 1, "Range")
+        )
+        .await,
+        Err(BookingError::SpecialistBusy)
+    ));
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: point_a.id,
+            specialist_id: spec.id,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, range.id, 1, "Range"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, point.id, 1, "Point")
+        )
+        .await,
+        Err(BookingError::SpecialistBusy)
+    ));
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, end.id, 1, "Adjacent"),
+    )
+    .await
+    .unwrap();
+    let unknown = saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2026-11-12T11:05".into(),
+        },
+    )
+    .await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, unknown.id, 1, "Unknown duration"),
+    )
+    .await
+    .unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_move_is_atomic_and_cancel_move_race_uses_versions() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let x = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-13T10:00", "2026-11-13T10:30"),
+    )
+    .await;
+    let y = saved_offer(
+        &f,
+        spec.id,
+        interval("2026-11-13T11:00", "2026-11-13T11:30"),
+    )
+    .await;
+    let a = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, x.id, 1, "Moving"),
+    )
+    .await
+    .unwrap();
+    let move_cmd = AppointmentCmd::MoveAppointment {
+        id: a.id,
+        specialist_id: spec.id,
+        offer_id: y.id,
+        expected_offer_version: 1,
+        expected_version: 1,
+    };
+    let (moved, booked) = tokio::join!(
+        appointment_execute(&f, f.owner, Uuid::new_v4(), move_cmd.clone()),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, y.id, 1, "Competitor")
+        )
+    );
+    assert_eq!(usize::from(moved.is_ok()) + usize::from(booked.is_ok()), 1);
+    let current = appointments::get(&f.runtime, f.owner, f.tenant, f.point, a.id)
+        .await
+        .unwrap();
+    if moved.is_ok() {
+        assert_eq!(current.offer_id, y.id);
+        assert_eq!(current.id, a.id);
+    } else {
+        assert_eq!(current.offer_id, x.id);
+        assert_eq!(current.version, 1);
+    }
+    let z = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    )
+    .await;
+    let (cancel, moved) = tokio::join!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            AppointmentCmd::CancelAppointment {
+                id: a.id,
+                specialist_id: spec.id,
+                expected_version: current.version
+            }
+        ),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            AppointmentCmd::MoveAppointment {
+                id: a.id,
+                specialist_id: spec.id,
+                offer_id: z.id,
+                expected_offer_version: 1,
+                expected_version: current.version
+            }
+        )
+    );
+    assert_eq!(usize::from(cancel.is_ok()) + usize::from(moved.is_ok()), 1);
+    assert!(
+        matches!(cancel, Err(BookingError::Core(CoreError::VersionConflict)))
+            || matches!(moved, Err(BookingError::Core(CoreError::VersionConflict)))
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_occupied_offer_guards_time_capacity_and_keeps_closed_bookings() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: Some("2026-11-14".into()),
+            places: 3,
+        },
+    )
+    .await;
+    let a = appointment_execute(&f, f.owner, Uuid::new_v4(), record(spec.id, o.id, 1, "One"))
+        .await
+        .unwrap();
+    appointment_execute(&f, f.owner, Uuid::new_v4(), record(spec.id, o.id, 1, "Two"))
+        .await
+        .unwrap();
+    let edit = |places, date, state| Command::SaveOffer {
+        id: o.id,
+        specialist_id: spec.id,
+        time_zone: o.time_zone.clone(),
+        title: "Renamed".into(),
+        timing: Timing::ByAgreement {
+            date: Some(date),
+            places,
+        },
+        state,
+        expected_version: 1,
+        conflict_token: None,
+    };
+    for cmd in [
+        edit(1, "2026-11-14".into(), OfferState::Ready),
+        edit(3, "2026-11-15".into(), OfferState::Ready),
+    ] {
+        assert!(matches!(
+            bookings::execute(&f.runtime, f.owner, f.tenant, f.point, Uuid::new_v4(), cmd).await,
+            Err(BookingError::OfferOccupied)
+        ));
+    }
+    f.execute(edit(4, "2026-11-14".into(), OfferState::Withdrawn))
+        .await;
+    let visible = bookings::offers(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        bookings::OfferPage {
+            specialist: spec.id,
+            date: "2026-11-14",
+            after: None,
+            limit: 10,
+            include_withdrawn: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].state, OfferState::Withdrawn);
+    assert!(matches!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, o.id, 2, "Three")
+        )
+        .await,
+        Err(BookingError::OfferUnavailable)
+    ));
+    let old = appointments::get(&f.runtime, f.owner, f.tenant, f.point, a.id)
+        .await
+        .unwrap();
+    assert_eq!(old.title, "Visit");
+    assert_eq!(old.date.as_deref(), Some("2026-11-14"));
+    let updated = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::UpdateClient {
+            id: a.id,
+            specialist_id: spec.id,
+            expected_version: 1,
+            client: client("Updated"),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.title, "Visit");
+    assert_eq!(updated.client_name, "Updated");
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_operator_permissions_rls_scope_and_replay_revocation() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let operator = f.member(Role::Operator).await;
+    let employee = f.member(Role::Employee).await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    )
+    .await;
+    let cmd = record(spec.id, o.id, 1, "Private Client");
+    let key = Uuid::new_v4();
+    let a = appointment_execute(&f, operator, key, cmd.clone())
+        .await
+        .unwrap();
+    assert_eq!(a.created_by, operator);
+    assert!(matches!(
+        appointments::get(&f.runtime, employee, f.tenant, f.point, a.id).await,
+        Err(BookingError::Core(CoreError::Forbidden))
+    ));
+    assert!(matches!(
+        appointment_execute(
+            &f,
+            employee,
+            Uuid::new_v4(),
+            record(spec.id, o.id, 1, "Forbidden")
+        )
+        .await,
+        Err(BookingError::Core(CoreError::Forbidden))
+    ));
+    let employee_offers = bookings::offers(
+        &f.runtime,
+        employee,
+        f.tenant,
+        f.point,
+        bookings::OfferPage {
+            specialist: spec.id,
+            date: "2026-11-14",
+            after: None,
+            limit: 10,
+            include_withdrawn: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        employee_offers[0].reserved_places.is_none()
+            && employee_offers[0].blocked_by_booking.is_none()
+    );
+    let mut s = TenantSession::begin(&f.runtime, employee, f.tenant)
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM bookings.appointments")
+        .fetch_one(s.connection())
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    s.commit().await.unwrap();
+    let other = Fixture::new("Europe/Moscow").await;
+    assert!(matches!(
+        appointments::get(&f.runtime, f.owner, f.tenant, other.point, a.id).await,
+        Err(BookingError::NotFound)
+    ));
+    sqlx::query("UPDATE core.memberships SET role='employee' WHERE tenant_id=$1 AND user_id=$2")
+        .bind(f.tenant)
+        .bind(operator)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        appointment_execute(&f, operator, key, cmd).await,
+        Err(BookingError::Core(CoreError::Forbidden))
+    ));
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointments_http_private_roles_csrf_strict_payload_pagination_and_validation() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 5,
+        },
+    )
+    .await;
+    let operator = f.member(Role::Operator).await;
+    let login = f.login(operator).await;
+    let employee = f.member(Role::Employee).await;
+    let employee_login = f.login(employee).await;
+    let body = serde_json::to_value(record(spec.id, o.id, 1, "HTTP client")).unwrap();
+    let (status, _) = f
+        .json(
+            Request::post(f.url("appointments/commands"))
+                .header("origin", "http://127.0.0.1:8080")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let mut missing = appointment_post(&f, &login, Uuid::new_v4(), body.clone());
+    missing.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(missing).await.0, StatusCode::FORBIDDEN);
+    let mut spoof = body.clone();
+    spoof["status"] = json!("confirmed");
+    assert_eq!(
+        f.json(appointment_post(&f, &login, Uuid::new_v4(), spoof))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut invalid = body.clone();
+    invalid["client"]["email"] = json!("bad");
+    let (status, result) = f
+        .json(appointment_post(&f, &login, Uuid::new_v4(), invalid))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(result["code"], "invalid_client");
+    for _ in 0..3 {
+        let body = serde_json::to_value(record(spec.id, o.id, 1, "HTTP client")).unwrap();
+        assert_eq!(
+            f.json(appointment_post(&f, &login, Uuid::new_v4(), body))
+                .await
+                .0,
+            StatusCode::OK
+        );
+    }
+    let path = format!(
+        "appointments?specialist_id={}&date=2026-11-15&limit=1",
+        spec.id
+    );
+    let (status, page) = f
+        .json(
+            Request::get(f.url(&path))
+                .header("cookie", &login.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["items"].as_array().unwrap().len(), 1);
+    assert!(page["next_cursor"].is_string());
+    let (status, employee_page) = f
+        .json(
+            Request::get(f.url(&path))
+                .header("cookie", &employee_login.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(!employee_page.to_string().contains("HTTP client"));
+    let id = page["items"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        f.json(
+            Request::get(f.url(&format!("appointments/{id}")))
+                .header("cookie", &login.0)
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let bad = format!("{path}&private=true");
+    assert_eq!(
+        f.json(
+            Request::get(f.url(&bad))
+                .header("cookie", &login.0)
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    f.close().await;
 }
 struct Fixture {
     runtime: PgPool,
