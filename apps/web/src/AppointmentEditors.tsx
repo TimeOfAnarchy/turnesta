@@ -762,6 +762,7 @@ export function AppointmentsPanel({
   specialist,
   date,
   placed,
+  cancelled,
   open,
   disabled,
 }: {
@@ -770,10 +771,10 @@ export function AppointmentsPanel({
   specialist: string;
   date: string;
   placed: ReadonlySet<string>;
+  cancelled: boolean;
   open: (item: Appointment) => void;
   disabled: boolean;
 }) {
-  const [cancelled, setCancelled] = useState(false);
   const query = useDayAppointments(
     tenant,
     location,
@@ -792,18 +793,8 @@ export function AppointmentsPanel({
         (a.starts_local ?? 'z').localeCompare(b.starts_local ?? 'z') ||
         a.client_name.localeCompare(b.client_name),
     );
-  const toggle = (
-    <label className="checkbox-label">
-      <input
-        type="checkbox"
-        checked={cancelled}
-        onChange={(e) => setCancelled(e.target.checked)}
-      />
-      Показать отменённые записи
-    </label>
-  );
   if (!cancelled && query.isSuccess && !items.length && !query.hasNextPage)
-    return <div className="appointment-toggle">{toggle}</div>;
+    return null;
   return (
     <section
       className="booking-section appointment-section"
@@ -813,7 +804,6 @@ export function AppointmentsPanel({
         <h2 id="appointments-title">
           {cancelled ? 'Отменённые и другие записи' : 'Другие записи дня'}
         </h2>
-        {toggle}
       </div>
       {query.isPending ? (
         <Loading label="Загружаем записи…" />

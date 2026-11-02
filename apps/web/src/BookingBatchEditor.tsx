@@ -185,7 +185,7 @@ export function BookingBatchEditor({
   return (
     <Modal
       icon="calendar"
-      title="Заполнить расписание"
+      title="Заполнить на несколько дней"
       description={`${specialist.name} · ${zone}. Сначала проверьте будущие талоны; клиенты не копируются.`}
       close={close}
       busy={busy || checking}

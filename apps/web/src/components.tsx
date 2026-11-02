@@ -53,7 +53,7 @@ export function Modal({ title, description, children, close, busy = false, icon 
     const element = dialog.current!;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     element.showModal();
-    element.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus();
+    [...element.querySelectorAll<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')].find((field) => !field.closest('details:not([open])'))?.focus();
     return () => { element.close(); previous?.focus(); };
   }, []);
   return <dialog className="dialog" ref={dialog} aria-labelledby="dialog-title" aria-describedby="dialog-description" onCancel={(event) => {

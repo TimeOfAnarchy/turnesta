@@ -323,6 +323,7 @@ function Schedule({
   const today = todayAt(zone);
   const [date, setDate] = useState(today);
   const [withdrawn, setWithdrawn] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const offers = useInfiniteQuery({
     queryKey: [...base, 'offers', selected?.id, date, withdrawn],
     initialPageParam: null as string | null,
@@ -953,14 +954,26 @@ function Schedule({
                 )}
               </p>
             </div>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={withdrawn}
-                onChange={(e) => setWithdrawn(e.target.checked)}
-              />
-              Показать снятые
-            </label>
+            <div className="booking-day-filters" role="group" aria-label="Показать в расписании">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={withdrawn}
+                  onChange={(e) => setWithdrawn(e.target.checked)}
+                />
+                Снятые талоны
+              </label>
+              {canBook && (
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={cancelled}
+                    onChange={(e) => setCancelled(e.target.checked)}
+                  />
+                  Отменённые записи
+                </label>
+              )}
+            </div>
           </div>
           {offers.isPending ? (
             <Loading label="Загружаем расписание…" />
@@ -1037,6 +1050,7 @@ function Schedule({
               specialist={selected.id}
               date={date}
               placed={placed}
+              cancelled={cancelled}
               disabled={bookingDisabled}
               open={(item) => open({ kind: 'appointment', item })}
             />

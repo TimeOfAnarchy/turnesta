@@ -60,7 +60,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <Link className="workspace-switch" to="/" state={pickState} aria-label={`Сменить организацию. Сейчас ${organization.name}`}>
           <span className="workspace-avatar" aria-hidden="true">{[...organization.name][0]?.toUpperCase()}</span>
-          <span className="workspace-copy"><strong>{organization.name}</strong><span>Сменить организацию</span></span><Icon name="chevron"/>
+          <span className="workspace-copy"><strong>{organization.name}</strong><span>Все организации</span></span><Icon name="chevron"/>
         </Link>
         <nav className="main-nav" aria-label="Организация">
           <NavLink to={`${base}/locations`} className={({ isActive }) => isActive || pathname === base ? 'nav-item active' : 'nav-item'}><Icon name="locations"/>Точки</NavLink>

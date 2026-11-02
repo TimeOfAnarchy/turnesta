@@ -494,7 +494,7 @@ export function OfferEditor({
             ? 'Похожий талон'
             : 'Новый талон'
       }
-      description={`${specialist.name} · время ${timezone}. Заполняйте вручную; заготовка необязательна.`}
+      description={`${specialist.name}. Время указывается по часовому поясу точки (${timezone}).`}
       busy={busy}
       close={close}
     >
@@ -531,6 +531,42 @@ export function OfferEditor({
               По договорённости
             </button>
           </div>
+          {(presets.some((p) => p.enabled) || morePresets) && (
+            <details className="booking-preset-picker">
+              <summary>
+                Заполнить из заготовки{' '}
+                <span className="subtle">· необязательно</span>
+              </summary>
+              <div className="form-field">
+                <label htmlFor="offer-preset">Заготовка приёма</label>
+                <select
+                  id="offer-preset"
+                  disabled={occupied > 0}
+                  value={presetId}
+                  onChange={(e) => choosePreset(e.target.value)}
+                >
+                  <option value="">Ручное заполнение</option>
+                  {presets
+                    .filter((p) => p.enabled)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.duration_minutes ? ` · ${p.duration_minutes} мин` : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              {morePresets && (
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={morePresets}
+                >
+                  Загрузить ещё заготовки
+                </button>
+              )}
+            </details>
+          )}
           <div className="form-field">
             <label htmlFor="offer-title">
               Название приёма <span className="subtle">· необязательно</span>
@@ -542,40 +578,6 @@ export function OfferEditor({
               autoComplete="off"
             />
           </div>
-          <details className="booking-preset-picker">
-            <summary>
-              Заполнить из заготовки{' '}
-              <span className="subtle">· необязательно</span>
-            </summary>
-            <div className="form-field">
-              <label htmlFor="offer-preset">Заготовка приёма</label>
-              <select
-                id="offer-preset"
-                disabled={occupied > 0}
-                value={presetId}
-                onChange={(e) => choosePreset(e.target.value)}
-              >
-                <option value="">Ручное заполнение</option>
-                {presets
-                  .filter((p) => p.enabled)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.duration_minutes ? ` · ${p.duration_minutes} мин` : ''}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            {morePresets && (
-              <button
-                className="text-button"
-                type="button"
-                onClick={morePresets}
-              >
-                Загрузить ещё заготовки
-              </button>
-            )}
-          </details>
           {draft.agreement ? (
             <>
               <div className="booking-form-grid">
@@ -610,9 +612,9 @@ export function OfferEditor({
             </>
           ) : (
             <>
-              <div className="booking-form-grid">
-                <div className="form-field">
-                  <label htmlFor="offer-date">Дата начала</label>
+              <div className="booking-time-grid">
+                <div className="form-field booking-time-date">
+                  <label htmlFor="offer-date">Дата</label>
                   <input
                     id="offer-date"
                     disabled={occupied > 0}
@@ -639,9 +641,7 @@ export function OfferEditor({
                   />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="offer-end">
-                    Окончание <span className="subtle">· необязательно</span>
-                  </label>
+                  <label htmlFor="offer-end">Окончание</label>
                   <input
                     id="offer-end"
                     disabled={occupied > 0}
@@ -653,21 +653,23 @@ export function OfferEditor({
                     }}
                   />
                 </div>
-                {draft.end && (
-                  <div className="form-field">
-                    <label htmlFor="offer-end-date">Дата окончания</label>
-                    <input
-                      id="offer-end-date"
-                      disabled={occupied > 0}
-                      type="date"
-                      value={draft.endDate}
-                      onChange={(e) => {
-                        setAutoDuration(null);
-                        update({ endDate: e.target.value });
-                      }}
-                    />
-                  </div>
-                )}
+                {draft.end &&
+                  (draft.endDate !== draft.date ||
+                    (Boolean(draft.start) && draft.end <= draft.start)) && (
+                    <div className="form-field booking-time-date">
+                      <label htmlFor="offer-end-date">Дата окончания</label>
+                      <input
+                        id="offer-end-date"
+                        disabled={occupied > 0}
+                        type="date"
+                        value={draft.endDate}
+                        onChange={(e) => {
+                          setAutoDuration(null);
+                          update({ endDate: e.target.value });
+                        }}
+                      />
+                    </div>
+                  )}
               </div>
               {!draft.end && (
                 <p className="booking-limited-check">
