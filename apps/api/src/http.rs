@@ -126,6 +126,7 @@ struct ErrorResponse {
 #[openapi(
     info(title = "Turnesta API", description = "Turnesta operational endpoints"),
     paths(
+        bookings_http::batch_preview,
         bookings_widget_http::settings,
         bookings_widget_http::configure,
         bookings_public_http::settings,
@@ -188,6 +189,13 @@ struct ErrorResponse {
         queue_public_http::issue
     ),
     components(schemas(
+        crate::bookings_batch::BatchRequest,
+        crate::bookings_batch::BatchSource,
+        crate::bookings_batch::BatchRow,
+        crate::bookings_batch::BatchConflict,
+        crate::bookings_batch::BatchPreview,
+        crate::bookings_batch::BatchReceipt,
+        crate::bookings_batch::BatchTimeIssue,
         crate::bookings_widget::WidgetSettings,
         crate::bookings_widget::WidgetConfigure,
         bookings_widget_http::WidgetResponse,

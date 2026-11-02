@@ -27,6 +27,10 @@ use uuid::Uuid;
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/batch-preview",
+            post(batch_preview),
+        )
+        .route(
             "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}",
             get(appointment),
         )
@@ -62,6 +66,7 @@ pub(super) fn routes() -> Router<AppState> {
 pub(super) enum BookingHttpError {
     Api(ApiError),
     Overlap(ConflictNotice),
+    BatchTime(crate::bookings_batch::BatchTimeIssue),
 }
 impl From<ApiError> for BookingHttpError {
     fn from(e: ApiError) -> Self {
@@ -71,6 +76,27 @@ impl From<ApiError> for BookingHttpError {
 impl From<BookingError> for BookingHttpError {
     fn from(e: BookingError) -> Self {
         Self::Api(match e {
+            BookingError::InvalidBatch => ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "invalid_batch",
+                "Check source, dates, duration and batch size",
+            ),
+            BookingError::BatchChanged => ApiError::new(
+                StatusCode::CONFLICT,
+                "batch_preview_changed",
+                "Review the updated batch preview",
+            ),
+            BookingError::BatchDuplicate => ApiError::new(
+                StatusCode::CONFLICT,
+                "batch_duplicate",
+                "Exact duplicate offers cannot be added",
+            ),
+            BookingError::BatchConsent => ApiError::new(
+                StatusCode::CONFLICT,
+                "batch_overlap",
+                "Review overlapping alternatives",
+            ),
+            BookingError::BatchTime(details) => return Self::BatchTime(details),
             BookingError::Core(e) => e.into(),
             BookingError::Database(e) => e.into(),
             BookingError::NotFound => ApiError::new(
@@ -145,6 +171,7 @@ impl From<BookingError> for BookingHttpError {
 impl IntoResponse for BookingHttpError {
     fn into_response(self) -> Response {
         match self {
+            Self::BatchTime(details)=>(StatusCode::BAD_REQUEST,Json(serde_json::json!({"code":"batch_time","message":"Review local time on this date","details":details}))).into_response(),
             Self::Api(e) => e.into_response(),
             Self::Overlap(details) => (
                 StatusCode::CONFLICT,
@@ -171,6 +198,29 @@ async fn bounded<T>(
         .await
         .map_err(|_| ApiError::unavailable())?
         .map_err(Into::into)
+}
+
+#[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/batch-preview",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=crate::bookings_batch::BatchRequest,responses((status=200,body=crate::bookings_batch::BatchPreview)))]
+pub(super) async fn batch_preview(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    headers: HeaderMap,
+    path: Result<Path<(TenantId, LocationId)>, PathRejection>,
+    body: Result<Json<crate::bookings_batch::BatchRequest>, JsonRejection>,
+) -> Result<Json<crate::bookings_batch::BatchPreview>, BookingHttpError> {
+    check_mutation(&headers, &state.auth, &signed)?;
+    let Path((tenant, point)) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(request) = body.map_err(|_| ApiError::bad_request())?;
+    Ok(Json(
+        bounded(crate::bookings_batch::preview(
+            &state.pool,
+            signed.user_id,
+            tenant,
+            point,
+            request,
+        ))
+        .await?,
+    ))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

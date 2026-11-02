@@ -14,6 +14,7 @@ use turnesta_api::{
     bookings::{
         self, BookingCommand as Command, BookingError, BookingResource, OfferState, Timing,
     },
+    bookings_batch::{self as batch, BatchReceipt, BatchRequest, BatchSource},
     bookings_public::{
         self as public_bookings, BookingFieldKind, BookingForm, BookingFormField,
         PublicBookingError as PubError, PublicBookingInput,
@@ -2986,6 +2987,517 @@ async fn booking_widget_http_requires_session_csrf_and_rechecks_membership() {
         .await
         .0,
         StatusCode::NOT_FOUND
+    );
+    f.close().await;
+}
+
+fn batch_copy(spec: Uuid, source: &str, targets: &[&str], zone: &str) -> BatchRequest {
+    BatchRequest {
+        id: Uuid::new_v4(),
+        specialist_id: spec,
+        time_zone: zone.into(),
+        state: OfferState::Ready,
+        source: BatchSource::CopyDay {
+            source_date: source.into(),
+            target_dates: targets.iter().map(|s| (*s).into()).collect(),
+        },
+    }
+}
+fn batch_series(spec: Uuid, preset: Uuid, dates: &[&str], zone: &str) -> BatchRequest {
+    BatchRequest {
+        id: Uuid::new_v4(),
+        specialist_id: spec,
+        time_zone: zone.into(),
+        state: OfferState::Ready,
+        source: BatchSource::PresetSeries {
+            preset_id: preset,
+            dates: dates.iter().map(|s| (*s).into()).collect(),
+            start_time: "09:00".into(),
+            end_time: "12:00".into(),
+            gap_minutes: 15,
+        },
+    }
+}
+async fn save_batch(
+    f: &Fixture,
+    key: Uuid,
+    request: BatchRequest,
+    token: String,
+    allow: bool,
+) -> Result<BatchReceipt, BookingError> {
+    let result = bookings::execute(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        key,
+        Command::SaveBatch {
+            request,
+            preview_token: token,
+            allow_alternatives: allow,
+        },
+    )
+    .await?;
+    let BookingResource::Batch(receipt) = result.resource else {
+        panic!("batch receipt expected")
+    };
+    Ok(receipt)
+}
+async fn batch_preset(f: &Fixture, minutes: i32) -> Uuid {
+    let id = Uuid::new_v4();
+    f.execute(Command::SavePreset {
+        id,
+        name: "Procedure".into(),
+        duration_minutes: Some(minutes),
+        enabled: true,
+        expected_version: 0,
+    })
+    .await;
+    id
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn batch_copy_is_atomic_keeps_all_timing_modes_and_never_copies_clients() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let first = saved_offer(
+        &f,
+        spec.id,
+        interval("2030-05-01T23:30", "2030-05-02T01:00"),
+    )
+    .await;
+    saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2030-05-01T10:00".into(),
+        },
+    )
+    .await;
+    saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: Some("2030-05-01".into()),
+            places: 4,
+        },
+    )
+    .await;
+    saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 8,
+        },
+    )
+    .await;
+    let mut withdrawn = offer(
+        spec.id,
+        Timing::ByAgreement {
+            date: Some("2030-05-01".into()),
+            places: 2,
+        },
+    );
+    if let Command::SaveOffer { state, .. } = &mut withdrawn {
+        *state = OfferState::Withdrawn;
+    }
+    f.execute(withdrawn).await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, first.id, 1, "PRIVATE-SOURCE-CLIENT"),
+    )
+    .await
+    .unwrap();
+    let request = batch_copy(
+        spec.id,
+        "2030-05-01",
+        &["2030-05-20", "2030-05-21"],
+        "Europe/Moscow",
+    );
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.rows.len(), 6);
+    assert!(preview.conflicts.is_empty());
+    let json = serde_json::to_string(&preview).unwrap();
+    assert!(
+        !json.contains("PRIVATE-SOURCE-CLIENT")
+            && !json.contains("phone")
+            && !json.contains("client_name")
+    );
+    assert!(
+        preview
+            .rows
+            .iter()
+            .any(|r| r.ends_local.as_deref() == Some("2030-05-21T01:00"))
+    );
+    let key = Uuid::new_v4();
+    let receipt = save_batch(&f, key, request.clone(), preview.token.clone(), false)
+        .await
+        .unwrap();
+    assert_eq!(receipt.offer_ids.len(), 6);
+    let clients: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM bookings.appointments WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap();
+    assert_eq!(clients, 1);
+    let copied:Vec<bookings::Offer>=sqlx::query_as("SELECT *,NULL::bigint AS reserved_places,NULL::boolean AS blocked_by_booking FROM bookings.offer_details WHERE tenant_id=$1 AND id=ANY($2)").bind(f.tenant).bind(&receipt.offer_ids).fetch_all(&f.migrator).await.unwrap();
+    assert_eq!(copied.len(), 6);
+    assert_eq!(
+        copied
+            .iter()
+            .filter(|o| o.mode == "by_agreement" && o.places == 4)
+            .count(),
+        2
+    );
+    assert!(copied.iter().all(|o| o.state == OfferState::Ready));
+    f.execute(Command::SaveSpecialist {
+        id: spec.id,
+        name: "Renamed".into(),
+        description: String::new(),
+        enabled: false,
+        expected_version: 1,
+    })
+    .await;
+    let replay = save_batch(&f, key, request.clone(), preview.token.clone(), false)
+        .await
+        .unwrap();
+    assert_eq!(replay.offer_ids, receipt.offer_ids);
+    assert!(matches!(
+        save_batch(&f, key, request, preview.token, true).await,
+        Err(BookingError::IdempotencyConflict)
+    ));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn batch_series_uses_preset_window_gap_and_rechecks_source_version() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let preset = batch_preset(&f, 30).await;
+    let request = batch_series(
+        spec.id,
+        preset,
+        &["2030-05-20", "2030-05-21"],
+        "Europe/Moscow",
+    );
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.rows.len(), 8);
+    assert_eq!(
+        preview.rows[1].starts_local.as_deref(),
+        Some("2030-05-20T09:45")
+    );
+    assert_eq!(
+        preview.rows[3].ends_local.as_deref(),
+        Some("2030-05-20T11:45")
+    );
+    f.execute(Command::SavePreset {
+        id: preset,
+        name: "Changed".into(),
+        duration_minutes: Some(45),
+        enabled: true,
+        expected_version: 1,
+    })
+    .await;
+    assert!(matches!(
+        save_batch(&f, Uuid::new_v4(), request.clone(), preview.token, false).await,
+        Err(BookingError::BatchChanged)
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM bookings.offers WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap(),
+        0
+    );
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.rows.len(), 6);
+    let receipt = save_batch(&f, Uuid::new_v4(), request, preview.token, false)
+        .await
+        .unwrap();
+    assert_eq!(receipt.offer_ids.len(), 6);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn batch_duplicate_policy_is_distinct_from_alternatives_and_known_booked_time() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    saved_offer(
+        &f,
+        spec.id,
+        interval("2030-05-01T09:30", "2030-05-01T10:30"),
+    )
+    .await;
+    saved_offer(
+        &f,
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2030-05-01T10:00".into(),
+        },
+    )
+    .await;
+    let occupied = saved_offer(
+        &f,
+        spec.id,
+        interval("2030-05-20T10:00", "2030-05-20T11:00"),
+    )
+    .await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, occupied.id, 1, "Existing client"),
+    )
+    .await
+    .unwrap();
+    let request = batch_copy(spec.id, "2030-05-01", &["2030-05-20"], "Europe/Moscow");
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    assert!(!preview.has_duplicates);
+    for kind in ["internal", "booked", "overlap"] {
+        assert!(preview.conflicts.iter().any(|c| c.kind == kind));
+    }
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM bookings.offers WHERE tenant_id=$1")
+        .bind(f.tenant)
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        save_batch(
+            &f,
+            Uuid::new_v4(),
+            request.clone(),
+            preview.token.clone(),
+            false
+        )
+        .await,
+        Err(BookingError::BatchConsent)
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM bookings.offers WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap(),
+        before
+    );
+    let saved = save_batch(&f, Uuid::new_v4(), request.clone(), preview.token, true)
+        .await
+        .unwrap();
+    assert_eq!(saved.offer_ids.len(), 2);
+    assert!(matches!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(spec.id, saved.offer_ids[0], 1, "Second client")
+        )
+        .await,
+        Err(BookingError::SpecialistBusy)
+    ));
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    assert!(preview.has_duplicates);
+    assert!(matches!(
+        save_batch(&f, Uuid::new_v4(), request, preview.token, true).await,
+        Err(BookingError::BatchDuplicate)
+    ));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn batch_concurrent_saves_and_new_appointment_invalidate_old_preview() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let preset = batch_preset(&f, 30).await;
+    let anchor = saved_offer(
+        &f,
+        spec.id,
+        interval("2030-06-01T17:00", "2030-06-01T17:30"),
+    )
+    .await;
+    let request = batch_series(spec.id, preset, &["2030-05-20"], "Europe/Moscow");
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, anchor.id, 1, "Changes calendar revision"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        save_batch(&f, Uuid::new_v4(), request.clone(), preview.token, false).await,
+        Err(BookingError::BatchChanged)
+    ));
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, request.clone())
+        .await
+        .unwrap();
+    let (a, b) = tokio::join!(
+        save_batch(
+            &f,
+            Uuid::new_v4(),
+            request.clone(),
+            preview.token.clone(),
+            false
+        ),
+        save_batch(&f, Uuid::new_v4(), request, preview.token, false)
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let error = if a.is_err() {
+        a.unwrap_err()
+    } else {
+        b.unwrap_err()
+    };
+    assert!(matches!(error, BookingError::BatchChanged));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM bookings.offers WHERE tenant_id=$1 AND local_date='2030-05-20'",
+    )
+    .bind(f.tenant)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert_eq!(count, 4);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn batch_dst_limits_timezone_roles_and_http_validation_fail_without_writes() {
+    let f = Fixture::new("America/New_York").await;
+    let spec = f.specialist().await;
+    let mut source = offer(
+        spec.id,
+        Timing::StartOnly {
+            starts_local: "2026-03-01T02:30".into(),
+        },
+    );
+    if let Command::SaveOffer { time_zone, .. } = &mut source {
+        *time_zone = "America/New_York".into();
+    }
+    f.execute(source).await;
+    let gap_request = batch_copy(spec.id, "2026-03-01", &["2026-03-08"], "America/New_York");
+    assert!(matches!(
+        batch::preview(&f.runtime, f.owner, f.tenant, f.point, gap_request.clone()).await,
+        Err(BookingError::BatchTime(_))
+    ));
+    let preset = batch_preset(&f, 60).await;
+    let mut fold = batch_series(spec.id, preset, &["2026-11-01"], "America/New_York");
+    if let BatchSource::PresetSeries {
+        start_time,
+        end_time,
+        ..
+    } = &mut fold.source
+    {
+        *start_time = "00:30".into();
+        *end_time = "03:30".into();
+    }
+    assert!(matches!(
+        batch::preview(&f.runtime, f.owner, f.tenant, f.point, fold).await,
+        Err(BookingError::BatchTime(_))
+    ));
+    let tiny = batch_preset(&f, 1).await;
+    let mut huge = batch_series(spec.id, tiny, &["2030-05-20"], "America/New_York");
+    if let BatchSource::PresetSeries {
+        start_time,
+        end_time,
+        gap_minutes,
+        ..
+    } = &mut huge.source
+    {
+        *start_time = "00:00".into();
+        *end_time = "23:59".into();
+        *gap_minutes = 0;
+    }
+    assert!(matches!(
+        batch::preview(&f.runtime, f.owner, f.tenant, f.point, huge).await,
+        Err(BookingError::InvalidBatch)
+    ));
+    let operator = f.member(Role::Operator).await;
+    assert!(matches!(
+        batch::preview(&f.runtime, operator, f.tenant, f.point, gap_request.clone()).await,
+        Err(BookingError::Core(CoreError::Forbidden))
+    ));
+    let login = f.login(f.owner).await;
+    let make = |body: Value| {
+        Request::post(f.url("batch-preview"))
+            .header("cookie", &login.0)
+            .header("origin", "http://127.0.0.1:8080")
+            .header("x-csrf-token", &login.1)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let body = serde_json::to_value(&gap_request).unwrap();
+    let mut no_csrf = make(body.clone());
+    no_csrf.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(no_csrf).await.0, StatusCode::FORBIDDEN);
+    let (status, error) = f.json(make(body.clone())).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "batch_time");
+    assert_eq!(error["details"]["date"], "2026-03-08");
+    let mut spoofed = body;
+    spoofed["created_by"] = json!(f.owner);
+    assert_eq!(f.json(make(spoofed)).await.0, StatusCode::BAD_REQUEST);
+    let mut wrong_zone = batch_series(spec.id, preset, &["2030-05-20"], "UTC");
+    assert!(matches!(
+        batch::preview(&f.runtime, f.owner, f.tenant, f.point, wrong_zone.clone()).await,
+        Err(BookingError::TimeZoneChanged)
+    ));
+    wrong_zone.time_zone = "America/New_York".into();
+    let preview = batch::preview(&f.runtime, f.owner, f.tenant, f.point, wrong_zone.clone())
+        .await
+        .unwrap();
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let point = session
+        .locations()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|p| p.id == f.point)
+        .unwrap();
+    session
+        .update_location(
+            f.point,
+            &Name::parse(&point.name).unwrap(),
+            "UTC",
+            point.version,
+        )
+        .await
+        .unwrap();
+    session.commit().await.unwrap();
+    assert!(matches!(
+        save_batch(&f, Uuid::new_v4(), wrong_zone, preview.token, false).await,
+        Err(BookingError::TimeZoneChanged)
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM bookings.offers WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap(),
+        1
     );
     f.close().await;
 }

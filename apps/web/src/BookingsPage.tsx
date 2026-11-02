@@ -7,6 +7,7 @@ import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
 import { keys, useLocations } from './queries';
 import { OfferEditor, CatalogEditor } from './BookingEditors';
 import { PublicBookingSettings } from './PublicBookingSettings';
+import { BookingBatchEditor } from './BookingBatchEditor';
 import {
   RecordAppointmentEditor,
   AppointmentEditor,
@@ -160,6 +161,7 @@ export function BookingsPage() {
   );
 }
 type Editor =
+  | { kind: 'batch'; specialist: Specialist }
   | { kind: 'record'; offer: Offer; specialist: Specialist }
   | { kind: 'appointment'; item: Appointment }
   | { kind: 'specialist'; item: Specialist | null }
@@ -314,6 +316,11 @@ function Schedule({
     setSuccess('');
     try {
       const receipt = await journal.run(command);
+      if (receipt.resource.kind === 'batch') {
+        setChosen(receipt.resource.item.specialist_id);
+        if (receipt.resource.item.dates[0])
+          setDate(receipt.resource.item.dates[0]);
+      }
       if (
         receipt.resource.kind === 'offer' ||
         receipt.resource.kind === 'appointment'
@@ -333,15 +340,17 @@ function Schedule({
       )
         setChosen(receipt.resource.item.id);
       setSuccess(
-        receipt.resource.kind === 'appointment'
-          ? receipt.resource.item.status === 'cancelled'
-            ? 'Запись отменена. Место освобождено.'
-            : 'Запись клиента сохранена.'
-          : receipt.resource.kind === 'offer'
-            ? 'Талон сохранён в расписании.'
-            : receipt.resource.kind === 'preset'
-              ? 'Заготовка сохранена. Ранее созданные талоны не изменились.'
-              : 'Профиль специалиста сохранён.',
+        receipt.resource.kind === 'batch'
+          ? `Добавлено талонов: ${receipt.resource.item.offer_ids.length}. Клиентские записи не копировались.`
+          : receipt.resource.kind === 'appointment'
+            ? receipt.resource.item.status === 'cancelled'
+              ? 'Запись отменена. Место освобождено.'
+              : 'Запись клиента сохранена.'
+            : receipt.resource.kind === 'offer'
+              ? 'Талон сохранён в расписании.'
+              : receipt.resource.kind === 'preset'
+                ? 'Заготовка сохранена. Ранее созданные талоны не изменились.'
+                : 'Профиль специалиста сохранён.',
       );
       return receipt;
     } finally {
@@ -603,15 +612,27 @@ function Schedule({
               </button>
             </div>
             {canManage && (
-              <button
-                className="button primary"
-                type="button"
-                disabled={actionsDisabled || !selected}
-                onClick={() => openOffer(null)}
-              >
-                <Icon name="plus" />
-                Добавить талон
-              </button>
+              <div className="booking-schedule-actions">
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={actionsDisabled || !selected}
+                  onClick={() =>
+                    selected && open({ kind: 'batch', specialist: selected })
+                  }
+                >
+                  Заполнить расписание
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={actionsDisabled || !selected}
+                  onClick={() => openOffer(null)}
+                >
+                  <Icon name="plus" />
+                  Добавить талон
+                </button>
+              </div>
             )}
           </div>
           {selected && !selected.enabled && (
@@ -847,7 +868,28 @@ function Schedule({
         </div>
       </details>
       {editor &&
-        (editor.kind === 'record' ? (
+        (editor.kind === 'batch' ? (
+          <BookingBatchEditor
+            tenant={tenant}
+            location={location}
+            specialist={
+              specialists.find((s) => s.id === editor.specialist.id) ??
+              editor.specialist
+            }
+            zone={zone}
+            date={date}
+            presets={templates}
+            morePresets={
+              presets.hasNextPage
+                ? () => void presets.fetchNextPage()
+                : undefined
+            }
+            busy={busy}
+            journal={journal}
+            run={run}
+            close={() => setEditor(null)}
+          />
+        ) : editor.kind === 'record' ? (
           <RecordAppointmentEditor
             key={`record:${editor.offer.id}`}
             offer={editor.offer}

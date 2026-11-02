@@ -5,6 +5,8 @@ import {
   validAppointmentCommand,
 } from './appointments.ts';
 import type { Appointment, AppointmentCommand } from './appointments.ts';
+import { validBatchCommand, validBatchReceipt } from './bookingBatch.ts';
+import type { BatchCommand, BatchReceipt } from './bookingBatch.ts';
 
 export type Specialist = {
   id: string;
@@ -43,6 +45,7 @@ export type Offer = {
   blocked_by_booking: boolean | null;
 };
 export type BookingCommand =
+  | BatchCommand
   | AppointmentCommand
   | {
       type: 'save_specialist';
@@ -76,7 +79,8 @@ export type BookingReceipt = {
     | { kind: 'specialist'; item: Specialist }
     | { kind: 'preset'; item: Preset }
     | { kind: 'offer'; item: Offer }
-    | { kind: 'appointment'; item: Appointment };
+    | { kind: 'appointment'; item: Appointment }
+    | { kind: 'batch'; item: BatchReceipt };
 };
 export type ConflictNotice = {
   token: string;
@@ -168,12 +172,14 @@ export const bookingApi = {
     );
     if (
       !result?.resource ||
-      !['specialist', 'preset', 'offer', 'appointment'].includes(
+      !['specialist', 'preset', 'offer', 'appointment', 'batch'].includes(
         result.resource.kind,
       ) ||
       !uuid.test(result.resource.item?.id) ||
       !Number.isInteger(result.resource.item.version) ||
-      result.resource.item.version < 1
+      result.resource.item.version < 1 ||
+      (result.resource.kind === 'batch' &&
+        !validBatchReceipt(result.resource.item))
     )
       throw new Error('Invalid booking receipt');
     return result;
@@ -182,6 +188,7 @@ export const bookingApi = {
 function validCommand(value: unknown): value is BookingCommand {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
+  if (v.type === 'save_batch') return validBatchCommand(v);
   if (isAppointmentAction(v)) return validAppointmentCommand(v);
   if (
     typeof v.id !== 'string' ||
@@ -333,6 +340,11 @@ export class BookingCommands {
               'specialist_busy',
               'offer_occupied',
               'appointment_closed',
+              'invalid_batch',
+              'batch_preview_changed',
+              'batch_duplicate',
+              'batch_overlap',
+              'batch_time',
             ].includes(error.code))
         )
           this.clear();
@@ -373,8 +385,21 @@ export function conflictNotice(error: unknown): ConflictNotice | null {
 }
 export function bookingError(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
+  if (error.code === 'batch_time') {
+    const d = error.details as { date?: unknown; code?: unknown };
+    if (d && typeof d.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
+      return `${d.date}: ${d.code === 'time_gap' ? 'время попадает в пропущенный час' : 'время двусмысленно при переводе часов'}. Измените даты или время серии.`;
+  }
   return (
     {
+      invalid_batch:
+        'Проверьте источник, даты и длительность. В пакете — до 31 даты и 200 талонов. День-образец нельзя включать в даты копирования; для серии нужна включённая заготовка с длительностью.',
+      batch_preview_changed:
+        'Расписание, записи или заготовка изменились. Повторите предпросмотр — ничего не добавлено.',
+      batch_duplicate:
+        'В пакете есть точные дубликаты. Измените даты или источник — ничего не добавлено.',
+      batch_overlap:
+        'Для добавления пересекающихся альтернатив требуется явное согласие после предпросмотра.',
       invalid_client: 'Проверьте имя, телефон, email и длину комментария.',
       offer_unavailable:
         'Талон закрыт для новых записей или специалист выключен. Выберите другой талон.',

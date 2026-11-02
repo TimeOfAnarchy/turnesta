@@ -54,7 +54,8 @@ async fn api_contract_contains_operational_routes() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let document = json(response).await;
+    let bytes = to_bytes(response.into_body(), 256 * 1024).await.unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(document["paths"]["/health"]["get"].is_object());
     assert!(document["paths"]["/health/ready"]["get"]["responses"]["503"].is_object());
 }

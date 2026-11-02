@@ -42,6 +42,16 @@ pub enum BookingError {
     OfferOccupied,
     #[error("appointment is no longer active")]
     AppointmentClosed,
+    #[error("invalid batch size, source or dates")]
+    InvalidBatch,
+    #[error("batch preview has changed")]
+    BatchChanged,
+    #[error("batch contains duplicate offers")]
+    BatchDuplicate,
+    #[error("batch alternatives need explicit consent")]
+    BatchConsent,
+    #[error("batch date has invalid local time")]
+    BatchTime(crate::bookings_batch::BatchTimeIssue),
 }
 impl From<sqlx::Error> for BookingError {
     fn from(error: sqlx::Error) -> Self {
@@ -161,6 +171,11 @@ impl Timing {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BookingCommand {
+    SaveBatch {
+        request: crate::bookings_batch::BatchRequest,
+        preview_token: String,
+        allow_alternatives: bool,
+    },
     SaveSpecialist {
         id: Uuid,
         name: String,
@@ -188,6 +203,18 @@ pub enum BookingCommand {
 }
 impl BookingCommand {
     fn normalize(&mut self) -> Result<(), BookingError> {
+        if let Self::SaveBatch {
+            request,
+            preview_token,
+            ..
+        } = self
+        {
+            request.normalize()?;
+            if preview_token.len() != 64 || !preview_token.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return Err(BookingError::InvalidBatch);
+            }
+            return Ok(());
+        }
         let version = match self {
             Self::SaveSpecialist {
                 name,
@@ -230,6 +257,7 @@ impl BookingCommand {
                 }
                 *expected_version
             }
+            Self::SaveBatch { .. } => unreachable!(),
         };
         if version < 0 {
             return Err(BookingError::Invalid);
@@ -247,6 +275,7 @@ fn clean_text(value: &str, max: usize) -> Result<String, BookingError> {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", content = "item", rename_all = "snake_case")]
 pub enum BookingResource {
+    Batch(crate::bookings_batch::BatchReceipt),
     Specialist(Specialist),
     Preset(Preset),
     Offer(Offer),
@@ -270,7 +299,7 @@ pub struct ConflictNotice {
     pub conflicts: Vec<Conflict>,
 }
 
-async fn location_zone(
+pub(crate) async fn location_zone(
     session: &mut TenantSession,
     location: LocationId,
     lock: bool,
@@ -414,9 +443,27 @@ pub async fn execute(
         BookingCommand::SaveOffer { specialist_id, .. } => {
             lock_calendar(&mut s, location, *specialist_id).await?
         }
+        BookingCommand::SaveBatch { request, .. } => {
+            lock_calendar(&mut s, location, request.specialist_id).await?
+        }
         _ => {}
     }
     let resource = match &command {
+        BookingCommand::SaveBatch {
+            request,
+            preview_token,
+            allow_alternatives,
+        } => BookingResource::Batch(
+            crate::bookings_batch::apply(
+                &mut s,
+                location,
+                &zone,
+                request,
+                preview_token,
+                *allow_alternatives,
+            )
+            .await?,
+        ),
         BookingCommand::SaveSpecialist {
             id,
             name,
@@ -604,7 +651,7 @@ pub async fn suggest_time(
     })
 }
 
-fn resolve_time(zone: &str, wall: &str) -> Result<Zoned, BookingError> {
+pub(crate) fn resolve_time(zone: &str, wall: &str) -> Result<Zoned, BookingError> {
     let local: DateTime = wall.parse().map_err(|_| BookingError::Invalid)?;
     if wall.len() != 16 || local.strftime("%Y-%m-%dT%H:%M").to_string() != wall {
         return Err(BookingError::Invalid);
