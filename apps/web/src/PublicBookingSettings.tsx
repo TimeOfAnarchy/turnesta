@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, errorMessage } from './api';
 import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
+import { BookingWidgetSettings } from './BookingWidgetSettings';
 import {
   publicBookingApi,
   fieldKindLabels,
@@ -67,6 +68,13 @@ export function PublicBookingSettings({
         ) : (
           <ErrorNotice error={query.error} retry={() => void query.refetch()} />
         )}
+      </div>
+      <div className="booking-public-body">
+        <BookingWidgetSettings
+          tenant={tenant}
+          location={location}
+          canManage={canManage}
+        />
       </div>
     </details>
   );

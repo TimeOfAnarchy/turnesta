@@ -8,10 +8,13 @@ import {
   timeLabel,
   offsetLabel,
 } from './bookings-client.js';
+import { connectBookingEmbed } from './bookings-embed.js';
+import { probeBookingStorage } from './booking-widget-protocol.js';
 
 const app = document.querySelector('#booking-app'),
   root = document.querySelector('#booking-root');
-if (app && root) start(app.dataset.slug, root);
+if (app && root && (await connectBookingEmbed(app)))
+  start(app.dataset.slug, root);
 function node(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const child of children.flat(Infinity)) {
@@ -66,6 +69,7 @@ async function start(slug, root) {
   let generation = 0;
   let controller;
   try {
+    await probeBookingStorage(localStorage, navigator.locks);
     client = new PublicBookingClient(slug, localStorage, navigator.locks);
     s.snapshot = client.read();
   } catch (e) {
@@ -730,7 +734,7 @@ async function start(slug, root) {
         'p',
         { class: 'muted' },
         a.status === 'confirmed'
-          ? 'Для переноса или отмены обратитесь в организацию. Запись можно снова открыть на этом устройстве.'
+          ? `Для переноса или отмены обратитесь в организацию. ${app.dataset.parentOrigin ? 'Запись можно снова открыть в этом виджете.' : 'Запись можно снова открыть на этом устройстве.'}`
           : 'Это место освобождено. При необходимости выберите другой талон.',
       ),
       node('p', { class: 'reference' }, `Номер подтверждения · ${a.reference}`),
@@ -775,7 +779,17 @@ async function start(slug, root) {
     const focusKey = active?.dataset.focusKey;
     root.replaceChildren();
     refreshSnapshot();
-    if (s.storageError) root.append(errorBox({ code: 'storage_unavailable' }));
+    if (s.storageError) {
+      root.append(errorBox({ code: 'storage_unavailable' }));
+      if (app.dataset.parentOrigin)
+        root.append(
+          node(
+            'p',
+            { class: 'notice' },
+            'Браузер не дал виджету доступ к хранилищу. До отправки анкеты откройте отдельную страницу по ссылке под виджетом. Если уже отправляли анкету, сначала уточните результат в организации — не создавайте повторную запись.',
+          ),
+        );
+    }
     if (s.error) root.append(errorBox(s.error));
     if (s.notice)
       root.append(node('p', { class: 'notice', role: 'status' }, s.notice));
@@ -873,6 +887,9 @@ async function start(slug, root) {
             'p',
             { class: 'hint' },
             'Последние 10 записей. Контакты клиента здесь не показываются.',
+            app.dataset.parentOrigin
+              ? ' История относится к этому виджету; на отдельной странице она может отличаться.'
+              : '',
           ),
           node(
             'div',

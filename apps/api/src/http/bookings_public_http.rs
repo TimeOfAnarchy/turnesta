@@ -293,6 +293,23 @@ pub(super) async fn book(
 struct BookingPage {
     slug: Uuid,
     profile: Option<PublicBookingProfile>,
+    parent_origin: String,
+    channel: String,
+}
+pub(super) fn render_page(
+    slug: Uuid,
+    profile: Option<PublicBookingProfile>,
+    parent_origin: String,
+    channel: String,
+) -> Result<String, ApiError> {
+    BookingPage {
+        slug,
+        profile,
+        parent_origin,
+        channel,
+    }
+    .render()
+    .map_err(|_| ApiError::unavailable())
 }
 pub(super) async fn page(
     State(state): State<AppState>,
@@ -316,8 +333,6 @@ pub(super) async fn page(
     } else {
         StatusCode::NOT_FOUND
     };
-    let html = BookingPage { slug, profile }
-        .render()
-        .map_err(|_| ApiError::unavailable())?;
+    let html = render_page(slug, profile, String::new(), String::new())?;
     Ok((status, Html(html)))
 }

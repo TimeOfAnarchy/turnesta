@@ -18,6 +18,7 @@ use turnesta_api::{
         self as public_bookings, BookingFieldKind, BookingForm, BookingFormField,
         PublicBookingError as PubError, PublicBookingInput,
     },
+    bookings_widget::{self as widget, WidgetConfigure, WidgetError},
     core::{CoreError, LocationId, Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
 };
@@ -2613,5 +2614,378 @@ async fn public_bookings_calendar_uses_point_timezone_and_receipt_survives_staff
     assert_eq!(changed.reference, r.reference);
     assert_eq!(changed.version, 2);
     assert_eq!(changed.time_zone, "America/New_York");
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn booking_widget_settings_are_scoped_versioned_and_manager_only() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let initial = widget::settings(&f.runtime, f.owner, f.tenant, f.point)
+        .await
+        .unwrap();
+    assert_eq!(initial.version, 0);
+    assert!(initial.allowed_origins.is_empty());
+    let slug = publish(&f, BookingForm::default()).await;
+    let input = || WidgetConfigure {
+        allowed_origins: vec![
+            "HTTPS://Clinic.Example:443/".into(),
+            "https://clinic.example".into(),
+            "http://[::1]:8000/".into(),
+        ],
+        expected_version: 0,
+    };
+    let operator = f.member(Role::Operator).await;
+    assert!(matches!(
+        widget::configure(
+            &f.runtime,
+            operator,
+            f.tenant,
+            f.point,
+            "http://127.0.0.1:8080",
+            input()
+        )
+        .await,
+        Err(WidgetError::Core(CoreError::Forbidden))
+    ));
+    let saved = widget::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        "http://127.0.0.1:8080",
+        input(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.version, 1);
+    assert_eq!(
+        saved.allowed_origins,
+        vec!["http://[::1]:8000", "https://clinic.example"]
+    );
+    assert!(matches!(
+        widget::configure(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.point,
+            "http://127.0.0.1:8080",
+            input()
+        )
+        .await,
+        Err(WidgetError::Core(CoreError::VersionConflict))
+    ));
+    assert_eq!(
+        public_bookings::profile(&f.runtime, slug)
+            .await
+            .unwrap()
+            .version,
+        1
+    );
+    assert!(
+        widget::permits(
+            &f.runtime,
+            slug,
+            "https://clinic.example",
+            "http://127.0.0.1:8080"
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        !widget::permits(
+            &f.runtime,
+            slug,
+            "https://www.clinic.example",
+            "http://127.0.0.1:8080"
+        )
+        .await
+        .unwrap()
+    );
+    let foreign = Fixture::new("Europe/Moscow").await;
+    assert!(
+        widget::settings(&f.runtime, f.owner, foreign.tenant, foreign.point)
+            .await
+            .is_err()
+    );
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM bookings.widget_settings WHERE location_id=$1"
+        )
+        .bind(foreign.point)
+        .fetch_one(session.connection())
+        .await
+        .unwrap(),
+        0
+    );
+    drop(session);
+    for origin in [
+        "https://clinic.example/path",
+        "http://clinic.example",
+        "https://*.example",
+        "http://127.0.0.1:8080",
+        "https://clinic.example; script-src *",
+    ] {
+        assert!(
+            widget::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                f.point,
+                "http://127.0.0.1:8080",
+                WidgetConfigure {
+                    allowed_origins: vec![origin.into()],
+                    expected_version: 1
+                }
+            )
+            .await
+            .is_err()
+        );
+    }
+    let permissions:(bool,bool,bool)=sqlx::query_as("SELECT has_table_privilege('turnesta_worker','bookings.widget_settings','SELECT'),has_function_privilege('turnesta_admin','bookings.widget_origins(uuid)','EXECUTE'),has_table_privilege('turnesta_runtime','bookings.widget_settings','DELETE')").fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(permissions, (false, false, false));
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let error=sqlx::query("UPDATE bookings.widget_settings SET allowed_origins=ARRAY['https://x; frame-ancestors *'] WHERE tenant_id=$1 AND location_id=$2").bind(f.tenant).bind(f.point).execute(session.connection()).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    drop(session);
+    foreign.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn booking_widget_csp_is_route_scoped_and_revocation_denies_new_loads() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let channel = Uuid::new_v4();
+    let embed =
+        format!("/embed/book/{slug}?parent_origin=https%3A%2F%2Fclinic.example&channel={channel}");
+    let response = f
+        .app
+        .clone()
+        .oneshot(Request::get(&embed).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(
+        response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors 'none'")
+    );
+    widget::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        "http://127.0.0.1:8080",
+        WidgetConfigure {
+            allowed_origins: vec!["https://clinic.example".into()],
+            expected_version: 0,
+        },
+    )
+    .await
+    .unwrap();
+    for path in [
+        embed.clone(),
+        format!("/embed/book/{slug}?channel={channel}&parent_origin=https%3A%2F%2Fclinic.example"),
+    ] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get_all("content-security-policy")
+                .iter()
+                .count(),
+            1
+        );
+        assert!(
+            response.headers()["content-security-policy"]
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors https://clinic.example;")
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        let body = String::from_utf8(
+            to_bytes(response.into_body(), 128 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(body.contains("data-parent-origin=\"https://clinic.example\""));
+        assert!(!body.contains("answers") && !body.contains("client_name"));
+    }
+    for path in [
+        format!("/book/{slug}"),
+        format!("/api/public/bookings/{slug}"),
+        "/login".into(),
+        "/health".into(),
+        f.url("widget"),
+    ] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(
+            response.headers()["content-security-policy"]
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors 'none'")
+        );
+    }
+    for suffix in [
+        format!("parent_origin=https://www.clinic.example&channel={channel}"),
+        format!("parent_origin=https://clinic.example:444&channel={channel}"),
+        "parent_origin=https://clinic.example&channel=bad".to_owned(),
+        format!("parent_origin=https://clinic.example&channel={channel}&x=1"),
+    ] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(
+                Request::get(format!("/embed/book/{slug}?{suffix}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
+        assert!(
+            response.headers()["content-security-policy"]
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors 'none'")
+        );
+    }
+    public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        false,
+        BookingForm::default(),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        f.app
+            .clone()
+            .oneshot(Request::get(&embed).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    widget::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        "http://127.0.0.1:8080",
+        WidgetConfigure {
+            allowed_origins: vec![],
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        f.app
+            .clone()
+            .oneshot(Request::get(&embed).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn booking_widget_http_requires_session_csrf_and_rechecks_membership() {
+    let f = Fixture::new("Europe/Moscow").await;
+    assert_eq!(
+        f.json(Request::get(f.url("widget")).body(Body::empty()).unwrap())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let login = f.login(f.owner).await;
+    let make = || {
+        Request::put(f.url("widget"))
+            .header("origin", "http://127.0.0.1:8080")
+            .header("cookie", &login.0)
+            .header("x-csrf-token", &login.1)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"allowed_origins":["https://clinic.example"],"expected_version":0})
+                    .to_string(),
+            ))
+            .unwrap()
+    };
+    let mut request = make();
+    request.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(request).await.0, StatusCode::FORBIDDEN);
+    let (status, value) = f.json(make()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(value["version"], 1);
+    assert!(value["public_url"].is_null());
+    let operator = f.member(Role::Operator).await;
+    let op_login = f.login(operator).await;
+    let (status, value) = f
+        .json(
+            Request::get(f.url("widget"))
+                .header("cookie", &op_login.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(value["allowed_origins"], json!(["https://clinic.example"]));
+    let mut request = make();
+    request
+        .headers_mut()
+        .insert("cookie", op_login.0.parse().unwrap());
+    request
+        .headers_mut()
+        .insert("x-csrf-token", op_login.1.parse().unwrap());
+    assert_eq!(f.json(request).await.0, StatusCode::FORBIDDEN);
+    sqlx::query("DELETE FROM core.memberships WHERE tenant_id=$1 AND user_id=$2")
+        .bind(f.tenant)
+        .bind(operator)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert_eq!(
+        f.json(
+            Request::get(f.url("widget"))
+                .header("cookie", &op_login.0)
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
     f.close().await;
 }
