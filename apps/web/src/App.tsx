@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, NavLink, Outlet, Route, Routes, useLocation, useOutletContext, useParams } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useOutletContext, useParams } from 'react-router-dom';
 import { api, ApiError, roleLabels, readRecoveryInterval } from './api';
 import type { Organization, Role } from './api';
 import { Brand, ErrorNotice, Icon, Loading } from './components';
@@ -24,7 +24,7 @@ export function App() {
   return <Routes>
     <Route index element={<OrganizationPicker/>}/>
     <Route path="organizations/:tenantId" element={<OrganizationLayout userId={session.data.user_id}/>}>
-      <Route index element={<LocationsPage/>}/>
+      <Route index element={<LastSection/>}/>
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="bookings" element={<BookingsPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
@@ -53,12 +53,12 @@ function Shell({ organization, role, children }: { organization?: Organization; 
   return <div className="app-shell">
     <a href="#main-content" className="skip-link">К содержимому</a>
     <aside className="sidebar" aria-label="Рабочее пространство">
-      <Link className="brand-link" to="/" aria-label="Turnesta — организации"><Brand/></Link>
+      <Link className="brand-link" to="/" state={pickState} aria-label="Turnesta — организации"><Brand/></Link>
       <p className="brand-caption">Всё идёт своим чередом.</p>
       <div className="sidebar-divider"/>
       {organization ? <>
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-        <Link className="workspace-switch" to="/" aria-label={`Сменить организацию. Сейчас ${organization.name}`}>
+        <Link className="workspace-switch" to="/" state={pickState} aria-label={`Сменить организацию. Сейчас ${organization.name}`}>
           <span className="workspace-avatar" aria-hidden="true">{[...organization.name][0]?.toUpperCase()}</span>
           <span className="workspace-copy"><strong>{organization.name}</strong><span>Сменить организацию</span></span><Icon name="chevron"/>
         </Link>
@@ -78,7 +78,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
       <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
       <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>
@@ -88,12 +88,14 @@ function Shell({ organization, role, children }: { organization?: Organization; 
 function OrganizationPicker() {
   const organizations = useOrganizations();
   const items = organizations.data?.pages.flatMap((page) => page.items) ?? [];
+  const picking = (useLocation().state as { pick?: boolean } | null)?.pick === true;
   useEffect(() => { document.title = 'Мои организации · Turnesta'; }, []);
+  if (!picking && items.length === 1 && !organizations.hasNextPage) return <Navigate to={`/organizations/${items[0].id}`} replace/>;
   return <Shell>
     <div className="page-heading"><div><p className="eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</p><h1>Мои организации<span className="heading-dot">.</span></h1><p className="page-intro">Выберите, с какой организацией будем работать.</p></div><span className="heading-decoration" aria-hidden="true"><Icon name="grid"/></span></div>
     {organizations.isPending ? <Loading label="Загружаем организации…"/> : organizations.isError && !items.length ? <ErrorNotice error={organizations.error} retry={() => { void organizations.refetch(); }}/> : items.length === 0 ? <div className="panel empty-state"><span className="large-icon"><Icon name="grid"/></span><h2>Здесь появятся ваши организации</h2><p>Вы уже вошли в Turnesta. Попросите владельца организации добавить вас в команду.</p><button type="button" className="button secondary" onClick={() => { void organizations.refetch(); }}>Проверить доступ</button></div> : <>
       <div className="section-line"><h2>Доступные организации</h2><span className="subtle">Выберите рабочее пространство</span></div>
-      <div className="organization-grid">{items.map((organization, index) => <Link key={organization.id} to={`/organizations/${organization.id}/locations`} className="organization-card">
+      <div className="organization-grid">{items.map((organization, index) => <Link key={organization.id} to={`/organizations/${organization.id}`} className="organization-card">
         <div className="organization-card-top"><span className={`organization-mark mark-${index % 3}`} aria-hidden="true">{[...organization.name][0]?.toUpperCase()}</span><span className="role-badge">{roleLabels[organization.role]}</span></div>
         <h3>{organization.name}</h3><p>Управление рабочим пространством</p><div className="organization-card-bottom"><span>Открыть организацию</span><span className="round-arrow"><Icon name="arrow"/></span></div>
       </Link>)}</div>
@@ -103,6 +105,21 @@ function OrganizationPicker() {
   </Shell>;
 }
 
+const pickState = { pick: true };
+const sections = ['locations', 'queues', 'bookings', 'tips', 'team', 'settings'];
+const sectionKey = (tenant: string) => `turnesta:section:${tenant}`;
+// The last opened section is a per-browser convenience; storage may be unavailable.
+function rememberSection(tenant: string, section: string) {
+  try { window.localStorage.setItem(sectionKey(tenant), section); } catch { /* not persisted */ }
+}
+function LastSection() {
+  const { organization, role } = useWorkspace();
+  let section = 'locations';
+  try { section = window.localStorage.getItem(sectionKey(organization.id)) ?? section; } catch { /* default section */ }
+  if (!sections.includes(section) || (section === 'team' && role !== 'owner')) section = 'locations';
+  return <Navigate to={section} replace/>;
+}
+
 function OrganizationLayout({ userId }: { userId: string }) {
   const { tenantId = '' } = useParams();
   return <OrganizationWorkspace key={tenantId} tenantId={tenantId} userId={userId}/>;
@@ -110,6 +127,8 @@ function OrganizationLayout({ userId }: { userId: string }) {
 
 function OrganizationWorkspace({ tenantId, userId }: { tenantId: string; userId: string }) {
   const organization = useOrganization(tenantId);
+  const section = useLocation().pathname.split('/')[3];
+  useEffect(() => { if (section && sections.includes(section)) rememberSection(tenantId, section); }, [tenantId, section]);
   const organizations = useOrganizations();
   const membership = organizations.data?.pages.flatMap((page) => page.items).find((item) => item.id === tenantId);
   useEffect(() => {

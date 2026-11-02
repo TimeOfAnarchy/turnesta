@@ -33,50 +33,65 @@ export function PublicBookingSettings({
     refetchInterval: 10_000,
   });
   return (
-    <details className="panel booking-public-settings">
-      <summary>
-        <Icon name="globe" />
-        <span>
-          <strong>Онлайн-запись</strong>
-          <span>Публичная ссылка и анкета посетителя</span>
-        </span>
-        <span className="booking-state">
-          {query.data?.enabled ? 'Включена' : 'Выключена'}
-        </span>
-        <Icon name="chevron" />
-      </summary>
-      <div className="booking-public-body">
-        {query.isPending ? (
-          <Loading label="Загружаем настройки…" />
-        ) : query.data ? (
-          <>
-            <PublicSettingsEditor
-              key={`${tenant}:${location}:${canManage}`}
-              tenant={tenant}
-              location={location}
-              initial={query.data}
-              current={query.data}
-              canManage={canManage}
-            />
-            {query.isError && (
-              <ErrorNotice
-                error={query.error}
-                retry={() => void query.refetch()}
+    <div className="booking-online">
+      <section
+        className="panel booking-public-settings"
+        aria-labelledby="public-booking-title"
+      >
+        <div className="booking-panel-head">
+          <span className="square-icon" aria-hidden="true">
+            <Icon name="globe" />
+          </span>
+          <div>
+            <h2 id="public-booking-title">Страница онлайн-записи</h2>
+            <p>Ссылка для клиентов и поля анкеты</p>
+          </div>
+          {query.data && (
+            <span
+              className={`booking-state${query.data.enabled ? '' : ' state-withdrawn'}`}
+            >
+              {query.data.enabled ? 'Принимает записи' : 'Выключена'}
+            </span>
+          )}
+        </div>
+        <div className="booking-public-body">
+          {query.isPending ? (
+            <Loading label="Загружаем настройки…" />
+          ) : query.data ? (
+            <>
+              <PublicSettingsEditor
+                key={`${tenant}:${location}:${canManage}`}
+                tenant={tenant}
+                location={location}
+                initial={query.data}
+                current={query.data}
+                canManage={canManage}
               />
-            )}
-          </>
-        ) : (
-          <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-        )}
-      </div>
-      <div className="booking-public-body">
-        <BookingWidgetSettings
-          tenant={tenant}
-          location={location}
-          canManage={canManage}
-        />
-      </div>
-    </details>
+              {query.isError && (
+                <ErrorNotice
+                  error={query.error}
+                  retry={() => void query.refetch()}
+                />
+              )}
+            </>
+          ) : (
+            <ErrorNotice
+              error={query.error}
+              retry={() => void query.refetch()}
+            />
+          )}
+        </div>
+      </section>
+      <section className="panel booking-public-settings">
+        <div className="booking-public-body">
+          <BookingWidgetSettings
+            tenant={tenant}
+            location={location}
+            canManage={canManage}
+          />
+        </div>
+      </section>
+    </div>
   );
 }
 function PublicSettingsEditor({

@@ -56,7 +56,7 @@ async function loadOrganizations(append = false, revision = viewRevision) {
     const item = document.createElement("li");
     const title = document.createElement("a");
     title.textContent = organization.name;
-    title.href = `/app/organizations/${encodeURIComponent(organization.id)}/locations`;
+    title.href = `/app/organizations/${encodeURIComponent(organization.id)}`;
     const role = document.createElement("span");
     role.textContent = ({ owner: "Владелец", manager: "Управляющий", operator: "Оператор", employee: "Сотрудник" })[organization.role] || organization.role;
     item.append(title, role);
@@ -83,7 +83,8 @@ form.addEventListener("submit", async (event) => {
     if (revision !== viewRevision) return;
     input.value = "";
     hasInvitation = false;
-    await loadOrganizations(false, revision);
+    status.textContent = "Вы вошли. Открываем кабинет…";
+    location.replace("/app/");
   } catch (error) {
     if (revision === viewRevision) status.textContent = error.message;
   } finally { button.disabled = false; }
@@ -108,7 +109,7 @@ if (!hasInvitation) {
   const revision = viewRevision;
   fetch("/auth/session", { credentials: "same-origin" }).then(async response => {
     if (revision !== viewRevision || hasInvitation) return;
-    if (response.ok) await loadOrganizations(false, revision);
+    if (response.ok) location.replace("/app/");
     else if (response.status !== 401) status.textContent = "Сервис временно недоступен. Попробуйте позже.";
   }).catch(() => { status.textContent = "Нет связи с сервером. Проверьте подключение."; });
 }

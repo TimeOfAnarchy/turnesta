@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { errorMessage } from './api';
 
-type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue';
+type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right';
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
     calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h1m6 0h1"/></>,
@@ -23,6 +23,8 @@ export function Icon({ name, className = '' }: { name: IconName; className?: str
     heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>,
     refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.2 6a8 8 0 0 1 13.5 5M4.3 13a8 8 0 0 0 13.5 5"/></>,
     external: <><path d="M14 3h7v7m0-7L10 14M10 3H4v17h17v-6"/></>,
+    left: <path d="m14 6-6 6 6 6"/>,
+    right: <path d="m10 6 6 6-6 6"/>,
   };
   return <svg className={`icon ${className}`} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -43,8 +45,8 @@ export function SuccessNotice({ children }: { children: ReactNode }) {
   return <p className="success-notice" role="status"><Icon name="check"/>{children}</p>;
 }
 
-export function Modal({ title, description, children, close, busy = false }: {
-  title: string; description: string; children: ReactNode; close: () => void; busy?: boolean;
+export function Modal({ title, description, children, close, busy = false, icon = 'locations' }: {
+  title: string; description: string; children: ReactNode; close: () => void; busy?: boolean; icon?: IconName;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -58,7 +60,7 @@ export function Modal({ title, description, children, close, busy = false }: {
     event.preventDefault();
     if (!busy) close();
   }}>
-    <div className="dialog-heading"><div className="square-icon"><Icon name="locations"/></div><button type="button" className="icon-button" onClick={close} disabled={busy} aria-label="Закрыть"><Icon name="close"/></button></div>
+    <div className="dialog-heading"><div className="square-icon"><Icon name={icon}/></div><button type="button" className="icon-button" onClick={close} disabled={busy} aria-label="Закрыть"><Icon name="close"/></button></div>
     <h2 id="dialog-title">{title}</h2><p className="dialog-description" id="dialog-description">{description}</p>{children}
   </dialog>;
 }

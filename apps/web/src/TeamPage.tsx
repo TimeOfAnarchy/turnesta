@@ -361,6 +361,7 @@ function TeamEditor({
   }
   return (
     <Modal
+      icon="users"
       title={member ? 'Доступ участника' : 'Пригласить коллегу'}
       description={
         member

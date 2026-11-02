@@ -141,6 +141,7 @@ export function CatalogEditor({
   }
   return (
     <Modal
+      icon={kind === 'specialist' ? 'users' : 'clock'}
       title={
         kind === 'specialist'
           ? initial
@@ -485,6 +486,7 @@ export function OfferEditor({
   }
   return (
     <Modal
+      icon="clock"
       title={
         initial && !copy
           ? 'Изменить талон'

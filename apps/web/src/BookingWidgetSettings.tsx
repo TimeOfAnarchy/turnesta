@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from './api';
-import { ErrorNotice, Loading, SuccessNotice } from './components';
+import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
 import { bookingWidgetApi, widgetSnippet } from './bookingWidget';
 import type { WidgetSettings } from './bookingWidget';
 
@@ -24,11 +24,18 @@ export function BookingWidgetSettings({
   });
   return (
     <section className="booking-widget-settings" aria-label="Виджет на сайте">
-      <h3>Виджет на вашем сайте</h3>
-      <p className="field-hint">
-        Вставьте календарь записи прямо на страницу. Укажите сайты, которым
-        разрешён показ, затем скопируйте код в HTML сайта.
-      </p>
+      <div className="booking-panel-head">
+        <span className="square-icon" aria-hidden="true">
+          <Icon name="external" />
+        </span>
+        <div>
+          <h2>Виджет на вашем сайте</h2>
+          <p>
+            Календарь записи прямо на странице сайта. Укажите разрешённые
+            сайты и скопируйте код в HTML.
+          </p>
+        </div>
+      </div>
       {query.isPending ? (
         <Loading label="Загружаем настройки виджета…" />
       ) : query.data ? (
@@ -131,7 +138,7 @@ function WidgetEditor({
     <>
       {canManage ? (
         <form onSubmit={(event) => void save(event)} className="booking-form">
-          <fieldset disabled={busy || uncertain}>
+          <fieldset disabled={busy || uncertain} className="form-field">
             <label htmlFor={`widget-origins-${location}`}>
               Разрешённые сайты, каждый с новой строки
             </label>
@@ -202,7 +209,7 @@ function WidgetEditor({
       ) : null}
       {saved && <SuccessNotice>Сайты для встраивания сохранены.</SuccessNotice>}
       {snippet && current.allowed_origins.length > 0 ? (
-        <div className="booking-widget-code">
+        <div className="booking-widget-code form-field">
           <label htmlFor={`widget-code-${location}`}>Код для сайта</label>
           <textarea
             id={`widget-code-${location}`}

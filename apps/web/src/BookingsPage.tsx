@@ -12,6 +12,7 @@ import {
   RecordAppointmentEditor,
   AppointmentEditor,
   AppointmentsPanel,
+  useDayAppointments,
 } from './AppointmentEditors';
 import { canRecord, occupancyLabel, isAppointmentAction } from './appointments';
 import type { Appointment } from './appointments';
@@ -44,13 +45,36 @@ function storage() {
 function distinct<T extends { id: string }>(items: T[]) {
   return [...new Map(items.map((i) => [i.id, i])).values()];
 }
+type View = 'schedule' | 'online' | 'catalog';
+const views: {
+  id: View;
+  label: string;
+  extra?: string;
+  icon: 'calendar' | 'globe' | 'users';
+}[] = [
+  { id: 'schedule', label: 'Расписание', icon: 'calendar' },
+  { id: 'online', label: 'Онлайн-запись', icon: 'globe' },
+  { id: 'catalog', label: 'Специалисты', extra: ' и заготовки', icon: 'users' },
+];
+function readView(value: string | null): View {
+  return value === 'online' || value === 'catalog' ? value : 'schedule';
+}
 export function BookingsPage() {
-  const { organization } = useWorkspace();
+  const { organization, canManage } = useWorkspace();
   const locations = useLocations(organization.id);
   const [params, setParams] = useSearchParams();
   const items = distinct(locations.data?.pages.flatMap((p) => p.items) ?? []);
   const location = params.get('location') ?? items[0]?.id ?? '';
   const point = items.find((i) => i.id === location);
+  const view = readView(params.get('view'));
+  function search(next: { location?: string; view?: View }) {
+    const value = new URLSearchParams();
+    const nextLocation = next.location ?? params.get('location');
+    const nextView = next.view ?? view;
+    if (nextLocation) value.set('location', nextLocation);
+    if (nextView !== 'schedule') value.set('view', nextView);
+    return value;
+  }
   useEffect(() => {
     document.title = `Запись · ${organization.name} · Turnesta`;
   }, [organization.name]);
@@ -71,21 +95,20 @@ export function BookingsPage() {
     locations.isError,
     locations.fetchNextPage,
   ]);
+  const singlePoint = point && items.length === 1 && !locations.hasNextPage;
   return (
     <>
-      <div className="page-heading">
+      <div className="page-heading booking-page-heading">
         <div>
           <p className="eyebrow">ОРГАНИЗАЦИЯ / ЗАПИСЬ</p>
           <h1>
-            Расписание приёмов<span className="heading-dot">.</span>
+            Запись клиентов<span className="heading-dot">.</span>
           </h1>
           <p className="page-intro">
-            Управляйте расписанием и записями клиентов — всё в одном месте.
+            Расписание приёмов, записи клиентов и онлайн-запись — в одном
+            месте.
           </p>
         </div>
-        <span className="booking-heading-icon" aria-hidden="true">
-          <Icon name="calendar" />
-        </span>
       </div>
       {locations.isPending ? (
         <Loading label="Загружаем точки…" />
@@ -98,7 +121,9 @@ export function BookingsPage() {
         />
       ) : !items.length ? (
         <div className="panel empty-state">
-          <Icon name="locations" />
+          <span className="large-icon">
+            <Icon name="locations" />
+          </span>
           <h2>Сначала добавьте точку</h2>
           <p>Специалисты и расписание относятся к месту приёма.</p>
           <Link
@@ -110,51 +135,96 @@ export function BookingsPage() {
         </div>
       ) : (
         <>
-          <div className="booking-location">
-            <div className="form-field">
-              <label htmlFor="booking-location">Точка приёма</label>
-              <select
-                id="booking-location"
-                value={location}
-                onChange={(e) => setParams({ location: e.target.value })}
-              >
-                {!point && (
-                  <option value={location}>Загружаем выбранную точку…</option>
-                )}
-                {items.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
+          <div className="booking-toolbar">
+            <nav className="booking-tabs" aria-label="Разделы записи">
+              {views.map((item) => (
+                <Link
+                  key={item.id}
+                  to={{ search: search({ view: item.id }).toString() }}
+                  aria-current={item.id === view ? 'page' : undefined}
+                  replace
+                >
+                  <Icon name={item.icon} />
+                  <span>
+                    {item.label}
+                    {item.extra && (
+                      <span className="booking-tab-extra">{item.extra}</span>
+                    )}
+                  </span>
+                </Link>
+              ))}
+            </nav>
+            <div className="booking-location">
+              {singlePoint ? (
+                <span className="booking-point">
+                  <Icon name="locations" />
+                  <span>
+                    <strong>{point.name}</strong>
+                    <small>Время точки · {point.time_zone}</small>
+                  </span>
+                </span>
+              ) : (
+                <>
+                  <div className="form-field">
+                    <label htmlFor="booking-location">Точка приёма</label>
+                    <select
+                      id="booking-location"
+                      value={location}
+                      onChange={(e) =>
+                        setParams(search({ location: e.target.value }))
+                      }
+                    >
+                      {!point && (
+                        <option value={location}>
+                          Загружаем выбранную точку…
+                        </option>
+                      )}
+                      {items.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {point && (
+                    <span className="booking-zone">
+                      <Icon name="globe" />
+                      Время точки · {point.time_zone}
+                    </span>
+                  )}
+                  {locations.hasNextPage && (
+                    <button
+                      className="text-button"
+                      type="button"
+                      disabled={locations.isFetching}
+                      onClick={() => {
+                        void locations.fetchNextPage();
+                      }}
+                    >
+                      Ещё точки
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-            {point && (
-              <span className="booking-zone">
-                <Icon name="globe" />
-                Время точки · {point.time_zone}
-              </span>
-            )}
-            {locations.hasNextPage && (
-              <button
-                className="text-button"
-                type="button"
-                disabled={locations.isFetching}
-                onClick={() => {
-                  void locations.fetchNextPage();
-                }}
-              >
-                Ещё точки
-              </button>
-            )}
           </div>
-          {point && (
-            <Schedule
-              key={`${organization.id}:${location}`}
-              tenant={organization.id}
-              location={location}
-              zone={point.time_zone}
-            />
-          )}
+          {point &&
+            (view === 'online' ? (
+              <PublicBookingSettings
+                key={`${organization.id}:${location}`}
+                tenant={organization.id}
+                location={location}
+                canManage={canManage}
+              />
+            ) : (
+              <Schedule
+                key={`${organization.id}:${location}`}
+                tenant={organization.id}
+                location={location}
+                zone={point.time_zone}
+                view={view}
+              />
+            ))}
         </>
       )}
     </>
@@ -172,14 +242,30 @@ type Editor =
       copy?: boolean;
       specialist: Specialist;
     };
+function dayTitle(date: string, today: string) {
+  const label = new Intl.DateTimeFormat('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`));
+  const shift = Math.round(
+    (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) /
+      86_400_000,
+  );
+  const relative = { [-1]: 'Вчера', 0: 'Сегодня', 1: 'Завтра' }[shift];
+  return relative ? `${relative}, ${label}` : label;
+}
 function Schedule({
   tenant,
   location,
   zone,
+  view,
 }: {
   tenant: string;
   location: string;
   zone: string;
+  view: 'schedule' | 'catalog';
 }) {
   const { canManage, userId, role } = useWorkspace();
   const canBook = role !== 'employee';
@@ -234,12 +320,13 @@ function Schedule({
     profiles.isError,
     profiles.fetchNextPage,
   ]);
-  const [date, setDate] = useState(() => todayAt(zone));
+  const today = todayAt(zone);
+  const [date, setDate] = useState(today);
   const [withdrawn, setWithdrawn] = useState(false);
   const offers = useInfiniteQuery({
     queryKey: [...base, 'offers', selected?.id, date, withdrawn],
     initialPageParam: null as string | null,
-    enabled: Boolean(selected),
+    enabled: Boolean(selected) && view === 'schedule',
     queryFn: ({ pageParam, signal }) =>
       bookingApi.offers(
         tenant,
@@ -254,6 +341,14 @@ function Schedule({
     retry: false,
     refetchInterval: 10_000,
   });
+  const appointments = useDayAppointments(
+    tenant,
+    location,
+    selected?.id ?? '',
+    date,
+    false,
+    canBook && Boolean(selected) && view === 'schedule',
+  );
   const items = distinct(offers.data?.pages.flatMap((p) => p.items) ?? []);
   const timed = items
     .filter((i) => i.mode !== 'by_agreement')
@@ -269,6 +364,28 @@ function Schedule({
         Number(a.date === null) - Number(b.date === null) ||
         a.id.localeCompare(b.id),
     );
+  const visible = new Set(items.map((i) => i.id));
+  const clients = new Map<string, Appointment[]>();
+  const placed = new Set<string>();
+  for (const a of appointments.data?.pages.flatMap((p) => p.items) ?? []) {
+    if (a.status !== 'confirmed' || !visible.has(a.offer_id) || placed.has(a.id))
+      continue;
+    placed.add(a.id);
+    clients.set(a.offer_id, [...(clients.get(a.offer_id) ?? []), a]);
+  }
+  const ready = items.filter((i) => i.state === 'ready');
+  const booked = ready.reduce(
+    (sum, i) => sum + Math.min(i.reserved_places ?? 0, i.places),
+    0,
+  );
+  const free = ready.reduce(
+    (sum, i) =>
+      sum +
+      (i.reserved_places === null || i.blocked_by_booking
+        ? 0
+        : Math.max(i.places - i.reserved_places, 0)),
+    0,
+  );
   const [journal] = useState(
     () => new BookingCommands({ tenant, location, user: userId }, storage()),
   );
@@ -377,88 +494,299 @@ function Schedule({
   function list(values: Offer[]) {
     return (
       <div className="booking-offer-list">
-        {values.map((item) => (
-          <article
-            className={`booking-offer booking-offer-${item.state}`}
-            key={item.id}
-          >
-            <div className="booking-offer-time">
-              <Icon name={item.mode === 'by_agreement' ? 'users' : 'clock'} />
-              <strong>{timeLabel(item)}</strong>
-              {item.mode === 'by_agreement' && (
-                <span>
-                  {item.date
-                    ? 'На выбранную дату'
-                    : 'Дата тоже по согласованию'}
-                </span>
-              )}
-            </div>
-            <div className="booking-offer-info">
-              <h3>{item.title || 'Приём'}</h3>
-              <p>
-                {item.mode === 'by_agreement'
-                  ? `Лимит мест: ${item.places}`
-                  : item.time_zone === zone
-                    ? selected?.name
-                    : `${selected?.name} · ${item.time_zone}`}
-              </p>
-            </div>
-            <span className={`booking-state state-${item.state}`}>
-              {offerStateLabels[item.state]}
-            </span>
-            {canBook && (
-              <div className="booking-offer-actions">
-                <span className="appointment-occupancy">
-                  {occupancyLabel(item)}
-                </span>
-                <button
-                  type="button"
-                  className="button primary appointment-book"
-                  disabled={
-                    bookingDisabled ||
-                    !canRecord(item, selected?.enabled ?? false)
-                  }
-                  onClick={() => {
-                    if (selected)
-                      open({
-                        kind: 'record',
-                        offer: item,
-                        specialist: selected,
-                      });
-                  }}
-                  aria-label={`Записать клиента: ${item.title || 'Приём'} ${timeLabel(item)}`}
-                >
-                  Записать клиента
-                </button>
-                {canManage && (
-                  <>
-                    <button
-                      className="text-button"
-                      type="button"
-                      disabled={actionsDisabled}
-                      onClick={() => openOffer(item)}
-                      aria-label={`Изменить талон ${item.title || 'Приём'} ${timeLabel(item)}`}
-                    >
-                      Изменить
-                    </button>
-                    <button
-                      className="text-button"
-                      type="button"
-                      disabled={actionsDisabled}
-                      onClick={() => openOffer(item, true)}
-                      aria-label={`Создать похожий талон ${item.title || 'Приём'} ${timeLabel(item)}`}
-                    >
-                      Создать похожий
-                    </button>
-                  </>
+        {values.map((item) => {
+          const people = clients.get(item.id) ?? [];
+          const label = `${item.title || 'Приём'} ${timeLabel(item)}`;
+          return (
+            <article
+              className={`booking-offer booking-offer-${item.state}${people.length ? ' is-booked' : ''}`}
+              key={item.id}
+            >
+              <div className="booking-offer-time">
+                <Icon name={item.mode === 'by_agreement' ? 'users' : 'clock'} />
+                <strong>{timeLabel(item)}</strong>
+                {item.mode === 'by_agreement' && (
+                  <span>
+                    {item.date
+                      ? 'На выбранную дату'
+                      : 'Дата тоже по согласованию'}
+                  </span>
                 )}
               </div>
-            )}
-          </article>
-        ))}
+              <div className="booking-offer-info">
+                <div className="booking-offer-title">
+                  <h3>{item.title || 'Приём'}</h3>
+                  {item.state !== 'ready' && (
+                    <span className={`booking-state state-${item.state}`}>
+                      {offerStateLabels[item.state]}
+                    </span>
+                  )}
+                </div>
+                {(item.mode === 'by_agreement' || item.time_zone !== zone) && (
+                  <p>
+                    {item.mode === 'by_agreement'
+                      ? `Лимит мест: ${item.places}`
+                      : `Время ${item.time_zone}`}
+                  </p>
+                )}
+                {people.length > 0 && (
+                  <ul className="booking-offer-clients">
+                    {people.map((a) => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          className="booking-client"
+                          disabled={bookingDisabled}
+                          onClick={() => open({ kind: 'appointment', item: a })}
+                          aria-label={`Открыть запись ${a.client_name} ${timeLabel(a)}`}
+                        >
+                          <span className="booking-avatar" aria-hidden="true">
+                            {[...a.client_name][0]?.toUpperCase()}
+                          </span>
+                          <span className="booking-client-copy">
+                            <strong>{a.client_name}</strong>
+                            <small>
+                              {a.phone || 'Телефон не указан'}
+                              {a.source === 'public' ? ' · онлайн-запись' : ''}
+                            </small>
+                          </span>
+                          <Icon name="right" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canBook && (!people.length || item.places > 1) && (
+                  <p
+                    className={`appointment-occupancy${canRecord(item, selected?.enabled ?? false) ? ' is-free' : ''}`}
+                  >
+                    {occupancyLabel(item)}
+                  </p>
+                )}
+              </div>
+              {(canBook || canManage) && (
+                <div className="booking-offer-actions">
+                  {canBook && canRecord(item, selected?.enabled ?? false) && (
+                    <button
+                      type="button"
+                      className="button primary appointment-book"
+                      disabled={bookingDisabled}
+                      onClick={() => {
+                        if (selected)
+                          open({
+                            kind: 'record',
+                            offer: item,
+                            specialist: selected,
+                          });
+                      }}
+                      aria-label={`Записать клиента: ${label}`}
+                    >
+                      <Icon name="plus" />
+                      Записать
+                    </button>
+                  )}
+                  {canManage && (
+                    <div className="booking-offer-tools">
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={actionsDisabled}
+                        onClick={() => openOffer(item)}
+                        aria-label={`Изменить талон ${label}`}
+                      >
+                        Изменить
+                      </button>
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={actionsDisabled}
+                        onClick={() => openOffer(item, true)}
+                        aria-label={`Создать похожий талон ${label}`}
+                      >
+                        Похожий
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
     );
   }
+  const specialistPicker = specialists.length > 1 && (
+    <div className="booking-specialists" role="group" aria-label="Выбор специалиста">
+      {specialists.map((item) => (
+        <button
+          type="button"
+          key={item.id}
+          aria-pressed={item.id === selected?.id}
+          onClick={() => setChosen(item.id)}
+        >
+          <span className="booking-avatar" aria-hidden="true">
+            {[...item.name][0]}
+          </span>
+          <span>
+            {item.name}
+            {!item.enabled && <small>Выключен</small>}
+          </span>
+        </button>
+      ))}
+      {profiles.hasNextPage && (
+        <button
+          className="text-button"
+          type="button"
+          disabled={profiles.isFetching}
+          onClick={() => {
+            void profiles.fetchNextPage();
+          }}
+        >
+          Ещё специалисты
+        </button>
+      )}
+    </div>
+  );
+  const catalog = (
+    <div className="booking-settings-grid">
+      <section className="panel booking-settings-card" aria-labelledby="catalog-specialists">
+        <div className="section-line">
+          <div>
+            <h2 id="catalog-specialists">Специалисты</h2>
+            <p className="booking-settings-hint">
+              Кто ведёт приём в этой точке. Имя и специализацию видят клиенты
+              онлайн-записи.
+            </p>
+          </div>
+          {canManage && (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={actionsDisabled}
+              onClick={() => open({ kind: 'specialist', item: null })}
+            >
+              <Icon name="plus" />
+              Добавить
+            </button>
+          )}
+        </div>
+        {!specialists.length && (
+          <p className="booking-settings-empty">Специалистов пока нет.</p>
+        )}
+        {specialists.map((item) => (
+          <div className="booking-setting-row" key={item.id}>
+            <span className="booking-avatar" aria-hidden="true">
+              {[...item.name][0]}
+            </span>
+            <div>
+              <strong>{item.name}</strong>
+              <p>
+                {item.description || 'Специализация не указана'}
+                {!item.enabled ? ' · выключен' : ''}
+              </p>
+            </div>
+            {canManage && (
+              <button
+                type="button"
+                className="text-button"
+                disabled={actionsDisabled}
+                onClick={() => open({ kind: 'specialist', item })}
+                aria-label={`Изменить специалиста ${item.name}`}
+              >
+                Изменить
+              </button>
+            )}
+          </div>
+        ))}
+        {profiles.hasNextPage && (
+          <button
+            className="text-button"
+            type="button"
+            disabled={profiles.isFetching}
+            onClick={() => {
+              void profiles.fetchNextPage();
+            }}
+          >
+            Ещё специалисты
+          </button>
+        )}
+      </section>
+      <section className="panel booking-settings-card" aria-labelledby="catalog-presets">
+        <div className="section-line">
+          <div>
+            <h2 id="catalog-presets">Заготовки приёмов</h2>
+            <p className="booking-settings-hint">
+              Необязательные названия и длительности для быстрого заполнения.
+              Ручной ввод доступен всегда.
+            </p>
+          </div>
+          {canManage && (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={actionsDisabled}
+              onClick={() => open({ kind: 'preset', item: null })}
+            >
+              <Icon name="plus" />
+              Добавить
+            </button>
+          )}
+        </div>
+        {presets.isPending ? (
+          <Loading label="Загружаем заготовки…" />
+        ) : presets.isError ? (
+          <ErrorNotice
+            error={presets.error}
+            retry={() => {
+              void presets.refetch();
+            }}
+          />
+        ) : templates.length ? (
+          templates.map((item) => (
+            <div className="booking-setting-row" key={item.id}>
+              <span className="booking-setting-icon" aria-hidden="true">
+                <Icon name="clock" />
+              </span>
+              <div>
+                <strong>{item.name}</strong>
+                <p>
+                  {item.duration_minutes
+                    ? `${item.duration_minutes} мин`
+                    : 'Без заданной длительности'}
+                  {!item.enabled ? ' · выключена' : ''}
+                </p>
+              </div>
+              {canManage && (
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={actionsDisabled}
+                  onClick={() => open({ kind: 'preset', item })}
+                  aria-label={`Изменить заготовку ${item.name}`}
+                >
+                  Изменить
+                </button>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="booking-settings-empty">Заготовок пока нет.</p>
+        )}
+        {presets.hasNextPage && (
+          <button
+            className="text-button"
+            type="button"
+            disabled={presets.isFetching}
+            onClick={() => {
+              void presets.fetchNextPage();
+            }}
+          >
+            Ещё заготовки
+          </button>
+        )}
+      </section>
+    </div>
+  );
   return (
     <>
       {!online && (
@@ -509,6 +837,8 @@ function Schedule({
             void profiles.refetch();
           }}
         />
+      ) : view === 'catalog' ? (
+        catalog
       ) : !specialists.length ? (
         <section className="panel booking-onboarding">
           <span className="large-icon">
@@ -537,55 +867,19 @@ function Schedule({
         </section>
       ) : (
         <>
-          <div className="booking-specialist-line">
-            <span className="small-eyebrow">СПЕЦИАЛИСТ</span>
-            <div
-              className="booking-specialists"
-              role="group"
-              aria-label="Выбор специалиста"
-            >
-              {specialists.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  aria-pressed={item.id === selected?.id}
-                  onClick={() => setChosen(item.id)}
-                >
-                  <span className="booking-avatar" aria-hidden="true">
-                    {[...item.name][0]}
-                  </span>
-                  <span>
-                    {item.name}
-                    {!item.enabled && <small>Выключен</small>}
-                  </span>
-                </button>
-              ))}
-              {profiles.hasNextPage && (
-                <button
-                  className="text-button"
-                  type="button"
-                  disabled={profiles.isFetching}
-                  onClick={() => {
-                    void profiles.fetchNextPage();
-                  }}
-                >
-                  Ещё специалисты
-                </button>
-              )}
-            </div>
-          </div>
+          {specialistPicker}
           <div className="booking-daybar">
             <div className="booking-day-picker">
               <button
-                className="icon-button"
+                className="icon-button booking-day-step"
                 type="button"
                 aria-label="Предыдущий день"
                 onClick={() => setDate(shiftDate(date, -1))}
               >
-                <span aria-hidden="true">←</span>
+                <Icon name="left" />
               </button>
-              <div className="form-field">
-                <label htmlFor="booking-date">Дата расписания</label>
+              <label className="booking-date-input">
+                <span className="visually-hidden">Дата расписания</span>
                 <input
                   id="booking-date"
                   type="date"
@@ -594,22 +888,24 @@ function Schedule({
                     if (e.target.value) setDate(e.target.value);
                   }}
                 />
-              </div>
+              </label>
               <button
-                className="icon-button"
+                className="icon-button booking-day-step"
                 type="button"
                 aria-label="Следующий день"
                 onClick={() => setDate(shiftDate(date, 1))}
               >
-                <span aria-hidden="true">→</span>
+                <Icon name="right" />
               </button>
-              <button
-                className="text-button"
-                type="button"
-                onClick={() => setDate(todayAt(zone))}
-              >
-                Сегодня
-              </button>
+              {date !== today && (
+                <button
+                  className="button secondary booking-today"
+                  type="button"
+                  onClick={() => setDate(today)}
+                >
+                  Сегодня
+                </button>
+              )}
             </div>
             {canManage && (
               <div className="booking-schedule-actions">
@@ -621,7 +917,8 @@ function Schedule({
                     selected && open({ kind: 'batch', specialist: selected })
                   }
                 >
-                  Заполнить расписание
+                  <Icon name="calendar" />
+                  Заполнить на несколько дней
                 </button>
                 <button
                   className="button primary"
@@ -641,14 +938,22 @@ function Schedule({
               оставить в черновиках.
             </p>
           )}
-          <div className="booking-day-caption">
-            <span>
-              {new Intl.DateTimeFormat('ru-RU', {
-                dateStyle: 'full',
-                timeZone: 'UTC',
-              }).format(new Date(`${date}T12:00:00Z`))}
-            </span>
-            <label>
+          <div className="booking-day-head">
+            <div>
+              <h2>{dayTitle(date, today)}</h2>
+              <p>
+                {selected?.name}
+                {offers.isSuccess && items.length > 0 && (
+                  <>
+                    {' · '}
+                    {canBook
+                      ? `приёмов: ${ready.length}${offers.hasNextPage ? '+' : ''}, записано: ${booked}, свободно: ${free}`
+                      : `талонов: ${items.length}${offers.hasNextPage ? '+' : ''}`}
+                  </>
+                )}
+              </p>
+            </div>
+            <label className="checkbox-label">
               <input
                 type="checkbox"
                 checked={withdrawn}
@@ -669,27 +974,31 @@ function Schedule({
           ) : !items.length ? (
             <div className="panel booking-empty">
               <Icon name="calendar" />
-              <h2>День ещё свободен</h2>
+              <h2>На этот день приёмов нет</h2>
               <p>
                 {canManage
-                  ? 'Добавьте талон вручную. Время окончания можно не указывать; доступны и талоны по договорённости.'
+                  ? 'Добавьте талон вручную или заполните сразу несколько дней. Время окончания можно не указывать; доступны и талоны по договорённости.'
                   : 'На выбранный день пока нет талонов. Выберите другую дату или специалиста.'}
               </p>
+              {canManage && (
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={actionsDisabled || !selected}
+                  onClick={() => openOffer(null)}
+                >
+                  <Icon name="plus" />
+                  Добавить талон
+                </button>
+              )}
             </div>
           ) : (
             <>
               {timed.length > 0 && (
                 <section
                   className="booking-section"
-                  aria-labelledby="timed-offers"
+                  aria-label="Назначенное время"
                 >
-                  <div className="section-line">
-                    <h2 id="timed-offers">Назначенное время</h2>
-                    <span className="subtle">
-                      Талонов: {timed.length}
-                      {offers.hasNextPage ? '+' : ''}
-                    </span>
-                  </div>
                   {list(timed)}
                 </section>
               )}
@@ -721,152 +1030,19 @@ function Schedule({
               </button>
             </div>
           )}
+          {canBook && selected && (
+            <AppointmentsPanel
+              tenant={tenant}
+              location={location}
+              specialist={selected.id}
+              date={date}
+              placed={placed}
+              disabled={bookingDisabled}
+              open={(item) => open({ kind: 'appointment', item })}
+            />
+          )}
         </>
       )}
-      {canBook && selected && (
-        <AppointmentsPanel
-          tenant={tenant}
-          location={location}
-          specialist={selected.id}
-          date={date}
-          disabled={bookingDisabled}
-          open={(item) => open({ kind: 'appointment', item })}
-        />
-      )}
-      <PublicBookingSettings
-        tenant={tenant}
-        location={location}
-        canManage={canManage}
-      />
-      <details className="booking-settings panel">
-        <summary>
-          <Icon name="settings" />
-          <span>
-            <strong>Специалисты и заготовки</strong>
-            <span>Управление приёмом и быстрым заполнением</span>
-          </span>
-          <Icon name="chevron" />
-        </summary>
-        <div className="booking-settings-grid">
-          <section>
-            <div className="section-line">
-              <h2>Специалисты</h2>
-              {canManage && (
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={actionsDisabled}
-                  onClick={() => open({ kind: 'specialist', item: null })}
-                >
-                  Добавить
-                </button>
-              )}
-            </div>
-            {specialists.map((item) => (
-              <div className="booking-setting-row" key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <p>
-                    {item.description || 'Специализация не указана'}
-                    {!item.enabled ? ' · выключен' : ''}
-                  </p>
-                </div>
-                {canManage && (
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={actionsDisabled}
-                    onClick={() => open({ kind: 'specialist', item })}
-                    aria-label={`Изменить специалиста ${item.name}`}
-                  >
-                    Изменить
-                  </button>
-                )}
-              </div>
-            ))}
-            {profiles.hasNextPage && (
-              <button
-                className="text-button"
-                type="button"
-                disabled={profiles.isFetching}
-                onClick={() => {
-                  void profiles.fetchNextPage();
-                }}
-              >
-                Ещё специалисты
-              </button>
-            )}
-          </section>
-          <section>
-            <div className="section-line">
-              <h2>Заготовки приёмов</h2>
-              {canManage && (
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={actionsDisabled}
-                  onClick={() => open({ kind: 'preset', item: null })}
-                >
-                  Добавить заготовку
-                </button>
-              )}
-            </div>
-            <p className="booking-settings-hint">
-              Необязательные названия и длительности для быстрого ввода. Ручное
-              заполнение всегда доступно.
-            </p>
-            {presets.isPending ? (
-              <Loading label="Загружаем заготовки…" />
-            ) : presets.isError ? (
-              <ErrorNotice
-                error={presets.error}
-                retry={() => {
-                  void presets.refetch();
-                }}
-              />
-            ) : templates.length ? (
-              templates.map((item) => (
-                <div className="booking-setting-row" key={item.id}>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <p>
-                      {item.duration_minutes
-                        ? `${item.duration_minutes} мин`
-                        : 'Без заданной длительности'}
-                      {!item.enabled ? ' · выключена' : ''}
-                    </p>
-                  </div>
-                  {canManage && (
-                    <button
-                      type="button"
-                      className="text-button"
-                      disabled={actionsDisabled}
-                      onClick={() => open({ kind: 'preset', item })}
-                      aria-label={`Изменить заготовку ${item.name}`}
-                    >
-                      Изменить
-                    </button>
-                  )}
-                </div>
-              ))
-            ) : (
-              <p className="subtle">Заготовок пока нет.</p>
-            )}
-            {presets.hasNextPage && (
-              <button
-                className="text-button"
-                type="button"
-                disabled={presets.isFetching}
-                onClick={() => {
-                  void presets.fetchNextPage();
-                }}
-              >
-                Ещё заготовки
-              </button>
-            )}
-          </section>
-        </div>
-      </details>
       {editor &&
         (editor.kind === 'batch' ? (
           <BookingBatchEditor

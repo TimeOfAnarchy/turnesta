@@ -233,6 +233,7 @@ export function RecordAppointmentEditor({
   }
   return (
     <Modal
+      icon="users"
       title="Записать клиента"
       description="Запись сразу закрепит время или одно место в выбранном талоне."
       busy={busy}
@@ -453,6 +454,7 @@ export function AppointmentEditor({
   }
   return (
     <Modal
+      icon="users"
       title={
         mode === 'cancel'
           ? 'Отменить запись?'
@@ -716,23 +718,15 @@ export function AppointmentEditor({
   );
 }
 
-export function AppointmentsPanel({
-  tenant,
-  location,
-  specialist,
-  date,
-  open,
-  disabled,
-}: {
-  tenant: string;
-  location: string;
-  specialist: string;
-  date: string;
-  open: (item: Appointment) => void;
-  disabled: boolean;
-}) {
-  const [cancelled, setCancelled] = useState(false);
-  const query = useInfiniteQuery({
+export function useDayAppointments(
+  tenant: string,
+  location: string,
+  specialist: string,
+  date: string,
+  cancelled: boolean,
+  enabled = true,
+) {
+  return useInfiniteQuery({
     queryKey: [
       'organization',
       tenant,
@@ -744,6 +738,7 @@ export function AppointmentsPanel({
       cancelled,
     ],
     initialPageParam: null as string | null,
+    enabled,
     queryFn: ({ pageParam, signal }) =>
       appointmentApi.list(
         tenant,
@@ -758,46 +753,76 @@ export function AppointmentsPanel({
     retry: false,
     refetchInterval: 10_000,
   });
+}
+// Confirmed appointments of visible slots are shown inside the slot cards;
+// this panel keeps the rest: cancelled history and records outside the list.
+export function AppointmentsPanel({
+  tenant,
+  location,
+  specialist,
+  date,
+  placed,
+  open,
+  disabled,
+}: {
+  tenant: string;
+  location: string;
+  specialist: string;
+  date: string;
+  placed: ReadonlySet<string>;
+  open: (item: Appointment) => void;
+  disabled: boolean;
+}) {
+  const [cancelled, setCancelled] = useState(false);
+  const query = useDayAppointments(
+    tenant,
+    location,
+    specialist,
+    date,
+    cancelled,
+  );
   const items = [
     ...new Map(
       (query.data?.pages.flatMap((p) => p.items) ?? []).map((a) => [a.id, a]),
     ).values(),
-  ].sort(
-    (a, b) =>
-      (a.starts_local ?? 'z').localeCompare(b.starts_local ?? 'z') ||
-      a.client_name.localeCompare(b.client_name),
+  ]
+    .filter((a) => a.status === 'cancelled' || !placed.has(a.id))
+    .sort(
+      (a, b) =>
+        (a.starts_local ?? 'z').localeCompare(b.starts_local ?? 'z') ||
+        a.client_name.localeCompare(b.client_name),
+    );
+  const toggle = (
+    <label className="checkbox-label">
+      <input
+        type="checkbox"
+        checked={cancelled}
+        onChange={(e) => setCancelled(e.target.checked)}
+      />
+      Показать отменённые записи
+    </label>
   );
+  if (!cancelled && query.isSuccess && !items.length && !query.hasNextPage)
+    return <div className="appointment-toggle">{toggle}</div>;
   return (
     <section
       className="booking-section appointment-section"
       aria-labelledby="appointments-title"
     >
       <div className="section-line">
-        <div>
-          <p className="small-eyebrow">КЛИЕНТЫ</p>
-          <h2 id="appointments-title">Записи клиентов</h2>
-        </div>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={cancelled}
-            onChange={(e) => setCancelled(e.target.checked)}
-          />
-          Показать отменённые
-        </label>
+        <h2 id="appointments-title">
+          {cancelled ? 'Отменённые и другие записи' : 'Другие записи дня'}
+        </h2>
+        {toggle}
       </div>
       {query.isPending ? (
         <Loading label="Загружаем записи…" />
       ) : query.isError ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : !items.length ? (
-        <div className="panel appointment-empty">
-          <Icon name="users" />
-          <div>
-            <strong>Записей пока нет</strong>
-            <p>Выберите свободный талон выше и нажмите «Записать клиента».</p>
-          </div>
-        </div>
+        <p className="appointment-empty">
+          Отменённых записей на этот день нет.
+        </p>
       ) : (
         <div className="appointment-list">
           {items.map((a) => (
