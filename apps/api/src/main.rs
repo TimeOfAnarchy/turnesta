@@ -13,6 +13,7 @@ use turnesta_api::{
     core::cli::{self as core_cli, CoreCommand},
     database,
     http::{self, AppState},
+    operations::{self, OperationsCommand},
     payments::MockDispatcher,
     queue_live::LiveHub,
     telemetry,
@@ -40,6 +41,11 @@ enum Command {
     Auth {
         #[command(subcommand)]
         command: AuthCommand,
+    },
+    /// Trusted read-only diagnostics (migration database login required).
+    Ops {
+        #[command(subcommand)]
+        command: OperationsCommand,
     },
     /// Deliver queued invitation emails with bounded retries.
     Worker {
@@ -90,6 +96,13 @@ async fn run(cli: Cli) -> Result<()> {
         }
         Command::Auth { command } => {
             let result = auth_cli::run(command, &pool, &config.auth.public_origin).await;
+            tokio::time::timeout(config.shutdown_timeout, pool.close())
+                .await
+                .context("database pool shutdown deadline exceeded")?;
+            result
+        }
+        Command::Ops { command } => {
+            let result = operations::run(command, &pool).await;
             tokio::time::timeout(config.shutdown_timeout, pool.close())
                 .await
                 .context("database pool shutdown deadline exceeded")?;

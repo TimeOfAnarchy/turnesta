@@ -1,7 +1,9 @@
 param(
     [string]$EnvFile = '.env',
-    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres')]
-    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres')
+    [string[]]$ComposeFile = @('compose.yaml'),
+    [string]$Project,
+    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres', 'operations_postgres')]
+    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres', 'operations_postgres')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +26,8 @@ function Test-DatabaseUrl {
 
 try {
     $composeArgs = @('compose', '--env-file', $EnvFile, '--profile', 'tools')
+    foreach ($file in $ComposeFile) { $composeArgs += @('--file', $file) }
+    if ($Project) { $composeArgs += @('--project-name', $Project) }
     $configJson = & docker @composeArgs config --format json
     if ($LASTEXITCODE -ne 0) { throw 'Could not read local Compose configuration.' }
     $config = ($configJson -join "`n") | ConvertFrom-Json
@@ -45,6 +49,7 @@ try {
         '-e', ('TEST_ADMIN_DATABASE_URL=' + (Test-DatabaseUrl $config.services.admin.environment.DATABASE_URL)),
         '-e', ('TEST_WORKER_DATABASE_URL=' + (Test-DatabaseUrl $config.services.worker.environment.DATABASE_URL)),
         '-e', ('TURNESTA_DELIVERY_KEY=' + $config.services.worker.environment.TURNESTA_DELIVERY_KEY),
+        '-e', ('TURNESTA_VERIFY_RUNTIME_DATABASE_URL=' + (Test-DatabaseUrl $config.services.api.environment.DATABASE_URL)),
         'turnesta-devtool:local', 'cargo', 'test', '--package', 'turnesta-api', '--locked', '--test'
     )
     Invoke-Docker -DockerArgs ($runArgs + @('postgres', '--', '--ignored'))

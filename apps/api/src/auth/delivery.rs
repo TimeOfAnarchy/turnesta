@@ -1,5 +1,6 @@
 use std::{future::Future, time::Duration};
 
+use futures_util::TryStreamExt;
 use serde::Serialize;
 use sqlx::PgPool;
 use subtle::ConstantTimeEq;
@@ -136,6 +137,33 @@ pub async fn enqueue_invitation(
     )
     .await?;
     Ok(prepared.job_id)
+}
+
+pub(crate) async fn verify_pending_invitations(
+    connection: &mut sqlx::PgConnection,
+) -> anyhow::Result<usize> {
+    let key = DeliveryKey::from_env()?;
+    let mut rows=sqlx::query_as::<_,(Uuid,Vec<u8>,Vec<u8>,Vec<u8>,Vec<u8>)>(
+        "SELECT id,code_hash,key_id,nonce,ciphertext FROM auth.invitation_deliveries WHERE state IN('pending','leased') ORDER BY id"
+    ).fetch(connection);
+    let mut verified = 0;
+    while let Some((id, hash, key_id, nonce, ciphertext)) = rows.try_next().await? {
+        anyhow::ensure!(
+            key_id.as_slice() == key.id(),
+            "pending invitation uses another delivery key"
+        );
+        let hash: [u8; 32] = hash.try_into().map_err(|_| DeliveryError::Payload)?;
+        let invitation = key.decrypt(id, &hash, &nonce, &ciphertext)?;
+        let code = SecretToken::parse(&invitation.code).map_err(|_| DeliveryError::Payload)?;
+        anyhow::ensure!(
+            bool::from(code.hash().ct_eq(&hash)),
+            "pending invitation authentication failed"
+        );
+        Email::parse(&invitation.email).map_err(|_| DeliveryError::Payload)?;
+        AuthConfig::parse(&invitation.origin, 3600).map_err(|_| DeliveryError::Payload)?;
+        verified += 1;
+    }
+    Ok(verified)
 }
 
 pub async fn delivery_status(

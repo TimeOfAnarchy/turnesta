@@ -1,0 +1,12 @@
+# For synthetic local pilot data only. Never use this overlay for a restore.
+services:
+  api:
+    ports: ['127.0.0.1:${TURNESTA_PILOT_API_PORT:-8086}:8080']
+  mailhog:
+    ports: ['127.0.0.1:${TURNESTA_PILOT_MAIL_PORT:-8026}:8025']
+networks:
+  default:
+    # Docker does not publish host ports from an internal network. Only the
+    # synthetic pilot gets a bridge; restores keep the internal base network.
+    internal: false
+    name: ${COMPOSE_PROJECT_NAME}_pilot

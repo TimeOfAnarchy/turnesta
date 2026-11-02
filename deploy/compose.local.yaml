@@ -1,0 +1,100 @@
+# Isolated local rehearsal only. Nothing is published unless the ports overlay
+# is selected explicitly. Restores use this file alone and never start worker.
+x-app: &app
+  image: ${TURNESTA_IMAGE:?Choose a locally inspected application image ID}
+  pull_policy: never
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  profiles: [tools]
+x-runtime: &runtime
+  DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD:?required}@db:5432/${TURNESTA_DATABASE:?required}
+  TURNESTA_BIND_ADDR: ${TURNESTA_BIND_ADDR:-127.0.0.1:8080}
+  TURNESTA_PUBLIC_ORIGIN: ${TURNESTA_PUBLIC_ORIGIN:?required}
+  TURNESTA_WEB_DIST: /app/web
+  TURNESTA_TIPS_MODE: disabled
+  TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:?required}
+  RUST_LOG: turnesta_api=info,sqlx=warn
+services:
+  db:
+    image: ${TURNESTA_DB_IMAGE:?Choose the source PostgreSQL image ID}
+    pull_policy: never
+    environment:
+      POSTGRES_DB: ${TURNESTA_INITIAL_DATABASE:?required}
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes: [postgres_data:/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  db-bootstrap:
+    image: ${TURNESTA_DB_IMAGE}
+    pull_policy: never
+    profiles: [tools]
+    entrypoint: [psql, --no-psqlrc, --set=ON_ERROR_STOP=1, --file=/bootstrap/bootstrap.sql]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${TURNESTA_BOOTSTRAP_DATABASE:?required}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      TURNESTA_API_DB_PASSWORD: ${TURNESTA_API_DB_PASSWORD}
+      TURNESTA_ADMIN_DB_PASSWORD: ${TURNESTA_ADMIN_DB_PASSWORD:?required}
+      TURNESTA_MIGRATOR_DB_PASSWORD: ${TURNESTA_MIGRATOR_DB_PASSWORD:?required}
+      TURNESTA_WORKER_DB_PASSWORD: ${TURNESTA_WORKER_DB_PASSWORD:?required}
+    volumes: [../scripts/db:/bootstrap:ro]
+  migrator:
+    <<: *app
+    command: [migrate]
+    environment:
+      <<: *runtime
+      DATABASE_URL: postgresql://turnesta_migrator:${TURNESTA_MIGRATOR_DB_PASSWORD}@db:5432/${TURNESTA_DATABASE}
+      TURNESTA_DB_MAX_CONNECTIONS: 1
+  admin:
+    <<: *app
+    environment:
+      <<: *runtime
+      DATABASE_URL: postgresql://turnesta_admin:${TURNESTA_ADMIN_DB_PASSWORD}@db:5432/${TURNESTA_DATABASE}
+  inspector:
+    <<: *app
+    command: [ops, inspect, --verify-runtime, --check-delivery-key]
+    environment:
+      <<: *runtime
+      DATABASE_URL: postgresql://turnesta_migrator:${TURNESTA_MIGRATOR_DB_PASSWORD}@db:5432/${TURNESTA_DATABASE}
+      TURNESTA_VERIFY_RUNTIME_DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD}@db:5432/${TURNESTA_DATABASE}
+      RUST_LOG: error
+  api:
+    <<: *app
+    profiles: [pilot]
+    command: [serve]
+    environment: *runtime
+    stop_grace_period: 15s
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, '2', 'http://127.0.0.1:8080/health/ready']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  mailhog:
+    image: ${TURNESTA_MAILHOG_IMAGE:-mailhog/mailhog}
+    pull_policy: never
+    profiles: [pilot]
+  worker:
+    <<: *app
+    profiles: [pilot]
+    command: [worker]
+    stop_grace_period: 40s
+    environment:
+      <<: *runtime
+      DATABASE_URL: postgresql://turnesta_worker:${TURNESTA_WORKER_DB_PASSWORD}@db:5432/${TURNESTA_DATABASE}
+      TURNESTA_SMTP_HOST: mailhog
+      TURNESTA_SMTP_PORT: 1025
+      TURNESTA_SMTP_FROM: no-reply@turnesta.test
+      TURNESTA_SMTP_TLS_MODE: insecure
+      TURNESTA_SMTP_ALLOW_INSECURE: 'true'
+volumes:
+  postgres_data:
+networks:
+  default:
+    internal: true

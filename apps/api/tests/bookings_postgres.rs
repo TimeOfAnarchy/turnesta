@@ -2991,6 +2991,314 @@ async fn booking_widget_http_requires_session_csrf_and_rechecks_membership() {
     f.close().await;
 }
 
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let owner = f.login(f.owner).await;
+    let operator = f.member(Role::Operator).await;
+    let staff = f.login(operator).await;
+    let doctor = Uuid::new_v4();
+    let preset = Uuid::new_v4();
+    let day = future_day("Europe/Moscow", 4);
+    for command in [
+        json!({"type":"save_specialist","id":doctor,"name":"Pilot doctor","description":"Synthetic rehearsal","enabled":true,"expected_version":0}),
+        json!({"type":"save_preset","id":preset,"name":"Pilot consultation","duration_minutes":30,"enabled":true,"expected_version":0}),
+    ] {
+        assert_eq!(
+            f.json(post(&f, &owner, Uuid::new_v4(), command)).await.0,
+            StatusCode::OK
+        );
+    }
+    let plan = BatchRequest {
+        id: Uuid::new_v4(),
+        specialist_id: doctor,
+        time_zone: "Europe/Moscow".into(),
+        state: OfferState::Ready,
+        source: BatchSource::PresetSeries {
+            preset_id: preset,
+            dates: vec![day.clone()],
+            start_time: "09:00".into(),
+            end_time: "10:00".into(),
+            gap_minutes: 0,
+        },
+    };
+    let preview_request = Request::post(f.url("batch-preview"))
+        .header("cookie", &owner.0)
+        .header("origin", "http://127.0.0.1:8080")
+        .header("x-csrf-token", &owner.1)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_string(&plan).unwrap()))
+        .unwrap();
+    let (status, preview) = f.json(preview_request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["rows"].as_array().unwrap().len(), 2);
+    let command = json!({"type":"save_batch","request":plan,"preview_token":preview["token"],"allow_alternatives":false});
+    let batch_key = Uuid::new_v4();
+    let (_, first) = f.json(post(&f, &owner, batch_key, command.clone())).await;
+    let (_, replay) = f.json(post(&f, &owner, batch_key, command)).await;
+    assert_eq!(first, replay);
+    let mut form = BookingForm::default();
+    form.fields.push(BookingFormField {
+        key: "field_visit".into(),
+        label: "Visit type".into(),
+        kind: BookingFieldKind::Select,
+        required: true,
+        options: vec!["First".into(), "Repeat".into()],
+    });
+    let configure = |path: &str, body: Value| {
+        Request::put(f.url(path))
+            .header("cookie", &owner.0)
+            .header("origin", "http://127.0.0.1:8080")
+            .header("x-csrf-token", &owner.1)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let (status, access) = f
+        .json(configure(
+            "public-access",
+            json!({"enabled":true,"form":form,"expected_version":0}),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let slug: Uuid = access["public_slug"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        f.json(configure(
+            "widget",
+            json!({"allowed_origins":["http://localhost:8094"],"expected_version":0})
+        ))
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let embed = f
+        .app
+        .clone()
+        .oneshot(
+            Request::get(format!(
+                "/embed/book/{slug}?parent_origin=http%3A%2F%2Flocalhost%3A8094&channel={}",
+                Uuid::new_v4()
+            ))
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(embed.status(), StatusCode::OK);
+    assert!(
+        embed.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .contains("frame-ancestors http://localhost:8094")
+    );
+    let availability = format!(
+        "/api/public/bookings/{slug}/availability?month={}&date={day}&limit=50",
+        &day[..7]
+    );
+    let (status, public) = f
+        .json(Request::get(&availability).body(Body::empty()).unwrap())
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let offers = public["items"].as_array().unwrap();
+    assert_eq!(offers.len(), 2);
+    let body = json!({"offer_id":offers[0]["id"],"offer_version":offers[0]["version"],"specialist_version":offers[0]["specialist_version"],"form_version":1,"time_zone":"Europe/Moscow",
+        "answers":{"client_name":"Pilot visitor","phone":"+7 900 000 00 00","email":"pilot-visitor@example.test","note":"Synthetic only","field_visit":"First"}});
+    let mut secret = [0u8; 32];
+    getrandom::fill(&mut secret).unwrap();
+    let token = hex::encode(secret);
+    let (status, receipt) = f.json(public_post(slug, &token, body.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(receipt["status"], "confirmed");
+    let (status, replay) = f.json(public_post(slug, &token, body.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(receipt["reference"], replay["reference"]);
+    for private in [
+        "Pilot visitor",
+        "pilot-visitor@example.test",
+        "Synthetic only",
+        "answers",
+        "field_visit",
+    ] {
+        assert!(!receipt.to_string().contains(private));
+    }
+    let duplicate = record(
+        doctor,
+        offers[0]["id"].as_str().unwrap().parse().unwrap(),
+        1,
+        "Duplicate",
+    );
+    assert_eq!(
+        f.json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(duplicate).unwrap()
+        ))
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let staff_record = record(
+        doctor,
+        offers[1]["id"].as_str().unwrap().parse().unwrap(),
+        1,
+        "Pilot phone visitor",
+    );
+    let (status, recorded) = f
+        .json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(staff_record).unwrap(),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let staff_id: Uuid = recorded["resource"]["item"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let clients_url = f.url(&format!(
+        "appointments?specialist_id={doctor}&date={day}&limit=50"
+    ));
+    let (status, clients) = f
+        .json(
+            Request::get(&clients_url)
+                .header("cookie", &staff.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(clients["items"].as_array().unwrap().len(), 2);
+    let guest = clients["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["source"] == "public")
+        .unwrap();
+    let guest_id: Uuid = guest["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(guest["answers"]["field_visit"], "First");
+    let employee = f.member(Role::Employee).await;
+    let employee_login = f.login(employee).await;
+    assert_eq!(
+        f.json(
+            Request::get(&clients_url)
+                .header("cookie", &employee_login.0)
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let move_guest = AppointmentCmd::MoveAppointment {
+        id: guest_id,
+        specialist_id: doctor,
+        offer_id: offers[1]["id"].as_str().unwrap().parse().unwrap(),
+        expected_offer_version: 1,
+        expected_version: 1,
+    };
+    assert_eq!(
+        f.json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(&move_guest).unwrap()
+        ))
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let cancel = AppointmentCmd::CancelAppointment {
+        id: staff_id,
+        specialist_id: doctor,
+        expected_version: 1,
+    };
+    assert_eq!(
+        f.json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(cancel).unwrap()
+        ))
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(move_guest).unwrap()
+        ))
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, moved) = f
+        .json(
+            Request::get(format!("/api/public/bookings/{slug}/receipt"))
+                .header("x-booking-access", &token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(moved["starts_local"], offers[1]["starts_local"]);
+    let cancel = AppointmentCmd::CancelAppointment {
+        id: guest_id,
+        specialist_id: doctor,
+        expected_version: 2,
+    };
+    assert_eq!(
+        f.json(appointment_post(
+            &f,
+            &staff,
+            Uuid::new_v4(),
+            serde_json::to_value(cancel).unwrap()
+        ))
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.json(configure(
+            "public-access",
+            json!({"enabled":false,"form":form,"expected_version":1})
+        ))
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, cancelled) = f.json(public_post(slug, &token, body)).await;
+    assert_eq!(cancelled["status"], "cancelled");
+    assert_eq!(cancelled["reference"], receipt["reference"]);
+    let revoke=Request::post(format!("/api/organizations/{}/team/commands",f.tenant)).header("cookie",&owner.0).header("origin","http://127.0.0.1:8080").header("x-csrf-token",&owner.1).header("idempotency-key",Uuid::new_v4().to_string()).header("content-type","application/json")
+        .body(Body::from(json!({"type":"set_member","user_id":operator,"role":"operator","active":false,"expected_version":1}).to_string())).unwrap();
+    assert_eq!(f.json(revoke).await.0, StatusCode::OK);
+    assert_eq!(
+        f.json(
+            Request::get(&clients_url)
+                .header("cookie", &staff.0)
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM bookings.appointments WHERE tenant_id=$1")
+            .bind(f.tenant)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap();
+    assert_eq!(count, 2);
+    f.close().await;
+}
+
 fn batch_copy(spec: Uuid, source: &str, targets: &[&str], zone: &str) -> BatchRequest {
     BatchRequest {
         id: Uuid::new_v4(),
