@@ -32,13 +32,13 @@ export function useOrganizations() {
     queryKey: keys.organizations,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => api.organizations(pageParam, signal),
-    refetchInterval: query => readRecoveryInterval(query.state.error),
+    refetchInterval: query => query.state.error ? readRecoveryInterval(query.state.error) : 15_000,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
 }
 
 export function useOrganization(tenant: string) {
-  return useQuery({ queryKey: keys.organization(tenant), queryFn: ({ signal }) => api.organization(tenant, signal), refetchInterval: query => readRecoveryInterval(query.state.error) });
+  return useQuery({ queryKey: keys.organization(tenant), queryFn: ({ signal }) => api.organization(tenant, signal), refetchInterval: query => query.state.error ? readRecoveryInterval(query.state.error) : 15_000 });
 }
 
 export function useLocations(tenant: string) {

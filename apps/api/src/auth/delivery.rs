@@ -81,12 +81,18 @@ pub async fn is_worker_role(pool: &PgPool) -> Result<bool, sqlx::Error> {
     .await
 }
 
-pub async fn enqueue_invitation(
-    pool: &PgPool,
-    user_id: UserId,
+pub(crate) struct PreparedInvitation {
+    pub job_id: Uuid,
+    pub code_hash: [u8; 32],
+    pub key_id: [u8; 32],
+    pub nonce: [u8; 24],
+    pub ciphertext: Vec<u8>,
+}
+
+pub(crate) fn prepare_invitation(
     email: &Email,
     public_origin: &str,
-) -> Result<Uuid, DeliveryError> {
+) -> Result<PreparedInvitation, DeliveryError> {
     // Key validation and encryption happen before any identity/code mutation.
     let key = DeliveryKey::from_env()?;
     let origin = AuthConfig::parse(public_origin, 3600)
@@ -101,19 +107,35 @@ pub async fn enqueue_invitation(
         code: code.expose(),
     };
     let encrypted = key.encrypt(job_id, &code_hash, &invitation)?;
+    Ok(PreparedInvitation {
+        job_id,
+        code_hash,
+        key_id: *key.id(),
+        nonce: encrypted.nonce,
+        ciphertext: encrypted.ciphertext,
+    })
+}
+
+pub async fn enqueue_invitation(
+    pool: &PgPool,
+    user_id: UserId,
+    email: &Email,
+    public_origin: &str,
+) -> Result<Uuid, DeliveryError> {
+    let prepared = prepare_invitation(email, public_origin)?;
     db(
         sqlx::query("SELECT auth.enqueue_invitation($1, $2, $3, $4, $5, $6, $7)")
-            .bind(job_id)
+            .bind(prepared.job_id)
             .bind(user_id)
             .bind(email.as_str())
-            .bind(code_hash.as_slice())
-            .bind(key.id().as_slice())
-            .bind(encrypted.nonce.as_slice())
-            .bind(encrypted.ciphertext)
+            .bind(prepared.code_hash.as_slice())
+            .bind(prepared.key_id.as_slice())
+            .bind(prepared.nonce.as_slice())
+            .bind(prepared.ciphertext)
             .execute(pool),
     )
     .await?;
-    Ok(job_id)
+    Ok(prepared.job_id)
 }
 
 pub async fn delivery_status(

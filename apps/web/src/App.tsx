@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, Route, Routes, useLocation, useOutletContext, useParams } from 'react-router-dom';
@@ -11,6 +11,8 @@ import { BookingsPage } from './BookingsPage';
 import { SettingsPage } from './SettingsPage';
 import { TipsPage } from './TipsPage';
 import { QueuesPage, QueuePage } from './QueuesPage';
+
+const TeamPage = lazy(() => import('./TeamPage').then(module => ({ default: module.TeamPage })));
 
 export type Workspace = { organization: Organization; role: Role; canManage: boolean; userId: string };
 export function useWorkspace() { return useOutletContext<Workspace>(); }
@@ -26,6 +28,7 @@ export function App() {
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="bookings" element={<BookingsPage/>}/>
       <Route path="settings" element={<SettingsPage/>}/>
+      <Route path="team" element={<Suspense fallback={<Loading/>}><TeamPage/></Suspense>}/>
       <Route path="tips" element={<TipsPage/>}/>
       <Route path="queues" element={<QueuesPage/>}/>
       <Route path="queues/:queueId" element={<QueuePage/>}/>
@@ -38,6 +41,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
   const client = useQueryClient();
   const pathname = useLocation().pathname;
   const isSettings = pathname.endsWith('/settings');
+  const isTeam = pathname.endsWith('/team');
   const isTips = pathname.endsWith('/tips');
   const isBookings = pathname.includes('/bookings');
   const isQueue = pathname.includes('/queues');
@@ -63,6 +67,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
           <NavLink to={`${base}/queues`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="queue"/>Очереди</NavLink>
           <NavLink to={`${base}/bookings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="calendar"/>Запись</NavLink>
           <NavLink to={`${base}/tips`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="heart"/>Чаевые</NavLink>
+          {role === 'owner' && <NavLink to={`${base}/team`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="users"/>Команда</NavLink>}
           <NavLink to={`${base}/settings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="settings"/>Настройки</NavLink>
         </nav>
       </> : <nav className="main-nav" aria-label="Главная"><Link className="nav-item active" to="/"><Icon name="grid"/>Мои организации</Link></nav>}
@@ -73,7 +78,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/">Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
       <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
       <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>

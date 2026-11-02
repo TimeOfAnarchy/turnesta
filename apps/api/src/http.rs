@@ -33,6 +33,7 @@ mod queue_http;
 mod queue_public_http;
 mod queue_stations_http;
 mod queue_tips_http;
+mod team_http;
 mod tips_http;
 
 #[derive(Clone)]
@@ -126,6 +127,8 @@ struct ErrorResponse {
 #[openapi(
     info(title = "Turnesta API", description = "Turnesta operational endpoints"),
     paths(
+        team_http::members,
+        team_http::command,
         bookings_http::batch_preview,
         bookings_widget_http::settings,
         bookings_widget_http::configure,
@@ -189,6 +192,11 @@ struct ErrorResponse {
         queue_public_http::issue
     ),
     components(schemas(
+        crate::team::TeamCommand,
+        crate::team::TeamReceipt,
+        crate::team::TeamMember,
+        crate::team::TeamDelivery,
+        team_http::TeamPage,
         crate::bookings_batch::BatchRequest,
         crate::bookings_batch::BatchSource,
         crate::bookings_batch::BatchRow,
@@ -310,6 +318,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health/ready", get(ready))
         .route("/openapi.json", get(openapi))
         .merge(api::routes())
+        .merge(team_http::routes())
         .merge(tips_http::routes())
         .merge(queue_http::routes())
         .merge(queue_events::routes())

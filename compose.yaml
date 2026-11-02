@@ -94,6 +94,7 @@ services:
       <<: *turnesta-environment
       TURNESTA_TIPS_MODE: ${TURNESTA_TIPS_MODE:-disabled}
       TURNESTA_MOCK_PAYMENT_KEY: ${TURNESTA_MOCK_PAYMENT_KEY:-}
+      TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

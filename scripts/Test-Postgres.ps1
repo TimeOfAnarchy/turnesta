@@ -1,7 +1,7 @@
 param(
     [string]$EnvFile = '.env',
-    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres')]
-    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres')
+    [ValidateSet('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres')]
+    [string[]]$Suites = @('core_postgres', 'auth_store_postgres', 'auth_http_postgres', 'delivery_postgres', 'tips_postgres', 'tips_http_postgres', 'queue_postgres', 'queue_public_postgres', 'bookings_postgres', 'team_postgres')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +44,7 @@ try {
         '-e', ('TEST_DATABASE_URL=' + (Test-DatabaseUrl $config.services.api.environment.DATABASE_URL)),
         '-e', ('TEST_ADMIN_DATABASE_URL=' + (Test-DatabaseUrl $config.services.admin.environment.DATABASE_URL)),
         '-e', ('TEST_WORKER_DATABASE_URL=' + (Test-DatabaseUrl $config.services.worker.environment.DATABASE_URL)),
+        '-e', ('TURNESTA_DELIVERY_KEY=' + $config.services.worker.environment.TURNESTA_DELIVERY_KEY),
         'turnesta-devtool:local', 'cargo', 'test', '--package', 'turnesta-api', '--locked', '--test'
     )
     Invoke-Docker -DockerArgs ($runArgs + @('postgres', '--', '--ignored'))

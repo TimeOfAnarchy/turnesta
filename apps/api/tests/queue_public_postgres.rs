@@ -1299,9 +1299,14 @@ impl Fixture {
         )
     }
     async fn json(&self, request: Request<Body>) -> (StatusCode, Value) {
+        let limit = if request.uri().path() == "/openapi.json" {
+            256 * 1024
+        } else {
+            64 * 1024
+        };
         let response = self.app.clone().oneshot(request).await.unwrap();
         let status = response.status();
-        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = to_bytes(response.into_body(), limit).await.unwrap();
         (status, serde_json::from_slice(&body).unwrap())
     }
     async fn close(self) {

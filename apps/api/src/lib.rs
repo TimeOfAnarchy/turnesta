@@ -10,6 +10,7 @@ pub mod queue_live;
 pub mod queue_public;
 pub mod queue_stations;
 pub mod queue_tips;
+pub mod team;
 pub mod telemetry;
 pub mod tips;
 

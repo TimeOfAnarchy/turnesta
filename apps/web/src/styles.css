@@ -691,3 +691,32 @@ body:has(dialog[open]) { overflow: hidden; }
 .booking-batch fieldset > input,.booking-batch fieldset > select { max-width:25rem; }
 .booking-batch-preview h3 { font-size:1rem; font-weight:600; margin:0 0 .8rem; }
 .batch-row-index { display:inline-flex; justify-content:center; align-items:center; min-width:1.8rem; padding:.15rem .3rem; background:#edf1e7; border-radius:.4rem; color:var(--muted); font-size:.7rem; }
+.team-overview { display:flex; align-items:center; justify-content:space-between; gap:2rem; padding:1.8rem; margin-bottom:2rem; background:#eaf0e2; }
+.team-overview h2 { font-size:1.25rem; margin:.6rem 0; }
+.team-overview p { color:var(--muted); font-size:.85rem; line-height:1.8; max-width:42rem; margin:0; }
+.team-overview .button { flex-shrink:0; }
+.team-refresh { display:inline-flex; align-items:center; gap:.45rem; }
+.team-members { display:grid; gap:1rem; }
+.team-member { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; gap:1.2rem; padding:1.6rem; }
+.team-avatar { width:2.9rem; height:2.9rem; border-radius:50%; background:#e9efe0; color:var(--green); display:grid; place-items:center; font-weight:600; }
+.team-member-copy { min-width:0; overflow-wrap:anywhere; }
+.team-member h3 { font-size:1rem; margin:.1rem 0 .45rem; }
+.team-member-copy > p { font-size:.8rem; margin:.4rem 0; line-height:1.7; }
+.team-member-actions { display:flex; flex-direction:column; align-items:end; gap:.85rem; }
+.team-member-actions .text-button { font-size:.75rem; text-align:right; }
+.team-member-disabled { background:#f5f5f0; }
+.team-disabled-badge { background:#e9e8e2; color:#66685d; }
+.team-delivery { color:var(--muted); }
+.team-role-guide { padding:1.5rem; margin-top:1.8rem; }
+.team-role-guide summary { cursor:pointer; font-weight:500; font-size:.9rem; }
+.team-role-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.3rem; margin:1.5rem 0; }
+.team-role-grid strong { font-size:.85rem; }
+.team-role-grid p { color:var(--muted); font-size:.8rem; line-height:1.8; }
+.team-form fieldset { border:0; padding:0; margin:0; min-width:0; }
+.team-form label { display:block; font-size:.8rem; font-weight:500; margin:1rem 0 .5rem; }
+.team-form input:not([type=checkbox]),.team-form select { width:100%; min-width:0; min-height:2.8rem; box-sizing:border-box; font:inherit; font-size:.85rem; color:inherit; background:white; border:1px solid var(--border); border-radius:.65rem; padding:.8rem; }
+.team-form .checkbox-field { display:flex; gap:.7rem; align-items:center; line-height:1.7; }
+.team-form input[type=checkbox] { width:1.1rem; height:1.1rem; accent-color:var(--green); }
+.team-access-note { padding:1rem; background:#f1f4eb; border-radius:.7rem; line-height:1.8; font-size:.8rem; }
+@media(max-width:850px) { .team-overview { align-items:start; flex-direction:column; gap:1rem; } .team-member { grid-template-columns:auto minmax(0,1fr); } .team-member-actions { grid-column:2; align-items:start; } .team-member-actions .text-button { text-align:left; } }
+@media(max-width:480px) { .team-overview,.team-member,.team-role-guide { padding:1.1rem; } .team-overview .button { width:100%; } .team-role-grid { grid-template-columns:1fr; gap:.6rem; } .team-member-actions { grid-column:1/-1; width:100%; } .team-member-actions .button { width:100%; } }

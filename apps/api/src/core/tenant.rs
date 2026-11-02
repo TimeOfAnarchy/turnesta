@@ -41,7 +41,7 @@ impl TenantSession {
         .execute(&mut *tx)
         .await?;
         let role = sqlx::query_scalar::<_, Role>(
-            "SELECT role FROM core.memberships WHERE tenant_id = $1 AND user_id = $2",
+            "SELECT role FROM core.memberships WHERE tenant_id = $1 AND user_id = $2 AND active",
         )
         .bind(tenant_id)
         .bind(user_id)
