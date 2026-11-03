@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon, Modal } from './components';
+import { Icon, Modal, TimeInput } from './components';
 import { ApiError, errorMessage } from './api';
 import { batchPreview } from './bookingBatch';
 import type { BatchRequest, BatchPreview, BatchSource } from './bookingBatch';
@@ -318,22 +318,20 @@ export function BookingBatchEditor({
               <div className="booking-batch-window">
                 <div>
                   <label htmlFor="batch-start">Начало периода</label>
-                  <input
+                  <TimeInput
                     id="batch-start"
-                    type="time"
                     required
                     value={start}
-                    onChange={(e) => change(() => setStart(e.target.value))}
+                    onChange={(next) => change(() => setStart(next))}
                   />
                 </div>
                 <div>
                   <label htmlFor="batch-end">Конец периода</label>
-                  <input
+                  <TimeInput
                     id="batch-end"
-                    type="time"
                     required
                     value={end}
-                    onChange={(e) => change(() => setEnd(e.target.value))}
+                    onChange={(next) => change(() => setEnd(next))}
                   />
                 </div>
                 <div>

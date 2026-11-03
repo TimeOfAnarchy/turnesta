@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { errorMessage } from './api';
+import { time24Pattern, typedTime } from './time24';
 
 type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right' | 'key';
 // One 24px grid, 1.75 stroke and round joins keep every glyph optically consistent.
@@ -52,6 +53,23 @@ export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => vo
 
 export function SuccessNotice({ children }: { children: ReactNode }) {
   return <p className="success-notice" role="status"><Icon name="check"/>{children}</p>;
+}
+
+// 24-hour HH:MM field: reports only complete times or '' and restores the last valid time on blur.
+export function TimeInput({ value, onChange, ...field }: {
+  id: string; value: string; onChange: (value: string) => void; disabled?: boolean; required?: boolean;
+}) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return <input {...field} type="text" inputMode="numeric" autoComplete="off" placeholder="ЧЧ:ММ" maxLength={5}
+    pattern={time24Pattern} title="Время в формате ЧЧ:ММ, например 09:30" value={text}
+    onChange={(e) => {
+      const next = typedTime(e.target.value);
+      setText(next.text);
+      if (next.value !== null) onChange(next.value);
+      else if (!next.text) onChange('');
+    }}
+    onBlur={() => { if (text && typedTime(text).value === null) setText(value); }}/>;
 }
 
 export function Modal({ title, description, children, close, busy = false, icon = 'locations' }: {

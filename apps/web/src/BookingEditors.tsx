@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError, errorMessage, validateName } from './api';
-import { Modal, Icon } from './components';
+import { Modal, Icon, TimeInput } from './components';
 import { keys } from './queries';
 import {
   bookingApi,
@@ -636,24 +636,22 @@ export function OfferEditor({
                 </div>
                 <div className="form-field">
                   <label htmlFor="offer-start">Начало</label>
-                  <input
+                  <TimeInput
                     id="offer-start"
                     disabled={occupied > 0}
-                    type="time"
                     value={draft.start}
-                    onChange={(e) => update({ start: e.target.value })}
+                    onChange={(start) => update({ start })}
                   />
                 </div>
                 <div className="form-field">
                   <label htmlFor="offer-end">Окончание</label>
-                  <input
+                  <TimeInput
                     id="offer-end"
                     disabled={occupied > 0}
-                    type="time"
                     value={draft.end}
-                    onChange={(e) => {
+                    onChange={(end) => {
                       setAutoDuration(null);
-                      update({ end: e.target.value });
+                      update({ end });
                     }}
                   />
                 </div>
