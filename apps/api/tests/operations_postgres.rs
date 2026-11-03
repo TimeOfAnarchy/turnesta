@@ -33,7 +33,7 @@ async fn operations_inspection_is_readonly_deterministic_and_checks_runtime() {
     )
     .unwrap();
     assert_eq!(before["tables"], after["tables"]);
-    assert_eq!(before["migrations"].as_array().unwrap().len(), 22);
+    assert_eq!(before["migrations"].as_array().unwrap().len(), 25);
     assert_eq!(before["ownership_valid"], true);
     assert_eq!(before["runtime_verified"], true);
     assert!(
@@ -45,8 +45,20 @@ async fn operations_inspection_is_readonly_deterministic_and_checks_runtime() {
     );
     let raw = before.to_string();
     assert!(
-        !raw.contains("password") && !raw.contains("ciphertext") && !raw.contains("example.test")
+        !raw.contains("\"password_hash\"")
+            && !raw.contains("$argon2id$")
+            && !raw.contains("ciphertext")
+            && !raw.contains("example.test")
     );
+    for table in before["tables"].as_array().unwrap() {
+        assert!(
+            table
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|key| matches!(key.as_str(), "schema" | "name" | "rows" | "fingerprint"))
+        );
+    }
     pool.close().await;
 }
 #[tokio::test]

@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{
-        FromRequestParts, Path, Query, State,
+        FromRequestParts, MatchedPath, Path, Query, RawPathParams, State,
         rejection::{JsonRejection, PathRejection, QueryRejection},
     },
     http::{
@@ -74,7 +74,7 @@ impl ApiError {
     pub(super) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
         Self(status, code, message)
     }
-    fn unauthorized() -> Self {
+    pub(super) fn unauthorized() -> Self {
         Self(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
@@ -164,9 +164,37 @@ impl FromRequestParts<AppState> for SignedIn {
         let token = cookie_token(&parts.headers, state.auth.session_cookie_name())?
             .ok_or_else(ApiError::unauthorized)?;
         let token_hash = token.hash();
-        let record = store::find_session(&state.pool, &token_hash)
+        // Use router captures, including percent decoding, rather than the raw URI.
+        // Authentication and membership must share a snapshot before reading a body.
+        let tenant = if parts
+            .extensions
+            .get::<MatchedPath>()
+            .is_some_and(|path| path.as_str().contains("{tenant_id}"))
+        {
+            let params = RawPathParams::from_request_parts(parts, state)
+                .await
+                .map_err(|_| ApiError::bad_request())?;
+            let value = params
+                .iter()
+                .find(|(name, _)| *name == "tenant_id")
+                .map(|(_, value)| value)
+                .ok_or_else(ApiError::bad_request)?;
+            Some(TenantId::from_uuid(
+                uuid::Uuid::parse_str(value).map_err(|_| ApiError::bad_request())?,
+            ))
+        } else {
+            None
+        };
+        let record = store::find_scoped_session(&state.pool, &token_hash, tenant)
             .await?
             .ok_or_else(ApiError::unauthorized)?;
+        if !record.tenant_member {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "Organization not found",
+            ));
+        }
         Ok(Self {
             user_id: record.user_id,
             token_hash,
@@ -208,7 +236,10 @@ pub(super) fn check_mutation(
     Ok(())
 }
 
-fn cookie_token(headers: &HeaderMap, name: &str) -> Result<Option<SecretToken>, ApiError> {
+pub(super) fn cookie_token(
+    headers: &HeaderMap,
+    name: &str,
+) -> Result<Option<SecretToken>, ApiError> {
     let mut found = None;
     for header in headers.get_all(COOKIE) {
         for pair in header
@@ -229,7 +260,7 @@ fn cookie_token(headers: &HeaderMap, name: &str) -> Result<Option<SecretToken>, 
     Ok(found)
 }
 
-fn append_cookie(
+pub(super) fn append_cookie(
     response: &mut Response,
     name: &str,
     value: &str,

@@ -28,6 +28,7 @@ mod bookings_http;
 mod bookings_public_http;
 mod bookings_widget_http;
 mod catalog_http;
+mod password_http;
 mod queue_events;
 mod queue_http;
 mod queue_public_http;
@@ -43,6 +44,7 @@ pub struct AppState {
     draining: Arc<AtomicBool>,
     auth: AuthConfig,
     login_gate: Arc<tokio::sync::Semaphore>,
+    password_engine: crate::auth::password::PasswordEngine,
     web_dist: PathBuf,
     payments: crate::payments::PaymentConfig,
     public_gate: Arc<tokio::sync::Semaphore>,
@@ -57,6 +59,7 @@ impl AppState {
             draining: Arc::new(AtomicBool::new(false)),
             auth: AuthConfig::default(),
             login_gate: Arc::new(tokio::sync::Semaphore::new(16)),
+            password_engine: crate::auth::password::PasswordEngine::default(),
             web_dist: "apps/web/dist".into(),
             payments: crate::payments::PaymentConfig::default(),
             public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
@@ -127,6 +130,11 @@ struct ErrorResponse {
 #[openapi(
     info(title = "Turnesta API", description = "Turnesta operational endpoints"),
     paths(
+        password_http::login,
+        password_http::setup,
+        password_http::own,
+        password_http::change,
+        password_http::create_account,
         team_http::members,
         team_http::command,
         bookings_http::batch_preview,
@@ -192,6 +200,13 @@ struct ErrorResponse {
         queue_public_http::issue
     ),
     components(schemas(
+        password_http::PasswordLoginRequest,
+        password_http::PasswordLoginResponse,
+        password_http::PasswordSetupRequest,
+        password_http::PasswordStatus,
+        password_http::PasswordChangeRequest,
+        password_http::PasswordAccountRequest,
+        password_http::PasswordAccountResponse,
         crate::team::TeamCommand,
         crate::team::TeamReceipt,
         crate::team::TeamMember,
@@ -318,6 +333,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health/ready", get(ready))
         .route("/openapi.json", get(openapi))
         .merge(api::routes())
+        .merge(password_http::routes())
         .merge(team_http::routes())
         .merge(tips_http::routes())
         .merge(queue_http::routes())

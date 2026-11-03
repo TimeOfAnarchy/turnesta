@@ -6,6 +6,7 @@ import { ErrorNotice, Icon, Loading, Modal, SuccessNotice } from './components';
 import { roleLabels, errorMessage, validateName } from './api';
 import { TeamCommands, teamApi, teamError, teamRoleDescriptions } from './team';
 import type { TeamMember, TeamCommand, TeamRole } from './team';
+import { PasswordAccountButton } from './PasswordAccount';
 
 export function TeamPage() {
   const workspace = useWorkspace();
@@ -107,9 +108,10 @@ function Team({ tenant, user }: { tenant: string; user: string }) {
             Управление командой остаётся у владельца.
           </p>
         </div>
+        <PasswordAccountButton tenant={tenant} disabled={locked} onCreated={() => { void members.refetch(); }}/>
         <button
           type="button"
-          className="button primary"
+          className="button secondary"
           disabled={locked}
           onClick={() => {
             setError(null);
@@ -117,7 +119,7 @@ function Team({ tenant, user }: { tenant: string; user: string }) {
           }}
         >
           <Icon name="plus" />
-          Пригласить коллегу
+          Пригласить по email
         </button>
       </div>
       {journal.storageError !== null && (

@@ -30,10 +30,13 @@ pub enum TeamError {
     Delivery,
     #[error("team database error")]
     Database(sqlx::Error),
+    #[error("mailbox ownership must be confirmed before another organization grants access")]
+    EmailUnverified,
 }
 impl From<sqlx::Error> for TeamError {
     fn from(error: sqlx::Error) -> Self {
         match error.as_database_error().and_then(|e| e.code()).as_deref() {
+            Some("P2401") => Self::EmailUnverified,
             Some("M2201") => Self::Core(CoreError::Forbidden),
             Some("M2202") => Self::Idempotency,
             Some("M2203") => Self::NotFound,

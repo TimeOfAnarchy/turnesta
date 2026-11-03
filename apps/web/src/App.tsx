@@ -72,6 +72,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         </nav>
       </> : <nav className="main-nav" aria-label="Главная"><Link className="nav-item active" to="/"><Icon name="grid"/>Мои организации</Link></nav>}
       <div className="sidebar-bottom">
+        <a className="nav-item" href="/login?password=change"><Icon name="settings"/>Пароль аккаунта</a>
         <div className="sidebar-note"><span className="note-dot" aria-hidden="true"/><p>Больше порядка.<br/>Больше времени для людей.</p></div>
         <div className="account-row"><span className="account-avatar" aria-hidden="true">В</span><div><strong>Ваш кабинет</strong><span>{role ? roleLabels[role] : 'Рабочее пространство'}</span></div><button type="button" className="icon-button logout-button" onClick={() => logout.mutate()} disabled={logout.isPending} aria-label={logout.isPending ? 'Выходим…' : 'Выйти из Turnesta'} title="Выйти"><Icon name="exit"/></button></div>
         {logout.isError && <ErrorNotice error={logout.error}/>}

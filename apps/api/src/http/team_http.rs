@@ -30,6 +30,11 @@ pub(super) fn routes() -> Router<AppState> {
 impl From<TeamError> for ApiError {
     fn from(error: TeamError) -> Self {
         match error {
+            TeamError::EmailUnverified => Self::new(
+                StatusCode::CONFLICT,
+                "account_email_unverified",
+                "Account owner must confirm their mailbox before joining another organization",
+            ),
             TeamError::Core(e) => e.into(),
             TeamError::Database(e) => e.into(),
             TeamError::Delivery => Self::unavailable(),

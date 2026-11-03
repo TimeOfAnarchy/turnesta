@@ -8,19 +8,37 @@
 
 use sqlx::PgPool;
 
-use crate::core::UserId;
+use crate::core::{TenantId, UserId};
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct SessionRecord {
     pub(crate) user_id: UserId,
+}
+
+#[derive(sqlx::FromRow)]
+pub(crate) struct ScopedSessionRecord {
+    pub(crate) user_id: UserId,
     pub(crate) csrf_hash: Vec<u8>,
+    pub(crate) tenant_member: bool,
+}
+
+pub(crate) async fn find_scoped_session(
+    pool: &PgPool,
+    token_hash: &[u8; 32],
+    tenant: Option<TenantId>,
+) -> Result<Option<ScopedSessionRecord>, sqlx::Error> {
+    sqlx::query_as("SELECT * FROM auth.find_scoped_session($1,$2)")
+        .bind(token_hash.as_slice())
+        .bind(tenant)
+        .fetch_optional(pool)
+        .await
 }
 
 pub(crate) async fn find_session(
     pool: &PgPool,
     token_hash: &[u8; 32],
 ) -> Result<Option<SessionRecord>, sqlx::Error> {
-    sqlx::query_as("SELECT user_id, csrf_hash FROM auth.find_session($1)")
+    sqlx::query_as("SELECT user_id FROM auth.find_session($1)")
         .bind(token_hash.as_slice())
         .fetch_optional(pool)
         .await

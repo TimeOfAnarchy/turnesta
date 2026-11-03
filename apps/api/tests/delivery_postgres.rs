@@ -83,6 +83,19 @@ impl Fixture {
         }
     }
 
+    async fn retire_without_dispatch(&self, id: Uuid, expected: &str) {
+        // Housekeeping is bounded and SKIP LOCKED: another worker can still be
+        // retiring this row, or older fixtures can fill the first batch.
+        for _ in 0..100 {
+            assert!(db_ok(claim(&self.worker, &self.key_id).await).is_none());
+            if self.state(id).await == expected {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("bounded housekeeping did not retire the fixture as {expected}");
+    }
+
     async fn close(self) {
         self.runtime.close().await;
         self.admin.close().await;
@@ -375,8 +388,7 @@ async fn expiry_consumed_codes_and_last_attempt_crashes_are_terminal_without_dis
     let fixture = Fixture::new().await;
     let expired = fixture.queue().await;
     db_ok(sqlx::query("UPDATE auth.invitation_deliveries SET created_at = clock_timestamp() - interval '2 seconds', expires_at = clock_timestamp() - interval '1 second' WHERE id = $1").bind(expired.id).execute(&fixture.owner).await);
-    assert!(db_ok(claim(&fixture.worker, &fixture.key_id).await).is_none());
-    assert_eq!(fixture.state(expired.id).await, "expired");
+    fixture.retire_without_dispatch(expired.id, "expired").await;
 
     let used = fixture.queue().await;
     let user: Option<UserId> = db_ok(
@@ -388,8 +400,7 @@ async fn expiry_consumed_codes_and_last_attempt_crashes_are_terminal_without_dis
             .await,
     );
     assert!(user.is_some());
-    assert!(db_ok(claim(&fixture.worker, &fixture.key_id).await).is_none());
-    assert_eq!(fixture.state(used.id).await, "canceled");
+    fixture.retire_without_dispatch(used.id, "canceled").await;
 
     let crashed = fixture.queue().await;
     db_ok(
@@ -402,7 +413,7 @@ async fn expiry_consumed_codes_and_last_attempt_crashes_are_terminal_without_dis
         db_ok(claim(&fixture.worker, &fixture.key_id).await).expect("last attempt is claimable");
     assert_eq!(final_claim.attempt, 5);
     db_ok(sqlx::query("UPDATE auth.invitation_deliveries SET lease_until = clock_timestamp() - interval '1 second' WHERE id = $1").bind(crashed.id).execute(&fixture.owner).await);
-    assert!(db_ok(claim(&fixture.worker, &fixture.key_id).await).is_none());
+    fixture.retire_without_dispatch(crashed.id, "failed").await;
     assert!(!finish(&fixture.worker, &final_claim, "sent").await);
     assert_eq!(fixture.state(crashed.id).await, "failed");
     fixture.close().await;

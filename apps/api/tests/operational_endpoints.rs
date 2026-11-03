@@ -126,7 +126,13 @@ async fn login_rejects_missing_or_foreign_origin_before_accessing_database() {
 
 #[tokio::test]
 async fn login_page_and_scripts_have_browser_security_headers() {
-    for path in ["/login", "/assets/login.js", "/assets/login.css"] {
+    for path in [
+        "/login",
+        "/assets/login.js",
+        "/assets/login.css",
+        "/assets/password-login.js",
+        "/assets/password-login.css",
+    ] {
         let response = router(offline_state())
             .oneshot(Request::get(path).body(Body::empty()).unwrap())
             .await

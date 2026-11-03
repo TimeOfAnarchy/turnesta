@@ -9,6 +9,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+argon2 = { version = "0.6", features = ["getrandom"] }
 askama = "0.16"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "matched-path", "query"] }
 clap = { version = "4", features = ["derive"] }

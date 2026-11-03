@@ -2,6 +2,7 @@ pub mod cli;
 pub mod delivery;
 pub mod login;
 mod mail;
+pub mod password;
 pub(crate) mod store;
 pub(crate) mod token;
 

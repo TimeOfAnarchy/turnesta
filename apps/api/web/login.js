@@ -7,10 +7,12 @@ const status = document.querySelector("#status");
 const button = document.querySelector("#login-button");
 const workspace = document.querySelector("#workspace");
 const signIn = document.querySelector("#sign-in");
+const changingPassword = new URLSearchParams(location.search).get("password") === "change";
 const list = document.querySelector("#organizations");
 const moreButton = document.querySelector("#more-button");
 let nextCursor = null;
 let viewRevision = 0;
+window.addEventListener("turnesta:password-auth", () => { viewRevision += 1; });
 
 function takeInvitation() {
   const fragment = new URLSearchParams(location.hash.slice(1));
@@ -18,6 +20,9 @@ function takeInvitation() {
   if (location.hash) history.replaceState(null, "", location.pathname);
   if (!invitation || !/^[0-9a-f]{64}$/.test(invitation)) return false;
   input.value = invitation;
+  document.querySelector("#password-sign-in").hidden = true;
+  document.querySelector("#password-change").hidden = true;
+  document.querySelector("#password-setup").hidden = true;
   signIn.hidden = false;
   workspace.hidden = true;
   document.querySelector("#page-title").textContent = "Добро пожаловать.";
@@ -84,7 +89,10 @@ form.addEventListener("submit", async (event) => {
     input.value = "";
     hasInvitation = false;
     status.textContent = "Вы вошли. Открываем кабинет…";
-    location.replace("/app/");
+    const password = await fetch("/auth/password", { credentials: "same-origin" })
+      .then(response => response.ok ? response.json() : null).catch(() => null);
+    if (revision !== viewRevision) return;
+    location.replace(password && !password.has_password ? "/login?password=change" : "/app/");
   } catch (error) {
     if (revision === viewRevision) status.textContent = error.message;
   } finally { button.disabled = false; }
@@ -105,7 +113,7 @@ moreButton.addEventListener("click", async () => {
 });
 
 // An explicit click consumes an invitation. Opening or scanning the link doesn't.
-if (!hasInvitation) {
+if (!hasInvitation && !changingPassword) {
   const revision = viewRevision;
   fetch("/auth/session", { credentials: "same-origin" }).then(async response => {
     if (revision !== viewRevision || hasInvitation) return;

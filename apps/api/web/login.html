@@ -6,6 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <title>Вход · Turnesta</title>
   <link rel="stylesheet" href="/assets/login.css">
+  <link rel="stylesheet" href="/assets/password-login.css">
+  <script src="/assets/password-login.js" defer></script>
   <script src="/assets/login.js" defer></script>
 </head>
 <body>
@@ -13,8 +15,49 @@
     <a class="brand" href="/login" aria-label="Turnesta">turnesta<span>•</span></a>
     <p class="eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</p>
     <h1 id="page-title">Добро пожаловать.</h1>
-    <p class="intro" id="page-intro">Откройте приглашение из письма, чтобы войти в свою организацию.</p>
-    <section id="sign-in" aria-labelledby="form-title">
+    <p class="intro" id="page-intro">Войдите по email и паролю, чтобы открыть свой кабинет.</p>
+    <section id="password-sign-in" aria-labelledby="password-title">
+      <h2 id="password-title">Вход в кабинет</h2>
+      <form id="password-login-form" class="password-form" method="post" action="/auth/password/login">
+        <label for="login-email">Email</label>
+        <input id="login-email" name="email" type="email" required maxlength="254" autocomplete="username" autocapitalize="off" spellcheck="false">
+        <label for="login-password">Пароль</label>
+        <input id="login-password" name="password" type="password" required maxlength="512" autocomplete="current-password">
+        <button type="submit" id="password-login-button">Войти в Turnesta <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="hint">Данные для первого входа выдаёт администратор. Забыли пароль? Обратитесь к администратору для восстановления доступа.</p>
+    </section>
+    <section id="password-setup" hidden aria-labelledby="setup-title">
+      <h2 id="setup-title" tabindex="-1">Задайте свой пароль</h2>
+      <p class="hint">Временный пароль подтвердил первый вход. Выберите другой пароль для дальнейшей работы: от 15 до 128 символов, например фразу из нескольких слов.</p>
+      <form id="password-setup-form" class="password-form" method="post" action="/auth/password/setup">
+        <label for="setup-password">Новый пароль</label>
+        <input id="setup-password" type="password" required maxlength="512" autocomplete="new-password">
+        <label for="setup-confirm">Повторите новый пароль</label>
+        <input id="setup-confirm" type="password" required maxlength="512" autocomplete="new-password">
+        <button type="submit">Сохранить пароль и войти</button>
+        <button type="button" id="setup-back" class="secondary">Вернуться ко входу</button>
+      </form>
+    </section>
+    <section id="password-change" hidden aria-labelledby="change-title">
+      <h2 id="change-title" tabindex="-1">Пароль вашего аккаунта</h2>
+      <form id="password-change-form" class="password-form" method="post" action="/auth/password">
+        <label for="account-email">Email аккаунта</label>
+        <input id="account-email" type="email" readonly autocomplete="username">
+        <div id="current-password-field">
+          <label for="current-password">Текущий пароль</label>
+          <input id="current-password" type="password" maxlength="512" autocomplete="current-password">
+        </div>
+        <label for="change-password">Новый пароль</label>
+        <input id="change-password" type="password" required maxlength="512" autocomplete="new-password">
+        <label for="change-confirm">Повторите новый пароль</label>
+        <input id="change-confirm" type="password" required maxlength="512" autocomplete="new-password">
+        <button type="submit">Сохранить пароль</button>
+      </form>
+      <p class="hint">От 15 до 128 символов. После сохранения потребуется снова войти на ваших устройствах.</p>
+      <a class="password-back" href="/app/">Вернуться в кабинет</a>
+    </section>
+    <section id="sign-in" hidden aria-labelledby="form-title">
       <h2 id="form-title">Вход по приглашению</h2>
       <form id="login-form" method="post" action="/auth/login">
         <label for="code">Одноразовый код из ссылки</label>
