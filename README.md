@@ -35,6 +35,8 @@ read -rs PW && printf '%s' "$PW" | docker compose --env-file .env run --rm -T ad
 
 Sign in at http://127.0.0.1:8080/login. On first sign-in you will be asked to choose your own password.
 
+If port 8080 or 54329 is busy, change `TURNESTA_API_PORT` (together with the port in `TURNESTA_PUBLIC_ORIGIN`) or `TURNESTA_POSTGRES_PORT` in `.env`.
+
 On Windows, use PowerShell 7: `.\scripts\Initialize-Development.ps1` instead of `init-env.sh`, and `.\scripts\Set-LoginPassword.ps1 -User <owner-id> -Email owner@example.com` to set the password.
 
 ## Tech stack

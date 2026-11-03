@@ -98,7 +98,7 @@ services:
       TURNESTA_MOCK_PAYMENT_KEY: ${TURNESTA_MOCK_PAYMENT_KEY:-}
       TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${TURNESTA_API_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
