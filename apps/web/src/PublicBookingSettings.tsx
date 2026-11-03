@@ -214,9 +214,9 @@ function PublicSettingsEditor({
       {canManage && !baseline.enabled && (
         <div className="booking-public-off" role="status">
           <div>
-            <strong>Пациенты пока не могут записаться сами</strong>
+            <strong>Клиенты пока не могут записаться сами</strong>
             <p>
-              После включения появится ссылка для пациентов и код для сайта.
+              После включения появится ссылка для клиентов и код для сайта.
               Анкету ниже можно настроить сейчас или позже.
             </p>
           </div>
@@ -232,7 +232,7 @@ function PublicSettingsEditor({
       )}
       {justEnabled && saved && current.public_url && (
         <SuccessNotice>
-          Онлайн-запись работает. Отправьте ссылку пациентам или поставьте её на
+          Онлайн-запись работает. Отправьте ссылку клиентам или поставьте её на
           сайт.
         </SuccessNotice>
       )}
