@@ -19,14 +19,14 @@ Requirements: Docker with Docker Compose and PowerShell 7.4+.
 docker compose --env-file .env up --build --wait
 ```
 
-Create an organization with its owner, then set the owner's password using the `owner.id` from the output:
+Create an organization with its owner, then set a temporary password using the `owner.id` from the output:
 
 ```powershell
 docker compose --env-file .env run --rm admin core organization-create --name "My business" --owner-name "Owner"
 .\scripts\Set-LoginPassword.ps1 -User <owner-id> -Email owner@example.com
 ```
 
-Sign in at http://127.0.0.1:8080/login.
+Sign in at http://127.0.0.1:8080/login. On first sign-in you will be asked to choose your own password.
 
 ## Tech stack
 
