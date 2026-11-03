@@ -1,100 +1,49 @@
 # Turnesta
 
-Модульная платформа для электронной очереди, записи на услуги, бронирования ресурсов и чаевых. Бизнес выбирает отраслевой шаблон и настраивает рабочее место под свой процесс.
+Open-source platform for service businesses: appointments, electronic queues and tips in one place.
 
-**Статус на 3 ноября 2026 года:** работают Core, вход по email и паролю, серверные сессии и React-кабинет организаций/точек. Реализован сквозной Tips в явно обозначенном mock-режиме: получатель, публичная HTML-страница, эмулятор оплаты, подписанный callback, inbox/outbox и сверка в кабинете. Worker доставляет приглашения и mock-уведомления с повторами. Queue включает серверную модель, рабочее место оператора, публичный талон по ссылке/QR и обезличенное табло. Посетитель получает талон без аккаунта и следит за состоянием; табло показывает номера/даты текущих вызовов и число ожидающих. Управляющий отдельно публикует табло и включает самостоятельную выдачу. SSE уведомляет об изменениях, клиенты восстанавливают состояние после переподключения; при недоступной связи используется резервное HTTP-чтение. После завершения визита талон может предложить добровольные mock Tips выбранному получателю той же точки; настройка включается управляющим отдельно. У очереди есть управляемые услуги: посетитель и сотрудник могут выбрать услугу при выдаче; талон сохраняет исходное название после переименования или выключения. Сервисная точка поддерживает окна обслуживания: оператор выбирает свободное окно при вызове, талон и табло показывают снимок его названия. В Bookings доступен редактор расписания бизнеса: специалисты, необязательные заготовки, ручные талоны с интервалом, только началом или по согласованию и подтверждение пересечений. Сотрудник может записать клиента, изменить контакты, перенести или отменить запись; сервер контролирует занятость специалиста и места. Работает публичная запись без аккаунта: управляющий включает ссылку точки и настраивает анкету, посетитель выбирает специалиста/дату в календаре или списке и сразу подтверждает запись. Публичный и ручной сценарии используют общую занятость. Работает виджет для стороннего сайта: управляющий задаёт разрешённые сайты и получает код встраивания; iframe использует тот же календарь и анкету, подстраивает высоту и сохраняет ссылку на отдельную страницу. Реальные платежи ещё не реализованы. Производительность пока не измерялась.
+> **Early stage.** Turnesta is being piloted locally with a small clinic. It is not production-ready yet, and real payments are not implemented.
 
-Расписание Bookings можно заполнить на несколько дней: скопировать день или создать серию из заготовки с перерывом, проверить пересечения и сохранить весь пакет без клиентов. Контракт — [BOOKINGS-BATCH.md](docs/BOOKINGS-BATCH.md).
+## What it does
 
-В [настройках сервисов](docs/NAVIGATION.md) владелец и управляющий выбирают разделы меню для всей организации: очереди, запись и чаевые. Скрытие сохраняет данные и публичные ссылки.
+- **Bookings** — specialist schedules, manual and bulk slot creation, client appointments with reschedule and cancel, a public booking page and an embeddable widget for your website.
+- **Queue** — electronic tickets via link or QR code, an operator workspace with service windows, and an anonymized display board with live updates over SSE.
+- **Tips** — voluntary tips via link or QR after a visit. Only an explicit mock payment mode exists for now.
+- **Team** — organizations, locations, roles (owner, manager, operator, employee), email and password sign-in.
 
-Работает [управление командой](docs/TEAM.md): владелец приглашает коллег по email, выбирает роль, меняет и отключает доступ с сохранением истории, видит состояние письма и запрашивает новое. Доступ относится ко всей организации; права владельцев остаются защищёнными.
+## Quick start
 
-Пройден [локальный пилот и backup/restore](docs/OPERATIONS.md): отдельный синтетический стенд со своей почтой, сквозная запись, диагностика миграций/прав/очередей и восстановление в новом кластере без worker и опубликованных портов. Сервер и домен для внешнего пилота ещё не выбраны.
-
-## Локальный запуск
-
-Требуется работающий Docker Desktop с Linux containers и Docker Compose. Rust на хосте для этого способа не нужен. Команды выполняются из корня проекта:
+Requires Docker Desktop with Linux containers. Run from the project root in PowerShell:
 
 ```powershell
 .\scripts\Initialize-Development.ps1
 docker compose --env-file .env up --build --wait
-Invoke-RestMethod http://127.0.0.1:8080/health
-Invoke-RestMethod http://127.0.0.1:8080/health/ready
 ```
 
-Кабинет: `http://127.0.0.1:8080/app/`, вход: `/login` по email и паролю. Владелец создаёт нового сотрудника с временным паролем в разделе «Команда»; сотрудник задаёт свой при первом входе. Первый доступ владельцу и восстановление — [PASSWORDS.md](docs/PASSWORDS.md). Прежние email-приглашения сохранены; локальная доставка использует MailHog. Команды: [AUTH.md](docs/AUTH.md), очередь/ключ: [DELIVERY.md](docs/DELIVERY.md). Скрипт создаёт отсутствующий игнорируемый `.env` с независимыми случайными ключами доставки и mock-платежей. При обновлении сохраняет существующие значения и дописывает отсутствующую mock-конфигурацию. Ключ доставки нужен вместе с backup БД для восстановления активных приглашений.
+Then open `http://127.0.0.1:8080/app/`. The script creates an ignored `.env` with random local keys; the example environment contains development-only credentials. Outgoing mail is captured by a local MailHog. To create the first owner and password, see [PASSWORDS.md](docs/PASSWORDS.md).
 
-OpenAPI доступен по `http://127.0.0.1:8080/openapi.json`. PostgreSQL публикуется только на loopback: по умолчанию `127.0.0.1:54329`, внешний порт выбирается через `TURNESTA_POSTGRES_PORT` в `.env`. Это помогает при конфликте порта или его резервировании Windows. Пример окружения содержит исключительно локальные development credentials. Compose разделяет bootstrap, миграции, административные команды и runtime по ролям БД; production-развёртывание ещё не подготовлено.
+Details on configuration, tests and code structure: [DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-Подробности запуска, переменных, тестов и структуры кода: [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+## Stack
 
-## Продуктовая идея
+- **Backend:** Rust, Axum, Tokio, SQLx, PostgreSQL; REST API with OpenAPI at `/openapi.json`.
+- **Cabinet:** React, TypeScript, Vite.
+- **Public pages** (booking, ticket, board, tips): server-rendered HTML with a little JavaScript.
+- **Background jobs:** PostgreSQL outbox and a worker built from the same codebase.
+- **Deployment:** Docker Compose.
 
-Одна платформа объединяет организации, точки, сотрудников, доступы и клиентские интерфейсы. Подключаемые модули решают отдельные задачи:
+## Documentation
 
-| Модуль | Назначение |
-| --- | --- |
-| Core | Организации, точки, пользователи, роли, настройки, аудит |
-| Queue | Электронные талоны, вызов посетителя, рабочее место оператора и табло |
-| Bookings | Запись на услуги и резервирование сотрудников, помещений, оборудования |
-| Tips | Добровольные чаевые по QR-коду или ссылке; первый рынок — Россия |
-| Builder | Отраслевые шаблоны, формы и разрешённые переходы состояний |
-| Billing | Подписка бизнеса и доступные возможности тарифа |
+Documentation is currently in Russian.
 
-Tips можно подключать отдельно от Queue и Bookings. Гость оставляет чаевые в мобильном браузере без установки приложения. Точное предложение для первой отрасли уточняем на пилотах.
+- Product: [PRODUCT](docs/PRODUCT.md), [ROADMAP](docs/ROADMAP.md), [MONETIZATION](docs/MONETIZATION.md)
+- Architecture: [ARCHITECTURE](docs/ARCHITECTURE.md), [STACK](docs/STACK.md), [CORE](docs/CORE.md)
+- Bookings: [overview](docs/BOOKINGS.md), [editor](docs/BOOKINGS-EDITOR.md), [appointments](docs/BOOKINGS-APPOINTMENTS.md), [public page](docs/BOOKINGS-PUBLIC.md), [widget](docs/BOOKINGS-WIDGET.md), [bulk fill](docs/BOOKINGS-BATCH.md)
+- Queue: [overview](docs/QUEUE.md), [live updates](docs/QUEUE-LIVE.md), [services](docs/SERVICES.md), [service windows](docs/SERVICE-POINT.md), [tips after a visit](docs/QUEUE-TIPS.md)
+- Tips: [mock flow](docs/TIPS-MOCK.md), [payments in Russia](docs/TIPS-RU.md)
+- Accounts: [team](docs/TEAM.md), [passwords](docs/PASSWORDS.md), [sign-in and sessions](docs/AUTH.md), [cabinet](docs/CABINET.md), [navigation](docs/NAVIGATION.md), [mail delivery](docs/DELIVERY.md)
+- Operations: [local pilot, backup and restore](docs/OPERATIONS.md), [development](docs/DEVELOPMENT.md), [sources](docs/SOURCES.md)
 
-## Рабочий стек
+## License
 
-- Backend: **Rust, Axum, Tokio**, REST API и OpenAPI.
-- Данные: **PostgreSQL**, SQLx и SQL-миграции.
-- Кабинет и будущий конструктор: **React, TypeScript, Vite**.
-- Публичные страницы чаевых, талона, табло и записи: **HTML с сервера через Askama**, небольшой JavaScript для интерактивности.
-- Изменения очереди: **SSE** с перечитыванием snapshot и восстановлением связи, команды через HTTP.
-- Фоновые задачи: PostgreSQL outbox/jobs; API и worker из одной кодовой базы.
-- Развёртывание: Linux, контейнеры и Docker Compose; Windows + WSL2 для локальной разработки.
-
-Приоритет — корректность операций, небольшой расход ресурсов и измеримая скорость пользовательских сценариев. Сравнительного benchmark пока нет; выбор Rust не является доказательством превосходства над Go или .NET.
-
-## Коммерческая модель
-
-Рабочая гипотеза — полезное открытое ядро и бесплатный базовый режим, платные возможности внутри приложения и обслуживаемое облако. Код открыт под AGPL-3.0 (см. «Лицензия»); границы платных возможностей и цены ещё не выбраны. Платёжные комиссии считаются отдельно от тарифа Turnesta.
-
-Подписка Turnesta, оплата услуги бизнесу и чаевые сотруднику — три отдельных назначения денег. Первым исследуемым адаптером чаевых является CloudTips. Реальные платежи зависят от подключения и согласованной с провайдером модели; проектирование и mock-режим доступны раньше.
-
-## Документация
-
-- [Продукт и границы модулей](docs/PRODUCT.md)
-- [Стек, альтернативы и бюджеты производительности](docs/STACK.md)
-- [Архитектура и правила корректности](docs/ARCHITECTURE.md)
-- [Чаевые и платежи в России](docs/TIPS-RU.md)
-- [Работающий mock-сценарий чаевых](docs/TIPS-MOCK.md)
-- [Queue: цикл талона, API и рабочее место оператора](docs/QUEUE.md)
-- [Queue: SSE, ресурсы и восстановление связи](docs/QUEUE-LIVE.md)
-- [Queue: добровольные mock Tips после визита](docs/QUEUE-TIPS.md)
-- [Каталог услуг и их выбор в очереди](docs/SERVICES.md)
-- [Сервисная точка с окнами обслуживания](docs/SERVICE-POINT.md)
-- [Bookings: работающий редактор расписания](docs/BOOKINGS-EDITOR.md)
-- [Bookings: ручная запись клиентов, перенос и отмена](docs/BOOKINGS-APPOINTMENTS.md)
-- [Bookings: публичный календарь, анкета и подтверждение](docs/BOOKINGS-PUBLIC.md)
-- [Bookings: подключение виджета на сайт](docs/BOOKINGS-WIDGET.md)
-- [Bookings: копирование дня и серии из заготовок](docs/BOOKINGS-BATCH.md)
-- [План Bookings: виджет записи на приём и календарь врача](docs/BOOKINGS.md)
-- [Бесплатные и платные возможности](docs/MONETIZATION.md)
-- [Этапы разработки и критерии готовности](docs/ROADMAP.md)
-- [Разработка и запуск](docs/DEVELOPMENT.md)
-- [Локальный пилот, диагностика и резервное копирование](docs/OPERATIONS.md)
-- [Core: модель, доступ и операторские команды](docs/CORE.md)
-- [Команда: приглашения, роли и отзыв доступа](docs/TEAM.md)
-- [Email и пароль: первый вход, смена и восстановление](docs/PASSWORDS.md)
-- [Email-приглашения и серверные сессии](docs/AUTH.md)
-- [Кабинет и редактирование Core](docs/CABINET.md)
-- [Выбор сервисов в меню организации](docs/NAVIGATION.md)
-- [Очередь доставки приглашений](docs/DELIVERY.md)
-- [Проверенные первичные источники](docs/SOURCES.md)
-
-Редактор расписания, ручная запись, публичный календарь, анкета, виджет и [заполнение расписания на несколько дней](docs/BOOKINGS-BATCH.md) работают. Реализовано [управление командой из кабинета](docs/TEAM.md). Локальный пилот и восстановление backup пройдены. Далее — проверка владельцем бизнеса и подготовка внешнего окружения после выбора сервера/домена; фактический сайт, данные и условия подключения согласуются отдельно. Требования и дальнейшие этапы — [BOOKINGS.md](docs/BOOKINGS.md); уведомления пока только обсуждаются. Сценарий Queue с окнами реализован. Неизменная связь платежа с визитом и аналитика чаевых развиваются отдельно. Sandbox реального провайдера Tips исследуется отдельно при наличии доступа. Полноценный визуальный конструктор развивается после появления проверенного отраслевого сценария.
-
-## Лицензия
-
-Turnesta распространяется по [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Код можно использовать, изменять и запускать, в том числе коммерчески. Если изменённая версия предоставляется пользователям по сети, её исходный код должен быть доступен этим пользователям на тех же условиях.
+[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). You may use, modify and run Turnesta, including commercially. If you offer a modified version to users over a network, you must make its source code available to them under the same license.
