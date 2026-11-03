@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14402e">
+  <link rel="icon" href="/app/favicon.svg" type="image/svg+xml">
   <title>Вход · Turnesta</title>
   <link rel="stylesheet" href="/assets/login.css">
   <link rel="stylesheet" href="/assets/password-login.css">
@@ -11,68 +13,85 @@
   <script src="/assets/login.js" defer></script>
 </head>
 <body>
-  <main>
-    <a class="brand" href="/login" aria-label="Turnesta">turnesta<span>•</span></a>
-    <p class="eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</p>
-    <h1 id="page-title">Добро пожаловать.</h1>
-    <p class="intro" id="page-intro">Войдите по email и паролю, чтобы открыть свой кабинет.</p>
-    <section id="password-sign-in" aria-labelledby="password-title">
-      <h2 id="password-title">Вход в кабинет</h2>
-      <form id="password-login-form" class="password-form" method="post" action="/auth/password/login">
-        <label for="login-email">Email</label>
-        <input id="login-email" name="email" type="email" required maxlength="254" autocomplete="username" autocapitalize="off" spellcheck="false">
-        <label for="login-password">Пароль</label>
-        <input id="login-password" name="password" type="password" required maxlength="512" autocomplete="current-password">
-        <button type="submit" id="password-login-button">Войти в Turnesta <span aria-hidden="true">→</span></button>
-      </form>
-      <p class="hint">Данные для первого входа выдаёт администратор. Забыли пароль? Обратитесь к администратору для восстановления доступа.</p>
-    </section>
-    <section id="password-setup" hidden aria-labelledby="setup-title">
-      <h2 id="setup-title" tabindex="-1">Задайте свой пароль</h2>
-      <p class="hint">Временный пароль подтвердил первый вход. Выберите другой пароль для дальнейшей работы: от 15 до 128 символов, например фразу из нескольких слов.</p>
-      <form id="password-setup-form" class="password-form" method="post" action="/auth/password/setup">
-        <label for="setup-password">Новый пароль</label>
-        <input id="setup-password" type="password" required maxlength="512" autocomplete="new-password">
-        <label for="setup-confirm">Повторите новый пароль</label>
-        <input id="setup-confirm" type="password" required maxlength="512" autocomplete="new-password">
-        <button type="submit">Сохранить пароль и войти</button>
-        <button type="button" id="setup-back" class="secondary">Вернуться ко входу</button>
-      </form>
-    </section>
-    <section id="password-change" hidden aria-labelledby="change-title">
-      <h2 id="change-title" tabindex="-1">Пароль вашего аккаунта</h2>
-      <form id="password-change-form" class="password-form" method="post" action="/auth/password">
-        <label for="account-email">Email аккаунта</label>
-        <input id="account-email" type="email" readonly autocomplete="username">
-        <div id="current-password-field">
-          <label for="current-password">Текущий пароль</label>
-          <input id="current-password" type="password" maxlength="512" autocomplete="current-password">
-        </div>
-        <label for="change-password">Новый пароль</label>
-        <input id="change-password" type="password" required maxlength="512" autocomplete="new-password">
-        <label for="change-confirm">Повторите новый пароль</label>
-        <input id="change-confirm" type="password" required maxlength="512" autocomplete="new-password">
-        <button type="submit">Сохранить пароль</button>
-      </form>
-      <p class="hint">От 15 до 128 символов. После сохранения потребуется снова войти на ваших устройствах.</p>
-      <a class="password-back" href="/app/">Вернуться в кабинет</a>
-    </section>
-    <section id="sign-in" hidden aria-labelledby="form-title">
-      <h2 id="form-title">Вход по приглашению</h2>
-      <form id="login-form" method="post" action="/auth/login">
-        <label for="code">Одноразовый код из ссылки</label>
-        <input id="code" name="code" type="password" required minlength="64" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off">
-        <button type="submit" id="login-button">Войти в Turnesta <span aria-hidden="true">→</span></button>
-      </form>
-      <p class="hint">Приглашение действительно 10 минут и работает один раз. Если срок истёк, запросите новое у администратора.</p>
-    </section>
-    <section id="workspace" hidden aria-labelledby="workspace-title">
-      <div class="section-heading"><h2 id="workspace-title">Ваши организации</h2><button id="logout-button" class="secondary" type="button">Выйти</button></div>
-      <ul id="organizations"></ul>
-      <button id="more-button" class="secondary" type="button" hidden>Показать ещё</button>
-    </section>
-    <p id="status" role="status" aria-live="polite"></p>
-    <footer>Очередь, запись и сервис — в одном ритме.</footer>
-  </main>
+  <div class="auth">
+    <aside class="auth-brand">
+      <a class="brand" href="/login" aria-label="Turnesta">
+        <svg class="brand-mark" width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#ffffff"/><path d="M14 8.5v12.25a4 4 0 0 0 4 4h3.25M8.75 15.25c1.5-1.3 3.3-2 5.35-2h7.15" fill="none" stroke="#1f5a41" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>turnesta<span class="brand-dot">.</span></span>
+      </a>
+      <div class="auth-pitch">
+        <p class="auth-kicker">Рабочее место сервиса</p>
+        <p class="auth-headline">Запись, расписание и&nbsp;очередь — в&nbsp;одном окне.</p>
+        <ul class="auth-points">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 2.75v3.5M16 2.75v3.5M3.5 9.5h17"/></svg>Расписание и запись клиентов без таблиц</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.75"/><path d="M3.25 12h17.5M12 3.25c2.4 2.4 3.5 5.4 3.5 8.75s-1.1 6.35-3.5 8.75c-2.4-2.4-3.5-5.4-3.5-8.75s1.1-6.35 3.5-8.75Z"/></svg>Онлайн-запись по ссылке и на вашем сайте</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.75 20a6.25 6.25 0 0 1 12.5 0M15.5 4.7a3.5 3.5 0 0 1 0 6.6M17.75 14.3A6.25 6.25 0 0 1 21.25 20"/></svg>Команда с ролями и общим расписанием</li>
+        </ul>
+      </div>
+      <p class="auth-note">Данные хранятся в вашей организации и видны только вашей команде.</p>
+    </aside>
+    <main class="auth-main">
+      <div class="auth-card">
+        <h1 id="page-title">Добро пожаловать.</h1>
+        <p class="intro" id="page-intro">Войдите по email и паролю, чтобы открыть свой кабинет.</p>
+        <section id="password-sign-in" aria-labelledby="password-title">
+          <h2 id="password-title" class="visually-hidden">Вход в кабинет</h2>
+          <form id="password-login-form" class="password-form" method="post" action="/auth/password/login">
+            <label for="login-email">Email</label>
+            <input id="login-email" name="email" type="email" required maxlength="254" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@clinic.ru">
+            <label for="login-password">Пароль</label>
+            <input id="login-password" name="password" type="password" required maxlength="512" autocomplete="current-password">
+            <button type="submit" id="password-login-button">Войти</button>
+          </form>
+          <p class="hint">Данные для первого входа выдаёт администратор. Забыли пароль? Обратитесь к администратору для восстановления доступа.</p>
+        </section>
+        <section id="password-setup" hidden aria-labelledby="setup-title">
+          <h2 id="setup-title" tabindex="-1">Задайте свой пароль</h2>
+          <p class="hint">Временный пароль подтвердил первый вход. Выберите другой пароль для дальнейшей работы: от 15 до 128 символов, например фразу из нескольких слов.</p>
+          <form id="password-setup-form" class="password-form" method="post" action="/auth/password/setup">
+            <label for="setup-password">Новый пароль</label>
+            <input id="setup-password" type="password" required maxlength="512" autocomplete="new-password">
+            <label for="setup-confirm">Повторите новый пароль</label>
+            <input id="setup-confirm" type="password" required maxlength="512" autocomplete="new-password">
+            <button type="submit">Сохранить пароль и войти</button>
+            <button type="button" id="setup-back" class="secondary">Вернуться ко входу</button>
+          </form>
+        </section>
+        <section id="password-change" hidden aria-labelledby="change-title">
+          <h2 id="change-title" tabindex="-1">Пароль вашего аккаунта</h2>
+          <form id="password-change-form" class="password-form" method="post" action="/auth/password">
+            <label for="account-email">Email аккаунта</label>
+            <input id="account-email" type="email" readonly autocomplete="username">
+            <div id="current-password-field">
+              <label for="current-password">Текущий пароль</label>
+              <input id="current-password" type="password" maxlength="512" autocomplete="current-password">
+            </div>
+            <label for="change-password">Новый пароль</label>
+            <input id="change-password" type="password" required maxlength="512" autocomplete="new-password">
+            <label for="change-confirm">Повторите новый пароль</label>
+            <input id="change-confirm" type="password" required maxlength="512" autocomplete="new-password">
+            <button type="submit">Сохранить пароль</button>
+          </form>
+          <p class="hint">От 15 до 128 символов. После сохранения потребуется снова войти на ваших устройствах.</p>
+          <a class="password-back" href="/app/">Вернуться в кабинет</a>
+        </section>
+        <section id="sign-in" hidden aria-labelledby="form-title">
+          <h2 id="form-title">Вход по приглашению</h2>
+          <form id="login-form" method="post" action="/auth/login">
+            <label for="code">Одноразовый код из ссылки</label>
+            <input id="code" name="code" type="password" required minlength="64" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off">
+            <button type="submit" id="login-button">Войти по приглашению</button>
+          </form>
+          <p class="hint">Приглашение действительно 10 минут и работает один раз. Если срок истёк, запросите новое у администратора.</p>
+        </section>
+        <section id="workspace" hidden aria-labelledby="workspace-title">
+          <div class="section-heading"><h2 id="workspace-title">Ваши организации</h2><button id="logout-button" class="secondary" type="button">Выйти</button></div>
+          <ul id="organizations"></ul>
+          <button id="more-button" class="secondary" type="button" hidden>Показать ещё</button>
+        </section>
+        <p id="status" role="status" aria-live="polite"></p>
+      </div>
+    </main>
+  </div>
 </body>
 </html>

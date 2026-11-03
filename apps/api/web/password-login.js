@@ -5,6 +5,45 @@
   let setupToken = null;
   let revision = 0;
   const changing = new URLSearchParams(location.search).get("password") === "change";
+  // Static markup only: password visibility toggles and a Caps Lock hint for every password field.
+  const eye = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const eyeOff = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M9.9 5.8A9.9 9.9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16.6 16.6 0 0 1-3 3.7M6.6 7.1C3.9 8.9 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.6 0 3-.4 4.2-1M10 10a3 3 0 0 0 4 4"/></svg>';
+  for (const input of document.querySelectorAll(".password-form input[type=\"password\"]")) {
+    const field = document.createElement("div");
+    field.className = "password-field";
+    input.replaceWith(field);
+    field.append(input);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "password-toggle";
+    toggle.setAttribute("aria-controls", input.id);
+    const render = (visible) => {
+      toggle.innerHTML = visible ? eyeOff : eye;
+      toggle.setAttribute("aria-label", visible ? "Скрыть пароль" : "Показать пароль");
+      toggle.setAttribute("aria-pressed", String(visible));
+    };
+    render(false);
+    toggle.addEventListener("click", () => {
+      const visible = input.type === "password";
+      input.type = visible ? "text" : "password";
+      render(visible);
+      input.focus();
+    });
+    field.append(toggle);
+    const caps = document.createElement("p");
+    caps.className = "caps-hint";
+    caps.hidden = true;
+    caps.textContent = "Включён Caps Lock";
+    field.after(caps);
+    const check = (event) => { caps.hidden = !event.getModifierState?.("CapsLock"); };
+    input.addEventListener("keydown", check);
+    input.addEventListener("keyup", check);
+    input.addEventListener("blur", () => { caps.hidden = true; });
+  }
+  function hideSecrets() {
+    document.querySelectorAll(".password-field input").forEach((input) => { input.type = "password"; });
+    document.querySelectorAll(".password-toggle").forEach((toggle) => { toggle.innerHTML = eye; toggle.setAttribute("aria-label", "Показать пароль"); toggle.setAttribute("aria-pressed", "false"); });
+  }
   function show(section) {
     for (const id of ["password-sign-in", "password-setup", "password-change", "sign-in", "workspace"]) $(id).hidden = id !== section;
   }
@@ -55,7 +94,8 @@
   }
   function entered() {
     setupToken = null;
-    document.querySelectorAll('input[type="password"]').forEach((input) => { input.value = ""; });
+    hideSecrets();
+    document.querySelectorAll(".password-field input").forEach((input) => { input.value = ""; });
     status.textContent = "Вы вошли. Открываем кабинет…";
     location.replace("/app/");
   }
@@ -65,6 +105,7 @@
     const current = ++revision;
     window.dispatchEvent(new Event("turnesta:password-auth"));
     lock(form, true);
+    hideSecrets();
     status.textContent = "Входим…";
     try {
       const result = await request("/auth/password/login", { email: $("login-email").value.trim(), password: $("login-password").value });

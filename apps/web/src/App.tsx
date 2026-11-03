@@ -55,7 +55,6 @@ function Shell({ organization, role, children }: { organization?: Organization; 
     <a href="#main-content" className="skip-link">К содержимому</a>
     <aside className="sidebar" aria-label="Рабочее пространство">
       <Link className="brand-link" to="/" state={pickState} aria-label="Turnesta — организации"><Brand/></Link>
-      <p className="brand-caption">Всё идёт своим чередом.</p>
       <div className="sidebar-divider"/>
       {organization ? <>
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
@@ -72,14 +71,13 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         </nav>
       </> : <nav className="main-nav" aria-label="Главная"><Link className="nav-item active" to="/"><Icon name="grid"/>Мои организации</Link></nav>}
       <div className="sidebar-bottom">
-        <a className="nav-item" href="/login?password=change"><Icon name="settings"/>Пароль аккаунта</a>
-        <div className="sidebar-note"><span className="note-dot" aria-hidden="true"/><p>Больше порядка.<br/>Больше времени для людей.</p></div>
+        <a className="nav-item" href="/login?password=change"><Icon name="key"/>Пароль аккаунта</a>
         <div className="account-row"><span className="account-avatar" aria-hidden="true">В</span><div><strong>Ваш кабинет</strong><span>{role ? roleLabels[role] : 'Рабочее пространство'}</span></div><button type="button" className="icon-button logout-button" onClick={() => logout.mutate()} disabled={logout.isPending} aria-label={logout.isPending ? 'Выходим…' : 'Выйти из Turnesta'} title="Выйти"><Icon name="exit"/></button></div>
         {logout.isError && <ErrorNotice error={logout.error}/>}
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div></header>
       <main className="main-content" id="main-content" tabIndex={-1}>
         {organization && serviceOptions.some(service => pathname.split('/')[3] === service.id && !organization.visible_services.includes(service.id)) &&
           <div className="service-visibility-notice" role="status"><p>Этот раздел скрыт из меню организации. Вы можете продолжить работу по открытой ссылке.</p>{role === 'owner' || role === 'manager'
@@ -87,7 +85,6 @@ function Shell({ organization, role, children }: { organization?: Organization; 
             : <p>Изменить набор сервисов может владелец или управляющий.</p>}</div>}
         {children}
       </main>
-      <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>
   </div>;
 }

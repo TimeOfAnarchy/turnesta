@@ -2,35 +2,44 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { errorMessage } from './api';
 
-type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right';
+type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right' | 'key';
+// One 24px grid, 1.75 stroke and round joins keep every glyph optically consistent.
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
-    calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h1m6 0h1"/></>,
-    users: <><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m2-17a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 4v3"/></>,
-    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></>,
-    queue: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h2m4 0h4M7 15h2m4 0h4"/></>,
-    locations: <><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
-    settings: <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></>,
-    grid: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
-    arrow: <path d="M5 12h14m-6-6 6 6-6 6"/>,
+    calendar: <><rect x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 2.75v3.5M16 2.75v3.5M3.5 9.5h17"/></>,
+    users: <><circle cx="9" cy="8" r="3.5"/><path d="M2.75 20a6.25 6.25 0 0 1 12.5 0M15.5 4.7a3.5 3.5 0 0 1 0 6.6M17.75 14.3A6.25 6.25 0 0 1 21.25 20"/></>,
+    clock: <><circle cx="12" cy="12" r="8.75"/><path d="M12 7.5V12l3 2"/></>,
+    queue: <><path d="M3.5 7.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2V10a2 2 0 0 0 0 4v2.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V14a2 2 0 0 0 0-4Z"/><path d="M9.5 5.5v2M9.5 11v2M9.5 16.5v2M13 10h4M13 14h2.5"/></>,
+    locations: <><path d="M12 21.25s-6.75-5.5-6.75-11.25a6.75 6.75 0 0 1 13.5 0c0 5.75-6.75 11.25-6.75 11.25Z"/><circle cx="12" cy="10" r="2.5"/></>,
+    settings: <><path d="M4 6.5h8.5M16.5 6.5H20M4 12h2.5M10.5 12H20M4 17.5h10M18 17.5h2"/><circle cx="14.5" cy="6.5" r="2"/><circle cx="8.5" cy="12" r="2"/><circle cx="16" cy="17.5" r="2"/></>,
+    grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></>,
+    arrow: <path d="M5 12h14M13 6l6 6-6 6"/>,
     plus: <path d="M12 5v14M5 12h14"/>,
-    edit: <><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z"/></>,
-    exit: <><path d="M9 4H4v16h5m4-13 5 5-5 5m-5-5h13"/></>,
-    chevron: <path d="m8 10 4 4 4-4"/>,
-    check: <path d="m5 12 4 4L19 6"/>,
-    close: <path d="m6 6 12 12M6 18 18 6"/>,
-    globe: <><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></>,
-    heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.2 6a8 8 0 0 1 13.5 5M4.3 13a8 8 0 0 0 13.5 5"/></>,
-    external: <><path d="M14 3h7v7m0-7L10 14M10 3H4v17h17v-6"/></>,
-    left: <path d="m14 6-6 6 6 6"/>,
-    right: <path d="m10 6 6 6-6 6"/>,
+    edit: <path d="M14.5 5.5l4 4M4 20l1-4.5L16 4.5a2.1 2.1 0 0 1 3 0l.5.5a2.1 2.1 0 0 1 0 3L8.5 19Z"/>,
+    exit: <path d="M9.5 20.5h-3a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h3M15.5 16.5 20 12l-4.5-4.5M20 12H9"/>,
+    chevron: <path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>,
+    check: <path d="m4.75 12.5 4.5 4.5 10-10"/>,
+    close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>,
+    globe: <><circle cx="12" cy="12" r="8.75"/><path d="M3.25 12h17.5M12 3.25c2.4 2.4 3.5 5.4 3.5 8.75s-1.1 6.35-3.5 8.75c-2.4-2.4-3.5-5.4-3.5-8.75s1.1-6.35 3.5-8.75Z"/></>,
+    heart: <path d="M12 20s-7.75-4.6-7.75-10.1A4.4 4.4 0 0 1 12 7.1a4.4 4.4 0 0 1 7.75 2.8C19.75 15.4 12 20 12 20Z"/>,
+    refresh: <path d="M19.5 9.5A8 8 0 0 0 5 7.5M4.5 3.75V8h4.25M4.5 14.5a8 8 0 0 0 14.5 2M19.5 20.25V16h-4.25"/>,
+    external: <path d="M13.5 4h6.5v6.5M20 4l-8.5 8.5M17.5 14v3.5a2.5 2.5 0 0 1-2.5 2.5H6.5A2.5 2.5 0 0 1 4 17.5V9a2.5 2.5 0 0 1 2.5-2.5H10"/>,
+    left: <path d="m14.5 6-6 6 6 6"/>,
+    right: <path d="m9.5 6 6 6-6 6"/>,
+    key: <><circle cx="8" cy="15.5" r="4"/><path d="M10.9 12.6 19.5 4M16 7.5l2.5 2.5M13.5 10l2 2"/></>,
   };
-  return <svg className={`icon ${className}`} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+  return <svg className={`icon ${className}`} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+export function BrandMark({ className = '' }: { className?: string }) {
+  return <svg className={`brand-mark ${className}`} width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+    <rect width="32" height="32" rx="9" fill="currentColor"/>
+    <path d="M14 8.5v12.25a4 4 0 0 0 4 4h3.25M8.75 15.25c1.5-1.3 3.3-2 5.35-2h7.15" fill="none" stroke="#fff" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>;
 }
 
 export function Brand() {
-  return <span className="brand">turnesta<span aria-hidden="true">•</span></span>;
+  return <span className="brand"><BrandMark/><span className="brand-word">turnesta<span className="brand-dot" aria-hidden="true">.</span></span></span>;
 }
 
 export function Loading({ label = 'Загружаем рабочее пространство…' }: { label?: string }) {
