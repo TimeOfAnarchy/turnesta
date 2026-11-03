@@ -12,7 +12,8 @@ if($Build){
     & docker compose --env-file (Join-Path $root '.env') --file (Join-Path $root 'compose.yaml') build api
     if($LASTEXITCODE -ne 0){throw "Image build failed (exit $LASTEXITCODE). The pilot is unchanged."}
 }
-$target=(Invoke-OpsNative -DockerArgs @('image','inspect',$Image)|ConvertFrom-Json -AsHashtable -NoEnumerate)[0].Id
+try{$target=(Invoke-OpsNative -DockerArgs @('image','inspect',$Image)|ConvertFrom-Json -AsHashtable -NoEnumerate)[0].Id}
+catch{throw "Image '$Image' is not available locally. Build it with -Build or pass an existing -Image. The pilot is unchanged."}
 $envLines=[IO.File]::ReadAllLines($s.env_file)
 $pins=@($envLines|Where-Object{$_ -like 'TURNESTA_IMAGE=*'})
 if($pins.Count -ne 1){throw 'Expected exactly one TURNESTA_IMAGE line in the stand environment.'}
