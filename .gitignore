@@ -16,3 +16,7 @@
 # Runtime/editor artifacts
 *.log
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+/.claude/
