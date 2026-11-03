@@ -36,7 +36,7 @@ impl Provisioner {
     ) -> Result<ProvisionedOrganization, CoreError> {
         let mut tx = self.begin().await?;
         let organization = sqlx::query_as::<_, Organization>(
-            "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version",
+            "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version, visible_services",
         )
         .bind(TenantId::new())
         .bind(name.as_str())

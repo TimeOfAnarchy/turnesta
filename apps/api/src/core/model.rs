@@ -110,6 +110,7 @@ pub struct Organization {
     pub id: TenantId,
     pub name: String,
     pub version: i32,
+    pub visible_services: Vec<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -142,6 +143,8 @@ pub struct Location {
 
 #[derive(Debug, Error)]
 pub enum CoreError {
+    #[error("visible services must be distinct known services")]
+    InvalidNavigation,
     #[error("name must contain 1..120 characters and no control characters")]
     InvalidName,
     #[error("time zone must be a known IANA time zone")]

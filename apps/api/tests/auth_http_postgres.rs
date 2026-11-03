@@ -700,3 +700,226 @@ async fn readonly_members_cannot_rename_and_timezone_lookup_is_bounded() {
     );
     fixture.close().await;
 }
+
+async fn navigation_request(
+    app: &Router,
+    path: &str,
+    credentials: &Credentials,
+    origin: &str,
+    csrf: Option<&str>,
+    value: Value,
+) -> Response {
+    let mut request = Request::put(path)
+        .header("cookie", &credentials.cookie)
+        .header("origin", origin)
+        .header("content-type", "application/json");
+    if let Some(csrf) = csrf {
+        request = request.header("x-csrf-token", csrf);
+    }
+    app.clone()
+        .oneshot(request.body(Body::from(value.to_string())).unwrap())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database and runtime/admin/migrator URLs"]
+async fn navigation_preferences_check_roles_csrf_tenant_and_strict_choices() {
+    let f = Fixture::new().await;
+    for role in [Role::Owner, Role::Manager, Role::Operator, Role::Employee] {
+        let identity = f.identity(role).await;
+        let credentials = f.login(&identity).await;
+        let org_path = format!("/api/organizations/{}", identity.tenant);
+        let path = format!("{org_path}/navigation");
+        let before = body(get(&f.app, &org_path, &credentials).await).await;
+        assert_eq!(
+            before["visible_services"],
+            json!(["queues", "bookings", "tips"])
+        );
+        let input = json!({"visible_services":["bookings"],"expected_version":1});
+        for (origin, csrf) in [
+            ("https://untrusted.example", Some(credentials.csrf.as_str())),
+            (ORIGIN, None),
+        ] {
+            assert_eq!(
+                navigation_request(&f.app, &path, &credentials, origin, csrf, input.clone())
+                    .await
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        let foreign = f.identity(Role::Owner).await;
+        assert_eq!(
+            navigation_request(
+                &f.app,
+                &format!("/api/organizations/{}/navigation", foreign.tenant),
+                &credentials,
+                ORIGIN,
+                Some(&credentials.csrf),
+                input.clone()
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        if matches!(role, Role::Owner | Role::Manager) {
+            for invalid in [
+                json!({"visible_services":["unknown"],"expected_version":1}),
+                json!({"visible_services":["queues","queues"],"expected_version":1}),
+                json!({"visible_services":[null],"expected_version":1}),
+                json!({"visible_services":[],"expected_version":0}),
+                json!({"visible_services":[],"expected_version":1,"actor":"spoof"}),
+            ] {
+                assert_eq!(
+                    navigation_request(
+                        &f.app,
+                        &path,
+                        &credentials,
+                        ORIGIN,
+                        Some(&credentials.csrf),
+                        invalid
+                    )
+                    .await
+                    .status(),
+                    StatusCode::BAD_REQUEST
+                );
+            }
+            assert_eq!(
+                body(get(&f.app, &org_path, &credentials).await).await,
+                before
+            );
+            let saved = navigation_request(
+                &f.app,
+                &path,
+                &credentials,
+                ORIGIN,
+                Some(&credentials.csrf),
+                input.clone(),
+            )
+            .await;
+            assert_eq!(saved.status(), StatusCode::OK);
+            let saved = body(saved).await;
+            assert_eq!(saved["visible_services"], json!(["bookings"]));
+            assert_eq!(saved["version"], 2);
+            assert_eq!(saved["name"], before["name"]);
+            assert_eq!(
+                navigation_request(
+                    &f.app,
+                    &path,
+                    &credentials,
+                    ORIGIN,
+                    Some(&credentials.csrf),
+                    input
+                )
+                .await
+                .status(),
+                StatusCode::CONFLICT
+            );
+            let empty = navigation_request(
+                &f.app,
+                &path,
+                &credentials,
+                ORIGIN,
+                Some(&credentials.csrf),
+                json!({"visible_services":[],"expected_version":2}),
+            )
+            .await;
+            assert_eq!(empty.status(), StatusCode::OK);
+            assert_eq!(body(empty).await["visible_services"], json!([]));
+            let restored = navigation_request(
+                &f.app,
+                &path,
+                &credentials,
+                ORIGIN,
+                Some(&credentials.csrf),
+                json!({"visible_services":["queues","bookings","tips"],"expected_version":3}),
+            )
+            .await;
+            assert_eq!(restored.status(), StatusCode::OK);
+        } else {
+            assert_eq!(
+                navigation_request(
+                    &f.app,
+                    &path,
+                    &credentials,
+                    ORIGIN,
+                    Some(&credentials.csrf),
+                    input
+                )
+                .await
+                .status(),
+                StatusCode::FORBIDDEN
+            );
+            assert_eq!(
+                body(get(&f.app, &org_path, &credentials).await).await,
+                before
+            );
+        }
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database and runtime/admin/migrator URLs"]
+async fn navigation_and_name_share_cas_and_database_guards_reject_invalid_arrays() {
+    let f = Fixture::new().await;
+    let identity = f.identity(Role::Owner).await;
+    let credentials = f.login(&identity).await;
+    let org_path = format!("/api/organizations/{}", identity.tenant);
+    let path = format!("{org_path}/navigation");
+    for selection in [
+        Some(vec![Some("unknown")]),
+        Some(vec![Some("queues"), Some("queues")]),
+        Some(vec![Some("queues"), None]),
+        None,
+    ] {
+        let error = sqlx::query("UPDATE core.organizations SET visible_services=$1 WHERE id=$2")
+            .bind(selection)
+            .bind(identity.tenant)
+            .execute(&f.migrator)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("23514" | "23502")
+        ));
+    }
+    let (navigation, rename) = tokio::join!(
+        navigation_request(
+            &f.app,
+            &path,
+            &credentials,
+            ORIGIN,
+            Some(&credentials.csrf),
+            json!({"visible_services":["bookings"],"expected_version":1})
+        ),
+        patch(
+            &f.app,
+            &org_path,
+            &credentials,
+            json!({"name":"New name","expected_version":1})
+        )
+    );
+    let statuses = [navigation.status(), rename.status()];
+    assert_eq!(statuses.iter().filter(|s| **s == StatusCode::OK).count(), 1);
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|s| **s == StatusCode::CONFLICT)
+            .count(),
+        1
+    );
+    let current = body(get(&f.app, &org_path, &credentials).await).await;
+    assert_eq!(current["version"], 2);
+    if navigation.status() == StatusCode::OK {
+        assert_eq!(current["visible_services"], json!(["bookings"]));
+        assert_eq!(current["name"], "HTTP auth test");
+    } else {
+        assert_eq!(
+            current["visible_services"],
+            json!(["queues", "bookings", "tips"])
+        );
+        assert_eq!(current["name"], "New name");
+    }
+    f.close().await;
+}

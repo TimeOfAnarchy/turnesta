@@ -8,11 +8,12 @@ import { Brand, ErrorNotice, Icon, Loading } from './components';
 import { useOrganization, useOrganizations } from './queries';
 import { LocationsPage } from './LocationsPage';
 import { BookingsPage } from './BookingsPage';
-import { SettingsPage } from './SettingsPage';
 import { TipsPage } from './TipsPage';
 import { QueuesPage, QueuePage } from './QueuesPage';
+import { serviceOptions, startSection } from './navigation';
 
 const TeamPage = lazy(() => import('./TeamPage').then(module => ({ default: module.TeamPage })));
+const SettingsPage = lazy(() => import('./SettingsPage').then(module => ({ default: module.SettingsPage })));
 
 export type Workspace = { organization: Organization; role: Role; canManage: boolean; userId: string };
 export function useWorkspace() { return useOutletContext<Workspace>(); }
@@ -27,7 +28,7 @@ export function App() {
       <Route index element={<LastSection/>}/>
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="bookings" element={<BookingsPage/>}/>
-      <Route path="settings" element={<SettingsPage/>}/>
+      <Route path="settings" element={<Suspense fallback={<Loading/>}><SettingsPage/></Suspense>}/>
       <Route path="team" element={<Suspense fallback={<Loading/>}><TeamPage/></Suspense>}/>
       <Route path="tips" element={<TipsPage/>}/>
       <Route path="queues" element={<QueuesPage/>}/>
@@ -64,9 +65,8 @@ function Shell({ organization, role, children }: { organization?: Organization; 
         </Link>
         <nav className="main-nav" aria-label="Организация">
           <NavLink to={`${base}/locations`} className={({ isActive }) => isActive || pathname === base ? 'nav-item active' : 'nav-item'}><Icon name="locations"/>Точки</NavLink>
-          <NavLink to={`${base}/queues`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="queue"/>Очереди</NavLink>
-          <NavLink to={`${base}/bookings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="calendar"/>Запись</NavLink>
-          <NavLink to={`${base}/tips`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="heart"/>Чаевые</NavLink>
+          {serviceOptions.filter(service => organization.visible_services.includes(service.id)).map(service =>
+            <NavLink key={service.id} to={`${base}/${service.id}`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name={service.icon}/>{service.label}</NavLink>)}
           {role === 'owner' && <NavLink to={`${base}/team`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="users"/>Команда</NavLink>}
           <NavLink to={`${base}/settings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="settings"/>Настройки</NavLink>
         </nav>
@@ -80,7 +80,13 @@ function Shell({ organization, role, children }: { organization?: Organization; 
     </aside>
     <div className="workspace-main">
       <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div><span className="topbar-tag">ВАШ БИЗНЕС. ВАШ РИТМ.</span></header>
-      <main className="main-content" id="main-content" tabIndex={-1}>{children}</main>
+      <main className="main-content" id="main-content" tabIndex={-1}>
+        {organization && serviceOptions.some(service => pathname.split('/')[3] === service.id && !organization.visible_services.includes(service.id)) &&
+          <div className="service-visibility-notice" role="status"><p>Этот раздел скрыт из меню организации. Вы можете продолжить работу по открытой ссылке.</p>{role === 'owner' || role === 'manager'
+            ? <Link to={`${base}/settings`}>Настроить сервисы в меню</Link>
+            : <p>Изменить набор сервисов может владелец или управляющий.</p>}</div>}
+        {children}
+      </main>
       <footer className="app-footer"><span>Сделано для хорошего сервиса.</span><span>turnesta<span className="orange-dot">•</span></span></footer>
     </div>
   </div>;
@@ -115,10 +121,9 @@ function rememberSection(tenant: string, section: string) {
 }
 function LastSection() {
   const { organization, role } = useWorkspace();
-  let section = 'locations';
-  try { section = window.localStorage.getItem(sectionKey(organization.id)) ?? section; } catch { /* default section */ }
-  if (!sections.includes(section) || (section === 'team' && role !== 'owner')) section = 'locations';
-  return <Navigate to={section} replace/>;
+  let saved = null;
+  try { saved = window.localStorage.getItem(sectionKey(organization.id)); } catch { /* default section */ }
+  return <Navigate to={startSection(saved, organization.visible_services, role)} replace/>;
 }
 
 function OrganizationLayout({ userId }: { userId: string }) {
@@ -136,7 +141,21 @@ function OrganizationWorkspace({ tenantId, userId }: { tenantId: string; userId:
     if (organization.isSuccess && !membership && organizations.hasNextPage && !organizations.isFetching && !organizations.isError) void organizations.fetchNextPage();
   }, [organization.isSuccess, membership, organizations.hasNextPage, organizations.isFetching, organizations.isError, organizations.fetchNextPage]);
   const pending = organization.isPending || organizations.isPending || (!membership && organizations.hasNextPage && !organizations.isError);
-  return <Shell organization={organization.data} role={membership?.role}>
-    {pending ? <Loading/> : organization.isError ? organization.error instanceof ApiError && [400, 403, 404].includes(organization.error.status) ? <div className="panel empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Организация недоступна</h1><p>Возможно, ссылка устарела или ваши права изменились. Выберите организацию из доступных вам.</p><Link className="button primary" to="/">К моим организациям <Icon name="arrow"/></Link></div> : <ErrorNotice error={organization.error} retry={() => { void organization.refetch(); }}/> : organizations.isError ? <ErrorNotice error={organizations.error} retry={() => { void organizations.refetch(); }}/> : !membership || !organization.data ? <div className="panel empty-state"><h1>Доступ изменился</h1><p>Вернитесь к списку организаций и выберите рабочее пространство.</p><Link className="button primary" to="/">К организациям</Link></div> : <Outlet context={{ organization: organization.data, role: membership.role, canManage: membership.role === 'owner' || membership.role === 'manager', userId } satisfies Workspace}/>}
-  </Shell>;
+  // Keep settings drafts mounted through temporary background read failures.
+  // Definitive access failures still remove the cached workspace immediately.
+  const keepSettings = section === 'settings' && organization.data && membership
+    && (!organization.isError || readRecoveryInterval(organization.error) !== false)
+    && (!organizations.isError || readRecoveryInterval(organizations.error) !== false);
+  let content: ReactNode;
+  if (pending) content = <Loading/>;
+  else if (organization.isError && !keepSettings) content = organization.error instanceof ApiError && [400, 403, 404].includes(organization.error.status)
+    ? <div className="panel empty-state"><span className="large-icon"><Icon name="grid"/></span><h1>Организация недоступна</h1><p>Возможно, ссылка устарела или ваши права изменились. Выберите организацию из доступных вам.</p><Link className="button primary" to="/">К моим организациям <Icon name="arrow"/></Link></div>
+    : <ErrorNotice error={organization.error} retry={() => { void organization.refetch(); }}/>;
+  else if (organizations.isError && !keepSettings) content = <ErrorNotice error={organizations.error} retry={() => { void organizations.refetch(); }}/>;
+  else if (!membership || !organization.data) content = <div className="panel empty-state"><h1>Доступ изменился</h1><p>Вернитесь к списку организаций и выберите рабочее пространство.</p><Link className="button primary" to="/">К организациям</Link></div>;
+  else content = <>
+    {(organization.isError || organizations.isError) && <ErrorNotice error={organization.error ?? organizations.error} retry={() => { void organization.refetch(); void organizations.refetch(); }}/>}
+    <Outlet context={{ organization: organization.data, role: membership.role, canManage: membership.role === 'owner' || membership.role === 'manager', userId } satisfies Workspace}/>
+  </>;
+  return <Shell organization={organization.data} role={membership?.role}>{content}</Shell>;
 }

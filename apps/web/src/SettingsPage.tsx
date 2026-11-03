@@ -6,15 +6,16 @@ import type { Organization } from './api';
 import { useWorkspace } from './App';
 import { ErrorNotice, Icon, SuccessNotice } from './components';
 import { keys } from './queries';
+import { NavigationSettings } from './NavigationSettings';
 
 export function SettingsPage() {
   const { organization, canManage } = useWorkspace();
   useEffect(() => { document.title = `Настройки · ${organization.name} · Turnesta`; }, [organization.name]);
   return <>
-    <div className="page-heading"><div><p className="eyebrow">ОРГАНИЗАЦИЯ / НАСТРОЙКИ</p><h1>Всё на своих местах<span className="heading-dot">.</span></h1><p className="page-intro">Основная информация о вашей организации.</p></div><span className="heading-decoration" aria-hidden="true"><Icon name="settings"/></span></div>
-    <div className="settings-layout"><section className="panel settings-panel" aria-labelledby="organization-details-heading"><div className="panel-heading"><span className="square-icon"><Icon name="grid"/></span><div><h2 id="organization-details-heading">Об организации</h2><p>Название вашего рабочего пространства.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">ОРГАНИЗАЦИЯ / НАСТРОЙКИ</p><h1>Всё на своих местах<span className="heading-dot">.</span></h1><p className="page-intro">Основная информация и сервисы вашей организации.</p></div><span className="heading-decoration" aria-hidden="true"><Icon name="settings"/></span></div>
+    <div className="settings-layout"><div className="settings-panels"><section className="panel settings-panel" aria-labelledby="organization-details-heading"><div className="panel-heading"><span className="square-icon"><Icon name="grid"/></span><div><h2 id="organization-details-heading">Об организации</h2><p>Название вашего рабочего пространства.</p></div></div>
       {canManage ? <OrganizationForm key={organization.id} organization={organization}/> : <div className="readonly-details"><span className="field-label">Название организации</span><strong>{organization.name}</strong><p className="field-hint">Менять настройки могут владелец и управляющие.</p></div>}
-    </section><aside className="settings-aside"><span className="small-eyebrow">ЕДИНОЕ ПРОСТРАНСТВО</span><h3>Одно имя для всей команды</h3><p>Название отображается в кабинете и помогает быстро найти нужную организацию.</p><div className="aside-rule"/><p className="aside-footnote">Точки и их часовые пояса настраиваются отдельно в разделе «Точки».</p></aside></div>
+    </section><NavigationSettings key={organization.id} organization={organization} canManage={canManage}/></div><aside className="settings-aside"><span className="small-eyebrow">ЕДИНОЕ ПРОСТРАНСТВО</span><h3>Кабинет под ваш бизнес</h3><p>Название и набор разделов общие для команды. Для клиники можно оставить запись, для сервисной точки — очереди.</p><div className="aside-rule"/><p className="aside-footnote">Точки и их часовые пояса настраиваются отдельно в разделе «Точки».</p></aside></div>
   </>;
 }
 
@@ -39,6 +40,11 @@ function OrganizationForm({ organization }: { organization: Organization }) {
   const changedElsewhere = organization.version !== basis.version;
   const dirty = name.trim() !== basis.name;
   const busy = mutation.isPending || reloading;
+  useEffect(() => {
+    if (!dirty && !mutation.isPending && organization.version !== basis.version) {
+      setBasis(organization); setName(organization.name); setSaved(false);
+    }
+  }, [organization, basis.version, dirty, mutation.isPending]);
 
   function submit(event: FormEvent) {
     event.preventDefault();

@@ -7,6 +7,22 @@ afterEach(() => {
   delete globalThis.document;
 });
 
+test('navigation save sends tenant choice and version once with CSRF and a deadline', async () => {
+  globalThis.document = { cookie: 'turnesta_csrf=token' };
+  let calls = 0;
+  mock.method(globalThis, 'fetch', async (url, options) => {
+    calls++;
+    assert.equal(url, '/api/organizations/tenant-id/navigation');
+    assert.equal(options.method, 'PUT');
+    assert.equal(options.headers.get('X-CSRF-Token'), 'token');
+    assert.deepEqual(JSON.parse(options.body), {visible_services:['bookings'],expected_version:4});
+    assert.ok(options.signal instanceof AbortSignal);
+    return Response.json({ code:'version_conflict' }, { status:409 });
+  });
+  await assert.rejects(api.setNavigation('tenant-id', ['bookings'], 4), error => error instanceof ApiError && error.code === 'version_conflict');
+  assert.equal(calls, 1);
+});
+
 test('read recovery retries transient failures and stops for access and validation errors', () => {
   assert.equal(readRecoveryInterval(null), false);
   assert.equal(readRecoveryInterval(new TypeError('network')), 5_000);

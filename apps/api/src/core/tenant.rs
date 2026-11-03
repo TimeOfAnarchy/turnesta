@@ -56,11 +56,13 @@ impl TenantSession {
     }
 
     pub async fn organization(&mut self) -> Result<Organization, CoreError> {
-        sqlx::query_as("SELECT id, name, version FROM core.organizations WHERE id = $1")
-            .bind(self.tenant_id)
-            .fetch_optional(&mut *self.tx)
-            .await?
-            .ok_or(CoreError::AccessDenied)
+        sqlx::query_as(
+            "SELECT id, name, version, visible_services FROM core.organizations WHERE id = $1",
+        )
+        .bind(self.tenant_id)
+        .fetch_optional(&mut *self.tx)
+        .await?
+        .ok_or(CoreError::AccessDenied)
     }
 
     pub async fn locations(&mut self) -> Result<Vec<Location>, CoreError> {
@@ -130,9 +132,35 @@ impl TenantSession {
         self.check_edit(expected_version)?;
         let result = sqlx::query_as(
             "UPDATE core.organizations SET name = $1, version = version + 1 \
-             WHERE id = $2 AND version = $3 RETURNING id, name, version",
+             WHERE id = $2 AND version = $3 RETURNING id, name, version, visible_services",
         )
         .bind(name.as_str())
+        .bind(self.tenant_id)
+        .bind(expected_version)
+        .fetch_optional(&mut *self.tx)
+        .await?;
+        result.ok_or(CoreError::VersionConflict)
+    }
+
+    pub async fn set_navigation(
+        &mut self,
+        visible_services: &[String],
+        expected_version: i32,
+    ) -> Result<Organization, CoreError> {
+        self.check_edit(expected_version)?;
+        if visible_services.len() > 3
+            || visible_services.iter().enumerate().any(|(index, service)| {
+                !["queues", "bookings", "tips"].contains(&service.as_str())
+                    || visible_services[..index].contains(service)
+            })
+        {
+            return Err(CoreError::InvalidNavigation);
+        }
+        let result = sqlx::query_as(
+            "UPDATE core.organizations SET visible_services=$1, version=version+1 \
+             WHERE id=$2 AND version=$3 RETURNING id,name,version,visible_services",
+        )
+        .bind(visible_services)
         .bind(self.tenant_id)
         .bind(expected_version)
         .fetch_optional(&mut *self.tx)

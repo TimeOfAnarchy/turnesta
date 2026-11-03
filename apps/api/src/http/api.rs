@@ -57,6 +57,10 @@ pub(super) fn routes() -> Router<AppState> {
             get(organization).patch(rename_organization),
         )
         .route(
+            "/api/organizations/{tenant_id}/navigation",
+            axum::routing::put(update_navigation),
+        )
+        .route(
             "/api/organizations/{tenant_id}/locations",
             get(locations).post(create_location),
         )
@@ -144,6 +148,11 @@ impl From<CoreError> for ApiError {
                 "Record has changed; reload before saving again",
             ),
             CoreError::InvalidVersion => Self::bad_request(),
+            CoreError::InvalidNavigation => Self(
+                StatusCode::BAD_REQUEST,
+                "invalid_navigation",
+                "Select distinct known services",
+            ),
             _ => Self::unavailable(),
         }
     }
@@ -517,6 +526,32 @@ pub(super) struct RenameOrganizationRequest {
     name: String,
     #[schema(minimum = 1)]
     expected_version: i32,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NavigationRequest {
+    visible_services: Vec<String>,
+    expected_version: i32,
+}
+
+#[utoipa::path(put,path="/api/organizations/{tenant_id}/navigation",tag="core",security(("sessionCookie"=[])),params(("tenant_id"=String,Path)),request_body=NavigationRequest,responses((status=200,body=Organization),(status=400,description="Invalid selection"),(status=403,description="Owner or manager required"),(status=409,description="Version conflict")))]
+pub(super) async fn update_navigation(
+    signed_in: SignedIn,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    path: Result<Path<TenantId>, PathRejection>,
+    body: Result<Json<NavigationRequest>, JsonRejection>,
+) -> Result<Json<Organization>, ApiError> {
+    check_mutation(&headers, &state.auth, &signed_in)?;
+    let Path(tenant) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(body) = body.map_err(|_| ApiError::bad_request())?;
+    let mut session = TenantSession::begin(&state.pool, signed_in.user_id, tenant).await?;
+    let organization = session
+        .set_navigation(&body.visible_services, body.expected_version)
+        .await?;
+    session.commit().await?;
+    Ok(Json(organization))
 }
 
 #[utoipa::path(patch, path="/api/organizations/{tenant_id}", tag="core", security(("sessionCookie"=[])), request_body=RenameOrganizationRequest,

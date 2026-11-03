@@ -1,6 +1,7 @@
 export type Role = 'owner' | 'manager' | 'operator' | 'employee';
 export type OrganizationSummary = { id: string; name: string; role: Role };
-export type Organization = { id: string; name: string; version: number };
+export type WorkspaceService = 'queues' | 'bookings' | 'tips';
+export type Organization = { id: string; name: string; version: number; visible_services: WorkspaceService[] };
 export type Location = { id: string; tenant_id: string; name: string; time_zone: string; version: number };
 export type Page<T, Cursor = string> = { items: T[]; next_cursor: Cursor | null };
 export type LocationDraft = { name: string; time_zone: string };
@@ -95,6 +96,9 @@ export const api = {
   organization: (tenant: string, signal: AbortSignal) => request<Organization>(organizationUrl(tenant), { signal }),
   renameOrganization: (tenant: string, name: string, expected_version: number) => request<Organization>(organizationUrl(tenant), {
     method: 'PATCH', body: JSON.stringify({ name, expected_version }),
+  }),
+  setNavigation: (tenant: string, visible_services: WorkspaceService[], expected_version: number) => request<Organization>(`${organizationUrl(tenant)}/navigation`, {
+    method: 'PUT', body: JSON.stringify({ visible_services, expected_version }), signal: AbortSignal.timeout(10_000),
   }),
   locations: (tenant: string, after: string | null, signal: AbortSignal) => request<Page<Location>>(pageUrl(`${organizationUrl(tenant)}/locations`, after), { signal }),
   createLocation: (tenant: string, draft: LocationDraft) => request<Location>(`${organizationUrl(tenant)}/locations`, {
