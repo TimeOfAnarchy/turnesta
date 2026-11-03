@@ -2,6 +2,9 @@
 /AGENTS.md
 /.local/
 
+# Local notes
+/docs/
+
 # Build output
 /target/
 **/node_modules/

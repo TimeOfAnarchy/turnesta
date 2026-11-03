@@ -40,7 +40,7 @@ try{
 }catch{
     Write-Warning "Update stopped: $($_.Exception.Message)"
     Write-Warning "The stand now pins $target. The previous image is tagged $($s.project)-app:previous; backup: $backup"
-    Write-Warning 'If new migrations were applied, the previous image cannot run on this schema: restore the backup into a separate cluster (docs/OPERATIONS.md).'
+    Write-Warning 'If new migrations were applied, the previous image cannot run on this schema: restore the backup into a separate cluster with Restore-Drill.ps1.'
     throw
 }
 $report=[ordered]@{format_version=1;updated_at=[DateTime]::UtcNow.ToString('o');project=$s.project;previous_image=$previous;image=$target;
