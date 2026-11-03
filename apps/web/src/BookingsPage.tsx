@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useWorkspace } from './App';
 import { ApiError, errorMessage } from './api';
@@ -128,9 +128,10 @@ export function BookingsPage() {
           <p>Специалисты и расписание относятся к месту приёма.</p>
           <Link
             className="button primary"
-            to={`/organizations/${organization.id}/locations`}
+            to={`/organizations/${organization.id}/locations?new=1&back=bookings`}
           >
-            К точкам
+            <Icon name="plus" />
+            Добавить точку
           </Link>
         </div>
       ) : (
@@ -235,7 +236,7 @@ type Editor =
   | { kind: 'record'; offer: Offer; specialist: Specialist }
   | { kind: 'appointment'; item: Appointment }
   | { kind: 'specialist'; item: Specialist | null }
-  | { kind: 'preset'; item: Preset | null }
+  | { kind: 'preset'; item: Preset | null; back?: Specialist }
   | {
       kind: 'offer';
       item: Offer | null;
@@ -351,6 +352,43 @@ function Schedule({
     canBook && Boolean(selected) && view === 'schedule',
   );
   const items = distinct(offers.data?.pages.flatMap((p) => p.items) ?? []);
+  // An empty day points to the nearest scheduled day within two weeks.
+  const nextDay = useQuery({
+    queryKey: [...base, 'next-day', selected?.id, date],
+    enabled:
+      Boolean(selected) &&
+      view === 'schedule' &&
+      offers.isSuccess &&
+      !items.length &&
+      !withdrawn,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      for (let step = 1; step <= 14; step++) {
+        const day = shiftDate(date, step);
+        const page = await bookingApi.offers(
+          tenant,
+          location,
+          selected!.id,
+          day,
+          false,
+          null,
+          signal,
+        );
+        const ready = page.items.filter((i) => i.state === 'ready');
+        if (ready.length)
+          return {
+            date: day,
+            count: ready.length,
+            booked: ready.reduce(
+              (sum, i) => sum + Math.min(i.reserved_places ?? 0, i.places),
+              0,
+            ),
+          };
+      }
+      return null;
+    },
+  });
   const timed = items
     .filter((i) => i.mode !== 'by_agreement')
     .sort(
@@ -987,23 +1025,59 @@ function Schedule({
           ) : !items.length ? (
             <div className="panel booking-empty">
               <Icon name="calendar" />
-              <h2>На этот день приёмов нет</h2>
-              <p>
-                {canManage
-                  ? 'Добавьте талон вручную или заполните сразу несколько дней. Время окончания можно не указывать; доступны и талоны по договорённости.'
-                  : 'На выбранный день пока нет талонов. Выберите другую дату или специалиста.'}
-              </p>
-              {canManage && (
-                <button
-                  className="button primary"
-                  type="button"
-                  disabled={actionsDisabled || !selected}
-                  onClick={() => openOffer(null)}
-                >
-                  <Icon name="plus" />
-                  Добавить талон
-                </button>
+              <h2>
+                {date === today ? 'Сегодня приёмов нет' : 'На этот день приёмов нет'}
+              </h2>
+              {nextDay.data ? (
+                <p>
+                  Ближайший день с приёмами —{' '}
+                  {dayTitle(nextDay.data.date, today).toLowerCase()} (приёмов:{' '}
+                  {nextDay.data.count}
+                  {canBook ? `, записано: ${nextDay.data.booked}` : ''}).
+                </p>
+              ) : (
+                <p>
+                  {canManage
+                    ? 'Заполните расписание сразу на несколько дней или добавьте отдельный талон. Время окончания можно не указывать; доступны и талоны по договорённости.'
+                    : 'На выбранный день пока нет талонов. Выберите другую дату или специалиста.'}
+                </p>
               )}
+              <div className="booking-empty-actions">
+                {nextDay.data && (
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={() => setDate(nextDay.data!.date)}
+                  >
+                    Перейти к этому дню
+                    <Icon name="right" />
+                  </button>
+                )}
+                {canManage && (
+                  <>
+                    <button
+                      className={nextDay.data ? 'button secondary' : 'button primary'}
+                      type="button"
+                      disabled={actionsDisabled || !selected}
+                      onClick={() =>
+                        selected && open({ kind: 'batch', specialist: selected })
+                      }
+                    >
+                      <Icon name="calendar" />
+                      Заполнить на несколько дней
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={actionsDisabled || !selected}
+                      onClick={() => openOffer(null)}
+                    >
+                      <Icon name="plus" />
+                      Добавить один талон
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             <>
@@ -1074,6 +1148,10 @@ function Schedule({
                 ? () => void presets.fetchNextPage()
                 : undefined
             }
+            createPreset={() =>
+              open({ kind: 'preset', item: null, back: editor.specialist })
+            }
+            sourceEmpty={!items.length}
             busy={busy}
             journal={journal}
             run={run}
@@ -1144,7 +1222,13 @@ function Schedule({
             busy={busy}
             journal={journal}
             run={run}
-            close={() => setEditor(null)}
+            close={() =>
+              setEditor(
+                editor.kind === 'preset' && editor.back
+                  ? { kind: 'batch', specialist: editor.back }
+                  : null,
+              )
+            }
           />
         ))}
     </>

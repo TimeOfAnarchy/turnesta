@@ -197,7 +197,11 @@ export function CatalogEditor({
                 max="1440"
                 value={minutes}
                 onChange={(e) => setMinutes(e.target.value)}
+                aria-describedby="booking-minutes-hint"
               />
+              <p className="field-hint" id="booking-minutes-hint">
+                Нужна, чтобы заполнять расписание серией на несколько дней.
+              </p>
             </div>
           )}
           <label className="service-enabled">

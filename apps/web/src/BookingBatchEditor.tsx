@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from './components';
+import { Icon, Modal } from './components';
 import { ApiError, errorMessage } from './api';
 import { batchPreview } from './bookingBatch';
 import type { BatchRequest, BatchPreview, BatchSource } from './bookingBatch';
@@ -17,6 +17,14 @@ import type {
   Preset,
 } from './bookings';
 
+function shortDate(date: string) {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('ru-RU', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'short',
+    weekday: 'short',
+  });
+}
 export function BookingBatchEditor({
   tenant,
   location,
@@ -25,6 +33,8 @@ export function BookingBatchEditor({
   date,
   presets,
   morePresets,
+  createPreset,
+  sourceEmpty,
   busy,
   journal,
   run,
@@ -37,13 +47,17 @@ export function BookingBatchEditor({
   date: string;
   presets: Preset[];
   morePresets?: () => void;
+  createPreset?: () => void;
+  sourceEmpty: boolean;
   busy: boolean;
   journal: BookingCommands;
   run: (command?: BookingCommand) => Promise<BookingReceipt>;
   close: () => void;
 }) {
   const [id] = useState(() => crypto.randomUUID());
-  const [mode, setMode] = useState<'copy_day' | 'preset_series'>('copy_day');
+  const [mode, setMode] = useState<'copy_day' | 'preset_series'>(
+    sourceEmpty ? 'preset_series' : 'copy_day',
+  );
   const [sourceDate, setSourceDate] = useState(date);
   const [dates, setDates] = useState([shiftDate(date, 1)]),
     [pick, setPick] = useState(shiftDate(date, 2));
@@ -94,6 +108,23 @@ export function BookingBatchEditor({
     change(() => {
       setDates([...dates, pick].sort());
       setPick(shiftDate(pick, 1));
+    });
+  }
+  function addWeekdays() {
+    const next = new Set(dates);
+    let day = pick || shiftDate(date, 1),
+      added = 0;
+    while (added < 5 && next.size < 31) {
+      const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+      if (weekday !== 0 && weekday !== 6 && !next.has(day)) {
+        next.add(day);
+        added++;
+      }
+      day = shiftDate(day, 1);
+    }
+    change(() => {
+      setDates([...next].sort());
+      setPick(day);
     });
   }
   async function check() {
@@ -236,6 +267,24 @@ export function BookingBatchEditor({
             </>
           ) : (
             <>
+              {!presets.some((p) => p.enabled && p.duration_minutes) && (
+                <div className="notice booking-batch-need-preset" role="status">
+                  <p>
+                    Для серии нужна заготовка с длительностью, например «Приём ·
+                    30 мин». По ней расписание разобьётся на приёмы.
+                  </p>
+                  {createPreset && (
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={createPreset}
+                    >
+                      <Icon name="plus" />
+                      Создать заготовку
+                    </button>
+                  )}
+                </div>
+              )}
               <label htmlFor="batch-preset">Заготовка приёма</label>
               <select
                 id="batch-preset"
@@ -324,18 +373,19 @@ export function BookingBatchEditor({
               >
                 Добавить дату
               </button>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={dates.length >= 31}
+                onClick={addWeekdays}
+              >
+                + 5 будних дней
+              </button>
             </div>
             <ul aria-label="Выбранные даты">
               {dates.map((d) => (
                 <li key={d}>
-                  <span>
-                    {new Date(`${d}T12:00:00Z`).toLocaleDateString('ru-RU', {
-                      timeZone: 'UTC',
-                      day: 'numeric',
-                      month: 'short',
-                      weekday: 'short',
-                    })}
-                  </span>
+                  <span>{shortDate(d)}</span>
                   <button
                     type="button"
                     aria-label={`Убрать дату ${d}`}
@@ -433,7 +483,7 @@ export function BookingBatchEditor({
                   >
                     <div>
                       <span className="batch-row-index">№{r.index}</span>
-                      <strong>{r.date}</strong>
+                      <strong>{shortDate(r.date)}</strong>
                       <span>{timeLabel(r)}</span>
                       <span>{r.title || 'Приём'}</span>
                       {r.mode === 'by_agreement' && (

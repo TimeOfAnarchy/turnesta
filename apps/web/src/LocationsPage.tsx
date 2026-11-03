@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, validateName } from './api';
@@ -10,8 +11,13 @@ import { keys, useLocations } from './queries';
 export function LocationsPage() {
   const { organization, canManage } = useWorkspace();
   const locations = useLocations(organization.id);
-  const [editing, setEditing] = useState<Location | 'new' | null>(null);
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const toBookings = params.get('back') === 'bookings';
+  const [editing, setEditing] = useState<Location | 'new' | null>(() => (canManage && params.get('new') === '1' ? 'new' : null));
   const [success, setSuccess] = useState('');
+  const [added, setAdded] = useState(false);
+  const showBookings = organization.visible_services.includes('bookings');
   const items = locations.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => { document.title = `Точки · ${organization.name} · Turnesta`; }, [organization.name]);
 
@@ -25,7 +31,7 @@ export function LocationsPage() {
 
   return <>
     <div className="page-heading"><div><p className="eyebrow">ОРГАНИЗАЦИЯ / ТОЧКИ</p><h1>Места, где вас ждут<span className="heading-dot">.</span></h1><p className="page-intro">Все точки вашей организации — в одном пространстве.</p></div>{canManage && <button type="button" className="button primary" onClick={() => { setSuccess(''); setEditing('new'); }}><Icon name="plus"/>Добавить точку</button>}</div>
-    {success && <SuccessNotice>{success}</SuccessNotice>}
+    {success && <SuccessNotice>{success}{added && showBookings && <> <Link className="text-button" to={`/organizations/${organization.id}/bookings`}>Настроить запись к специалистам</Link></>}</SuccessNotice>}
     <div className="section-line"><div className="section-title"><h2>Точки организации</h2>{items.length > 0 && <span className="count-badge">{items.length}{locations.hasNextPage ? '+' : ''}</span>}</div><span className="subtle">{canManage ? 'Места и часовые пояса' : 'Доступ для просмотра'}</span></div>
     {locations.isPending ? <div className="panel"><Loading label="Загружаем точки…"/></div> : locations.isError && !items.length ? <ErrorNotice error={locations.error} retry={() => { void locations.refetch(); }}/> : items.length === 0 ? <div className="panel empty-state locations-empty">
       <span className="empty-illustration" aria-hidden="true"><span className="illustration-ring"/><Icon name="locations"/><span className="illustration-dot"/></span>
@@ -39,14 +45,22 @@ export function LocationsPage() {
     {locations.isError && items.length > 0 && <ErrorNotice error={locations.error} retry={() => { void locations.refetch(); }}/>}
     {locations.hasNextPage && <div className="pagination"><button className="button secondary" type="button" onClick={() => { void locations.fetchNextPage(); }} disabled={locations.isFetchingNextPage}>{locations.isFetchingNextPage ? 'Загружаем…' : 'Показать ещё точки'}</button></div>}
     <div className="info-strip"><span className="info-strip-icon"><Icon name="globe"/></span><div><h3>У каждой точки — своё время</h3><p>Часовой пояс помогает команде работать по местному времени, даже если точки находятся в разных городах.</p></div></div>
-    {editing && <LocationEditor key={editing === 'new' ? 'new' : editing.id} tenant={organization.id} location={editing === 'new' ? null : editing} close={() => setEditing(null)} reloadLocation={reloadLocation} saved={(name) => { setEditing(null); setSuccess(editing === 'new' ? `Точка «${name}» добавлена.` : `Изменения точки «${name}» сохранены.`); }}/>}
+    {editing && <LocationEditor key={editing === 'new' ? 'new' : editing.id} tenant={organization.id} location={editing === 'new' ? null : editing} close={() => { setEditing(null); if (params.has('new')) setParams({}, { replace: true }); }} reloadLocation={reloadLocation} saved={(name) => {
+      if (editing === 'new' && toBookings) { navigate(`/organizations/${organization.id}/bookings`); return; }
+      setEditing(null); setParams({}, { replace: true }); setAdded(editing === 'new'); setSuccess(editing === 'new' ? `Точка «${name}» добавлена.` : `Изменения точки «${name}» сохранены.`);
+    }}/>}
   </>;
+}
+
+// A new location starts in the browser's zone; the owner can still choose any IANA zone.
+function browserTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''; } catch { return ''; }
 }
 
 function LocationEditor({ tenant, location, close, saved, reloadLocation }: { tenant: string; location: Location | null; close: () => void; saved: (name: string) => void; reloadLocation: (id: string) => Promise<Location> }) {
   const client = useQueryClient();
   const [basis, setBasis] = useState(location);
-  const [draft, setDraft] = useState<LocationDraft>({ name: location?.name ?? '', time_zone: location?.time_zone ?? '' });
+  const [draft, setDraft] = useState<LocationDraft>({ name: location?.name ?? '', time_zone: location?.time_zone ?? browserTimeZone() });
   const [errors, setErrors] = useState<{ name?: string; time_zone?: string }>({});
   const [reloadError, setReloadError] = useState<unknown>(null);
   const [reloading, setReloading] = useState(false);

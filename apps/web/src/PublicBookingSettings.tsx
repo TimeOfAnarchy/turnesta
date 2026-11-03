@@ -117,7 +117,8 @@ function PublicSettingsEditor({
     [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState<unknown>(null),
     [saved, setSaved] = useState(false),
-    [copied, setCopied] = useState(false);
+    [copied, setCopied] = useState(false),
+    [justEnabled, setJustEnabled] = useState(false);
   const changed = current.version !== baseline.version;
   function update(
     index: number,
@@ -156,8 +157,11 @@ function PublicSettingsEditor({
       setBusy(false);
     }
   }
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
+    void save(enabled);
+  }
+  async function save(nextEnabled: boolean) {
     if (busy || changed || uncertain || !canManage) return;
     setBusy(true);
     setError(null);
@@ -166,7 +170,7 @@ function PublicSettingsEditor({
       const result = await publicBookingApi.configure(
         tenant,
         location,
-        enabled,
+        nextEnabled,
         {
           fields: form.fields.map((field) => ({
             ...field,
@@ -175,6 +179,7 @@ function PublicSettingsEditor({
         },
         baseline.version,
       );
+      setJustEnabled(!baseline.enabled && result.enabled);
       setBaseline(result);
       setForm(structuredClone(result.form));
       setEnabled(result.enabled);
@@ -206,6 +211,31 @@ function PublicSettingsEditor({
   }
   return (
     <>
+      {canManage && !baseline.enabled && (
+        <div className="booking-public-off" role="status">
+          <div>
+            <strong>Пациенты пока не могут записаться сами</strong>
+            <p>
+              После включения появится ссылка для пациентов и код для сайта.
+              Анкету ниже можно настроить сейчас или позже.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="button primary"
+            disabled={busy || changed || uncertain}
+            onClick={() => void save(true)}
+          >
+            {busy ? 'Включаем…' : 'Включить онлайн-запись'}
+          </button>
+        </div>
+      )}
+      {justEnabled && saved && current.public_url && (
+        <SuccessNotice>
+          Онлайн-запись работает. Отправьте ссылку пациентам или поставьте её на
+          сайт.
+        </SuccessNotice>
+      )}
       {current.public_url && (
         <div className="booking-public-link">
           <div>
@@ -229,7 +259,7 @@ function PublicSettingsEditor({
           Владелец или управляющий настраивает публикацию и поля анкеты.
         </p>
       ) : (
-        <form onSubmit={(event) => void submit(event)} className="booking-form">
+        <form onSubmit={submit} className="booking-form">
           <fieldset disabled={busy || uncertain}>
             <label className="checkbox-field">
               <input
