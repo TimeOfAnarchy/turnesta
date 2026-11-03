@@ -4,6 +4,8 @@ name: turnesta
 # application processes receive separate migration/runtime/provisioning roles.
 x-turnesta-service: &turnesta-service
   image: turnesta-api:local
+  # Built locally by the api service; never pulled from a registry.
+  pull_policy: never
   environment: &turnesta-environment
     DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD:-turnesta_api_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
     TURNESTA_BIND_ADDR: 0.0.0.0:8080

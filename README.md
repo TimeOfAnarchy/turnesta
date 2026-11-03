@@ -12,21 +12,30 @@ Appointments, electronic queues and tips for service businesses.
 
 ## Getting started
 
-Requirements: Docker with Docker Compose and PowerShell 7.4+.
+Requirements: Docker with Docker Compose. This setup is for local development: the app listens on 127.0.0.1 only and uses development database passwords.
 
-```powershell
-.\scripts\Initialize-Development.ps1
+Create `.env` with random local keys and start the app:
+
+```sh
+./scripts/init-env.sh
 docker compose --env-file .env up --build --wait
 ```
 
-Create an organization with its owner, then set a temporary password using the `owner.id` from the output:
+Create an organization with its owner and note `owner.id` in the output:
 
-```powershell
+```sh
 docker compose --env-file .env run --rm admin core organization-create --name "My business" --owner-name "Owner"
-.\scripts\Set-LoginPassword.ps1 -User <owner-id> -Email owner@example.com
+```
+
+Set a temporary password for the owner (typed input is hidden, 15–128 characters):
+
+```sh
+read -rs PW && printf '%s' "$PW" | docker compose --env-file .env run --rm -T admin auth password-set --user <owner-id> --email owner@example.com --password-stdin; unset PW
 ```
 
 Sign in at http://127.0.0.1:8080/login. On first sign-in you will be asked to choose your own password.
+
+On Windows, use PowerShell 7: `.\scripts\Initialize-Development.ps1` instead of `init-env.sh`, and `.\scripts\Set-LoginPassword.ps1 -User <owner-id> -Email owner@example.com` to set the password.
 
 ## Tech stack
 
