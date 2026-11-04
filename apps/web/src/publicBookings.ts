@@ -18,6 +18,7 @@ export type BookingPublicSettings = {
   public_slug: string | null;
   public_url: string | null;
   enabled: boolean;
+  privacy_url: string | null;
   form: BookingForm;
   version: number;
 };
@@ -30,13 +31,14 @@ export const publicBookingApi = {
     tenant: string,
     location: string,
     enabled: boolean,
+    privacy_url: string,
     form: BookingForm,
     expected_version: number,
   ) =>
     request<BookingPublicSettings>(base(tenant, location), {
       method: 'PUT',
       signal: AbortSignal.timeout(10_000),
-      body: JSON.stringify({ enabled, form, expected_version }),
+      body: JSON.stringify({ enabled, privacy_url, form, expected_version }),
     }),
 };
 export const fieldKindLabels: Record<BookingFieldKind, string> = {

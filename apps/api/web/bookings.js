@@ -230,6 +230,7 @@ async function start(slug, root) {
           form_version: s.profile.version,
           time_zone: p.time_zone,
           answers,
+          consent: true,
         });
       }
       s.receipt = result;
@@ -691,6 +692,27 @@ async function start(slug, root) {
         ),
       );
     }
+    fields.append(
+      node(
+        'label',
+        { class: 'consent' },
+        node('input', { type: 'checkbox', name: 'consent', required: true }),
+        node(
+          'span',
+          {},
+          'Согласен(на) на обработку персональных данных в соответствии с ',
+          node(
+            'a',
+            {
+              href: s.profile.privacy_url,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            'политикой организации',
+          ),
+        ),
+      ),
+    );
     el.append(
       fields,
       node(

@@ -113,6 +113,7 @@ function PublicSettingsEditor({
     structuredClone(initial.form),
   );
   const [enabled, setEnabled] = useState(initial.enabled);
+  const [privacyUrl, setPrivacyUrl] = useState(initial.privacy_url ?? '');
   const [busy, setBusy] = useState(false),
     [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState<unknown>(null),
@@ -140,6 +141,7 @@ function PublicSettingsEditor({
       setBaseline(value);
       setForm(structuredClone(value.form));
       setEnabled(value.enabled);
+      setPrivacyUrl(value.privacy_url ?? '');
       setUncertain(false);
       setError(null);
       await queryClient.invalidateQueries({
@@ -171,6 +173,7 @@ function PublicSettingsEditor({
         tenant,
         location,
         nextEnabled,
+        privacyUrl,
         {
           fields: form.fields.map((field) => ({
             ...field,
@@ -183,6 +186,7 @@ function PublicSettingsEditor({
       setBaseline(result);
       setForm(structuredClone(result.form));
       setEnabled(result.enabled);
+      setPrivacyUrl(result.privacy_url ?? '');
       await queryClient.invalidateQueries({
         queryKey: [
           'organization',
@@ -216,14 +220,14 @@ function PublicSettingsEditor({
           <div>
             <strong>Клиенты пока не могут записаться сами</strong>
             <p>
-              После включения появится ссылка для клиентов и код для сайта.
-              Анкету ниже можно настроить сейчас или позже.
+              Чтобы включить запись, укажите ниже ссылку на политику обработки
+              персональных данных. Анкету можно настроить сейчас или позже.
             </p>
           </div>
           <button
             type="button"
             className="button primary"
-            disabled={busy || changed || uncertain}
+            disabled={busy || changed || uncertain || !privacyUrl.trim()}
             onClick={() => void save(true)}
           >
             {busy ? 'Включаем…' : 'Включить онлайн-запись'}
@@ -278,6 +282,26 @@ function PublicSettingsEditor({
               показываются. Выключение остановит новые онлайн-записи и сохранит
               уже созданные.
             </p>
+            <div className="form-field">
+              <label htmlFor={`privacy-url-${location}`}>
+                Ссылка на политику обработки персональных данных
+              </label>
+              <input
+                id={`privacy-url-${location}`}
+                type="url"
+                maxLength={500}
+                placeholder="https://clinic.ru/privacy"
+                value={privacyUrl}
+                onChange={(event) => {
+                  setPrivacyUrl(event.target.value);
+                  setSaved(false);
+                }}
+              />
+              <p className="field-hint">
+                Клиент подтверждает согласие в анкете, ссылка откроется рядом с
+                галочкой. Без неё онлайн-запись не включить.
+              </p>
+            </div>
             <h3 className="booking-form-settings-title">Анкета посетителя</h3>
             <p className="field-hint">
               Имя всегда обязательно. Остальные поля, подписи и обязательность

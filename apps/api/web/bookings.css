@@ -425,6 +425,25 @@ select[aria-invalid='true'] {
 .receipt h2 {
   font-size: 1.5rem;
 }
+.consent {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.consent input {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  accent-color: var(--green);
+}
+.consent a {
+  color: var(--green);
+  text-underline-offset: 0.2rem;
+}
 .saved-bookings {
   margin-top: 1.5rem;
 }
@@ -458,6 +477,10 @@ footer {
 }
 footer strong {
   color: var(--green);
+}
+footer a {
+  color: inherit;
+  text-underline-offset: 0.2rem;
 }
 [hidden] {
   display: none !important;

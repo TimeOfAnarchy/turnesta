@@ -297,10 +297,15 @@ test('form editor keeps stable field keys and sends tenant-scoped optimistic con
     'tenant',
     'point',
     true,
+    'https://clinic.example/privacy',
     { fields: [field] },
     2,
   );
   assert.ok(sent.url.endsWith('/locations/point/bookings/public-access'));
   assert.equal(sent.options.headers.get('X-CSRF-Token'), 'csrf');
   assert.equal(JSON.parse(sent.options.body).expected_version, 2);
+  assert.equal(
+    JSON.parse(sent.options.body).privacy_url,
+    'https://clinic.example/privacy',
+  );
 });

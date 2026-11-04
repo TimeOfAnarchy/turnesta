@@ -33,7 +33,7 @@ async fn operations_inspection_is_readonly_deterministic_and_checks_runtime() {
     )
     .unwrap();
     assert_eq!(before["tables"], after["tables"]);
-    assert_eq!(before["migrations"].as_array().unwrap().len(), 26);
+    assert_eq!(before["migrations"].as_array().unwrap().len(), 27);
     assert_eq!(before["ownership_valid"], true);
     assert_eq!(before["runtime_verified"], true);
     assert!(

@@ -6,8 +6,8 @@ use super::{
 use crate::{
     auth::token::SecretToken,
     bookings_public::{
-        self, BookingAvailability, BookingForm, BookingPublicSettings, PublicBookingError,
-        PublicBookingInput, PublicBookingProfile, PublicBookingReceipt,
+        self, BookingAvailability, BookingForm, BookingPublicSettings, PublicBookingConfig,
+        PublicBookingError, PublicBookingInput, PublicBookingProfile, PublicBookingReceipt,
     },
     core::{LocationId, TenantId},
 };
@@ -98,6 +98,11 @@ impl From<PublicBookingError> for ApiError {
                 "invalid_booking_form",
                 "Check booking form and answers",
             ),
+            PublicBookingError::PrivacyUrl => Self::new(
+                StatusCode::BAD_REQUEST,
+                "invalid_privacy_url",
+                "Provide an https link to the privacy policy",
+            ),
             PublicBookingError::Changed => Self::new(
                 StatusCode::CONFLICT,
                 "booking_changed",
@@ -172,6 +177,7 @@ fn links(state: &AppState, settings: BookingPublicSettings) -> BookingAccessResp
 #[serde(deny_unknown_fields)]
 pub(super) struct BookingPublicConfigureInput {
     enabled: bool,
+    privacy_url: Option<String>,
     form: BookingForm,
     expected_version: i32,
 }
@@ -207,8 +213,11 @@ pub(super) async fn configure(
         signed.user_id,
         tenant,
         location,
-        v.enabled,
-        v.form,
+        PublicBookingConfig {
+            enabled: v.enabled,
+            privacy_url: v.privacy_url,
+            form: v.form,
+        },
         v.expected_version,
     ))
     .await?;
@@ -281,6 +290,9 @@ pub(super) async fn book(
     body: Result<Json<PublicBookingInput>, JsonRejection>,
 ) -> Result<Json<PublicBookingReceipt>, ApiError> {
     check_origin(&headers, &state.auth)?;
+    if !state.client_limit.allows(&headers) {
+        return Err(PublicBookingError::RateLimit.into());
+    }
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Json(input) = body.map_err(|_| ApiError::bad_request())?;

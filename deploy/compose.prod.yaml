@@ -20,6 +20,7 @@ x-runtime: &runtime
   TURNESTA_PUBLIC_ORIGIN: https://${TURNESTA_DOMAIN:?required}
   TURNESTA_WEB_DIST: /app/web
   TURNESTA_TIPS_MODE: disabled
+  TURNESTA_CLIENT_IP_HEADER: x-real-ip
   TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:?required}
   RUST_LOG: turnesta_api=info,sqlx=warn
 

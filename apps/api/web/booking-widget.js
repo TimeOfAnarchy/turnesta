@@ -109,7 +109,7 @@
     frame.referrerPolicy = 'no-referrer';
     frame.setAttribute(
       'sandbox',
-      'allow-scripts allow-same-origin allow-forms',
+      'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox',
     );
     frame.setAttribute(
       'allow',

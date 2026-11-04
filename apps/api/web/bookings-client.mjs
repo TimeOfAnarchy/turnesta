@@ -41,8 +41,12 @@ export function validPublicInput(v) {
   return (
     v &&
     typeof v === 'object' &&
-    Object.keys(v).sort().join(',') ===
+    Object.keys(v)
+      .filter((k) => k !== 'consent')
+      .sort()
+      .join(',') ===
       'answers,form_version,offer_id,offer_version,specialist_version,time_zone' &&
+    (v.consent === undefined || v.consent === true) &&
     uuid.test(v.offer_id) &&
     ['offer_version', 'specialist_version', 'form_version'].every(
       (k) => Number.isInteger(v[k]) && v[k] > 0,

@@ -3,4 +3,4 @@
 <body><main id="booking-app" data-slug="{{ slug }}" data-parent-origin="{{ parent_origin }}" data-channel="{{ channel }}"><header class="brand-line"><a href="#main">turnesta<span>•</span></a><span>ЗАПИСЬ ОНЛАЙН</span></header>
 {% match profile %}{% when Some with (p) %}<section class="business-heading" id="main" tabindex="-1"><p class="eyebrow">{{ p.organization_name }}</p><h1>{{ p.location_name }}</h1><p id="booking-zone" class="muted">Время приёма · {{ p.time_zone }}</p></section><div id="booking-root"><p class="loading" role="status">Загружаем расписание…</p></div>
 {% when None %}<section class="business-heading"><p class="eyebrow">ЗАПИСЬ НЕДОСТУПНА</p><h1>Страница не найдена</h1><p class="muted">Проверьте ссылку или обратитесь в организацию.</p></section>{% endmatch %}
-<footer>Работает на <strong>turnesta<span>•</span></strong></footer></main></body></html>
+<footer>Работает на <strong>turnesta<span>•</span></strong> · <a href="https://github.com/TimeOfAnarchy/turnesta" target="_blank" rel="noopener noreferrer">Исходный код</a></footer></main></body></html>

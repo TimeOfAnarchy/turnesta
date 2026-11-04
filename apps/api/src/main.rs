@@ -122,6 +122,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         .with_queue_live(queue_live.clone())
         .with_auth(config.auth.clone())
         .with_payments(config.payments.clone())
+        .with_client_ip_header(config.client_ip_header.clone())
         .with_web_dist(config.web_dist.clone());
     let app = http::router(state.clone());
     let listener = TcpListener::bind(config.bind_addr)

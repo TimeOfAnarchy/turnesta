@@ -11,6 +11,7 @@ pub struct Config {
     pub shutdown_timeout: Duration,
     pub auth: AuthConfig,
     pub web_dist: PathBuf,
+    pub client_ip_header: Option<axum::http::HeaderName>,
     pub payments: crate::payments::PaymentConfig,
 }
 
@@ -49,7 +50,14 @@ impl Config {
             .parse()
             .map_err(|_| invalid("DATABASE_URL", "must be a valid PostgreSQL URL"))?;
 
+        let client_ip_header = lookup("TURNESTA_CLIENT_IP_HEADER")
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(|_| invalid("TURNESTA_CLIENT_IP_HEADER", "must be a header name"))?;
+
         Ok(Self {
+            client_ip_header,
             payments: crate::payments::PaymentConfig::from_lookup(&lookup).map_err(|_| {
                 invalid(
                     "TURNESTA_TIPS_MODE / TURNESTA_MOCK_PAYMENT_KEY / TURNESTA_MOCK_CALLBACK_URL",

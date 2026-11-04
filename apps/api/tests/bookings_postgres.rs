@@ -17,7 +17,7 @@ use turnesta_api::{
     bookings_batch::{self as batch, BatchReceipt, BatchRequest, BatchSource},
     bookings_public::{
         self as public_bookings, BookingFieldKind, BookingForm, BookingFormField,
-        PublicBookingError as PubError, PublicBookingInput,
+        PublicBookingConfig, PublicBookingError as PubError, PublicBookingInput,
     },
     bookings_widget::{self as widget, WidgetConfigure, WidgetError},
     core::{CoreError, LocationId, Name, Provisioner, Role, TenantId, TenantSession, UserId},
@@ -1866,8 +1866,16 @@ fn future_day(zone: &str, days: i64) -> String {
         .strftime("%Y-%m-%d")
         .to_string()
 }
+fn public_config(enabled: bool, form: BookingForm) -> PublicBookingConfig {
+    PublicBookingConfig {
+        enabled,
+        privacy_url: Some("https://clinic.example/privacy".into()),
+        form,
+    }
+}
 fn public_input(offer: &bookings::Offer) -> PublicBookingInput {
     PublicBookingInput {
+        consent: true,
         offer_id: offer.id,
         offer_version: offer.version,
         specialist_version: 1,
@@ -1882,11 +1890,18 @@ fn public_input(offer: &bookings::Offer) -> PublicBookingInput {
     }
 }
 async fn publish(f: &Fixture, form: BookingForm) -> Uuid {
-    public_bookings::configure(&f.runtime, f.owner, f.tenant, f.point, true, form, 0)
-        .await
-        .unwrap()
-        .public_slug
-        .unwrap()
+    public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        public_config(true, form),
+        0,
+    )
+    .await
+    .unwrap()
+    .public_slug
+    .unwrap()
 }
 async fn public_day(
     f: &Fixture,
@@ -1951,9 +1966,8 @@ async fn public_bookings_opt_in_roles_versions_and_form_validation() {
             operator,
             f.tenant,
             f.point,
-            true,
-            BookingForm::default(),
-            0
+            public_config(true, BookingForm::default()),
+            0,
         )
         .await,
         Err(PubError::Core(CoreError::Forbidden))
@@ -1981,9 +1995,8 @@ async fn public_bookings_opt_in_roles_versions_and_form_validation() {
                 f.owner,
                 f.tenant,
                 f.point,
-                true,
-                BookingForm { fields },
-                0
+                public_config(true, BookingForm { fields }),
+                0,
             )
             .await,
             Err(PubError::Invalid)
@@ -2002,9 +2015,8 @@ async fn public_bookings_opt_in_roles_versions_and_form_validation() {
             f.owner,
             f.tenant,
             f.point,
-            false,
-            BookingForm::default(),
-            0
+            public_config(false, BookingForm::default()),
+            0,
         )
         .await,
         Err(PubError::Core(CoreError::VersionConflict))
@@ -2014,8 +2026,7 @@ async fn public_bookings_opt_in_roles_versions_and_form_validation() {
         f.owner,
         f.tenant,
         f.point,
-        false,
-        BookingForm::default(),
+        public_config(false, BookingForm::default()),
         1,
     )
     .await
@@ -2194,9 +2205,16 @@ async fn public_bookings_snapshot_answers_privacy_and_replay_after_pause() {
         required: true,
         options: vec![],
     });
-    public_bookings::configure(&f.runtime, f.owner, f.tenant, f.point, false, form, 1)
-        .await
-        .unwrap();
+    public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        public_config(false, form),
+        1,
+    )
+    .await
+    .unwrap();
     let replay = public_bookings::book(&f.runtime, slug, &[2; 32], input.clone())
         .await
         .unwrap();
@@ -2444,7 +2462,7 @@ async fn public_bookings_owner_capability_boundary_cannot_be_spoofed_by_runtime(
         Some("42501")
     );
     drop(s);
-    let permissions:(bool,bool,bool)=sqlx::query_as("SELECT has_table_privilege('turnesta_api','bookings.public_claims','SELECT'),has_function_privilege('turnesta_admin','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb)','EXECUTE'),has_table_privilege('turnesta_worker','bookings.appointments','SELECT')").fetch_one(&f.migrator).await.unwrap();
+    let permissions:(bool,bool,bool)=sqlx::query_as("SELECT has_table_privilege('turnesta_api','bookings.public_claims','SELECT'),has_function_privilege('turnesta_admin','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb,boolean)','EXECUTE'),has_table_privilege('turnesta_worker','bookings.appointments','SELECT')").fetch_one(&f.migrator).await.unwrap();
     assert_eq!(permissions, (false, false, false));
     f.close().await;
 }
@@ -2881,8 +2899,7 @@ async fn booking_widget_csp_is_route_scoped_and_revocation_denies_new_loads() {
         f.owner,
         f.tenant,
         f.point,
-        false,
-        BookingForm::default(),
+        public_config(false, BookingForm::default()),
         1,
     )
     .await
@@ -3058,7 +3075,7 @@ async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
     let (status, access) = f
         .json(configure(
             "public-access",
-            json!({"enabled":true,"form":form,"expected_version":0}),
+            json!({"enabled":true,"privacy_url":"https://clinic.example/privacy","form":form,"expected_version":0}),
         ))
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -3103,7 +3120,7 @@ async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
     let offers = public["items"].as_array().unwrap();
     assert_eq!(offers.len(), 2);
     let body = json!({"offer_id":offers[0]["id"],"offer_version":offers[0]["version"],"specialist_version":offers[0]["specialist_version"],"form_version":1,"time_zone":"Europe/Moscow",
-        "answers":{"client_name":"Pilot visitor","phone":"+7 900 000 00 00","email":"pilot-visitor@example.test","note":"Synthetic only","field_visit":"First"}});
+        "answers":{"client_name":"Pilot visitor","phone":"+7 900 000 00 00","email":"pilot-visitor@example.test","note":"Synthetic only","field_visit":"First"},"consent":true});
     let mut secret = [0u8; 32];
     getrandom::fill(&mut secret).unwrap();
     let token = hex::encode(secret);
@@ -3266,7 +3283,7 @@ async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
     assert_eq!(
         f.json(configure(
             "public-access",
-            json!({"enabled":false,"form":form,"expected_version":1})
+            json!({"enabled":false,"privacy_url":"https://clinic.example/privacy","form":form,"expected_version":1})
         ))
         .await
         .0,
@@ -3807,5 +3824,65 @@ async fn batch_dst_limits_timezone_roles_and_http_validation_fail_without_writes
             .unwrap(),
         1
     );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn public_booking_requires_a_policy_and_records_consent() {
+    let f = Fixture::new("Europe/Moscow").await;
+    for privacy_url in [
+        None,
+        Some("http://clinic.example/privacy".to_owned()),
+        Some("not a link".to_owned()),
+    ] {
+        assert!(matches!(
+            public_bookings::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                f.point,
+                PublicBookingConfig {
+                    enabled: true,
+                    privacy_url,
+                    form: BookingForm::default(),
+                },
+                0,
+            )
+            .await,
+            Err(PubError::PrivacyUrl)
+        ));
+    }
+    let slug = publish(&f, BookingForm::default()).await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 4,
+        },
+    )
+    .await;
+    let without = PublicBookingInput {
+        consent: false,
+        ..public_input(&offer)
+    };
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[1; 32], without).await,
+        Err(PubError::Invalid)
+    ));
+    public_bookings::book(&f.runtime, slug, &[2; 32], public_input(&offer))
+        .await
+        .unwrap();
+    let consent: (String, bool) = sqlx::query_as(
+        "SELECT consent_url, consent_at IS NOT NULL FROM bookings.appointments WHERE tenant_id=$1 AND offer_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(offer.id)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert_eq!(consent, ("https://clinic.example/privacy".to_owned(), true));
     f.close().await;
 }

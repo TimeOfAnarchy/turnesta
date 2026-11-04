@@ -165,6 +165,7 @@ export function errorMessage(error: unknown): string {
     if (error.code === 'tips_disabled') return 'Тестовый режим чаевых сейчас выключен. Обратитесь к администратору сервиса.';
     if (error.code === 'invalid_name') return 'Введите название от 1 до 120 символов без управляющих символов.';
     if (error.code === 'invalid_time_zone') return 'Такой часовой пояс не найден. Выберите значение из подсказок, например Europe/Moscow.';
+    if (error.code === 'invalid_privacy_url') return 'Укажите полный адрес политики, который начинается с https://, например https://clinic.ru/privacy.';
     if (error.status === 403) return 'Недостаточно прав для этого действия или проверка безопасности не пройдена. Обновите страницу и попробуйте ещё раз.';
     if (error.status === 404) return 'Объект не найден или доступ к нему изменился.';
     if (error.status === 429) return 'Слишком много запросов. Подождите немного и повторите попытку.';

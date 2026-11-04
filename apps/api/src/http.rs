@@ -11,7 +11,7 @@ use crate::auth::AuthConfig;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
+    http::{HeaderName, HeaderValue, StatusCode, header::CACHE_CONTROL},
     middleware::{self, Next},
     response::Redirect,
     response::Response,
@@ -28,6 +28,7 @@ mod bookings_http;
 mod bookings_public_http;
 mod bookings_widget_http;
 mod catalog_http;
+mod client_limit;
 mod password_http;
 mod queue_events;
 mod queue_http;
@@ -48,6 +49,7 @@ pub struct AppState {
     web_dist: PathBuf,
     payments: crate::payments::PaymentConfig,
     public_gate: Arc<tokio::sync::Semaphore>,
+    client_limit: client_limit::ClientLimit,
     queue_live: Option<Arc<crate::queue_live::LiveHub>>,
 }
 
@@ -63,6 +65,7 @@ impl AppState {
             web_dist: "apps/web/dist".into(),
             payments: crate::payments::PaymentConfig::default(),
             public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
+            client_limit: client_limit::ClientLimit::default(),
             queue_live: None,
         }
     }
@@ -81,6 +84,11 @@ impl AppState {
 
     pub fn with_auth(mut self, auth: AuthConfig) -> Self {
         self.auth = auth;
+        self
+    }
+
+    pub fn with_client_ip_header(mut self, header: Option<HeaderName>) -> Self {
+        self.client_limit = client_limit::ClientLimit::new(header);
         self
     }
 

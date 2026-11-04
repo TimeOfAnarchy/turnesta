@@ -54,6 +54,7 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-item.active::before { content: ""; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--green); }
 .nav-item .icon { width: 19px; height: 19px; }
 .nav-item.active .icon { stroke-width: 2; }
+.source-link { padding: 0 12px; color: var(--muted); font-size: 12.5px; text-underline-offset: 3px; }
 .sidebar-bottom { margin-top: auto; padding-top: 24px; display: grid; gap: 10px; }
 .account-row { border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 14px 6px 2px; }
 .account-avatar { width: 32px; height: 32px; font-size: 13.5px; border-radius: 50%; }

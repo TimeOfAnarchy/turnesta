@@ -178,7 +178,7 @@ test('host validates origin, frame, channel, type and exact fields before resizi
   h.emit(a, resize(a, 100));
   assert.equal(a.style.height, '320px');
   assert.equal(a.referrerPolicy, 'no-referrer');
-  assert.equal(a.attrs.sandbox, 'allow-scripts allow-same-origin allow-forms');
+  assert.equal(a.attrs.sandbox, 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
 });
 test('handshake restarts after frame load and duplicate script does not mount twice', () => {
   const h = host(),

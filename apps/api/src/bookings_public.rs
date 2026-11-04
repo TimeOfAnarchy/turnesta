@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, types::Json};
 use std::collections::BTreeMap;
 use thiserror::Error;
+use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -20,6 +21,8 @@ pub enum PublicBookingError {
     RateLimit,
     #[error("invalid booking form or answers")]
     Invalid,
+    #[error("a valid privacy policy link is required")]
+    PrivacyUrl,
     #[error("calendar or form changed")]
     Changed,
     #[error("different request for capability")]
@@ -104,8 +107,48 @@ impl Default for BookingForm {
 pub struct BookingPublicSettings {
     pub public_slug: Option<Uuid>,
     pub enabled: bool,
+    pub privacy_url: Option<String>,
     pub form: BookingForm,
     pub version: i32,
+}
+#[derive(sqlx::FromRow)]
+struct SettingsRow {
+    public_slug: Uuid,
+    enabled: bool,
+    privacy_url: Option<String>,
+    form: Json<BookingForm>,
+    version: i32,
+}
+impl From<SettingsRow> for BookingPublicSettings {
+    fn from(row: SettingsRow) -> Self {
+        Self {
+            public_slug: Some(row.public_slug),
+            enabled: row.enabled,
+            privacy_url: row.privacy_url,
+            form: row.form.0,
+            version: row.version,
+        }
+    }
+}
+pub struct PublicBookingConfig {
+    pub enabled: bool,
+    pub privacy_url: Option<String>,
+    pub form: BookingForm,
+}
+fn normalized_privacy_url(value: Option<String>) -> Result<Option<String>, PublicBookingError> {
+    let value = value
+        .map(|url| url.trim().to_owned())
+        .filter(|url| !url.is_empty());
+    let valid = value.as_deref().is_none_or(|url| {
+        url.len() <= 500
+            && !url.contains(char::is_whitespace)
+            && Url::parse(url).is_ok_and(|url| url.scheme() == "https" && url.has_host())
+    });
+    if valid {
+        Ok(value)
+    } else {
+        Err(PublicBookingError::PrivacyUrl)
+    }
 }
 pub async fn settings(
     pool: &PgPool,
@@ -115,22 +158,18 @@ pub async fn settings(
 ) -> Result<BookingPublicSettings, PublicBookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     check_location(&mut s, location).await?;
-    let row:Option<(Uuid,bool,Json<BookingForm>,i32)>=sqlx::query_as("SELECT public_slug,enabled,form,version FROM bookings.public_settings WHERE tenant_id=$1 AND location_id=$2").bind(tenant).bind(location).fetch_optional(s.connection()).await?;
+    let row: Option<SettingsRow> = sqlx::query_as("SELECT public_slug,enabled,privacy_url,form,version FROM bookings.public_settings WHERE tenant_id=$1 AND location_id=$2").bind(tenant).bind(location).fetch_optional(s.connection()).await?;
     s.commit().await?;
-    Ok(match row {
-        Some((slug, enabled, Json(form), version)) => BookingPublicSettings {
-            public_slug: Some(slug),
-            enabled,
-            form,
-            version,
-        },
-        None => BookingPublicSettings {
+    Ok(row.map_or_else(
+        || BookingPublicSettings {
             public_slug: None,
             enabled: false,
+            privacy_url: None,
             form: BookingForm::default(),
             version: 0,
         },
-    })
+        Into::into,
+    ))
 }
 async fn check_location(
     s: &mut TenantSession,
@@ -155,8 +194,7 @@ pub async fn configure(
     user: UserId,
     tenant: TenantId,
     location: LocationId,
-    enabled: bool,
-    mut form: BookingForm,
+    config: PublicBookingConfig,
     version: i32,
 ) -> Result<BookingPublicSettings, PublicBookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
@@ -166,6 +204,15 @@ pub async fn configure(
     check_location(&mut s, location).await?;
     if version < 0 {
         return Err(PublicBookingError::Invalid);
+    }
+    let PublicBookingConfig {
+        enabled,
+        privacy_url,
+        mut form,
+    } = config;
+    let privacy_url = normalized_privacy_url(privacy_url)?;
+    if enabled && privacy_url.is_none() {
+        return Err(PublicBookingError::PrivacyUrl);
     }
     for field in &mut form.fields {
         field.label = field.label.trim().into();
@@ -180,19 +227,14 @@ pub async fn configure(
     if !valid {
         return Err(PublicBookingError::Invalid);
     }
-    let row: Option<(Uuid, bool, Json<BookingForm>, i32)> = if version == 0 {
-        sqlx::query_as("INSERT INTO bookings.public_settings(tenant_id,location_id,public_slug,enabled,form) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING public_slug,enabled,form,version").bind(tenant).bind(location).bind(Uuid::new_v4()).bind(enabled).bind(Json(&form)).fetch_optional(s.connection()).await?
+    let row: Option<SettingsRow> = if version == 0 {
+        sqlx::query_as("INSERT INTO bookings.public_settings(tenant_id,location_id,public_slug,enabled,privacy_url,form) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING public_slug,enabled,privacy_url,form,version").bind(tenant).bind(location).bind(Uuid::new_v4()).bind(enabled).bind(&privacy_url).bind(Json(&form)).fetch_optional(s.connection()).await?
     } else {
-        sqlx::query_as("UPDATE bookings.public_settings SET enabled=$3,form=$4,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND version=$5 RETURNING public_slug,enabled,form,version").bind(tenant).bind(location).bind(enabled).bind(Json(&form)).bind(version).fetch_optional(s.connection()).await?
+        sqlx::query_as("UPDATE bookings.public_settings SET enabled=$3,privacy_url=$4,form=$5,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND version=$6 RETURNING public_slug,enabled,privacy_url,form,version").bind(tenant).bind(location).bind(enabled).bind(&privacy_url).bind(Json(&form)).bind(version).fetch_optional(s.connection()).await?
     };
-    let (slug, enabled, Json(form), version) = row.ok_or(CoreError::VersionConflict)?;
+    let saved = row.ok_or(CoreError::VersionConflict)?;
     s.commit().await?;
-    Ok(BookingPublicSettings {
-        public_slug: Some(slug),
-        enabled,
-        form,
-        version,
-    })
+    Ok(saved.into())
 }
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct PublicBookingSpecialist {
@@ -210,6 +252,7 @@ pub struct PublicBookingProfile {
     pub today: String,
     pub enabled: bool,
     pub version: i32,
+    pub privacy_url: Option<String>,
     pub form: Option<BookingForm>,
     pub specialists: Vec<PublicBookingSpecialist>,
 }
@@ -270,6 +313,8 @@ pub struct PublicBookingInput {
     pub form_version: i32,
     pub time_zone: String,
     pub answers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub consent: bool,
 }
 pub struct AvailabilityQuery<'a> {
     pub month: &'a str,
@@ -339,7 +384,7 @@ pub async fn book(
     {
         return Err(PublicBookingError::Invalid);
     }
-    let Json(value) = sqlx::query_scalar("SELECT bookings.public_book($1,$2,$3,$4,$5,$6,$7,$8)")
+    let Json(value) = sqlx::query_scalar("SELECT bookings.public_book($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(slug)
         .bind(hash.as_slice())
         .bind(input.offer_id)
@@ -348,6 +393,7 @@ pub async fn book(
         .bind(input.form_version)
         .bind(input.time_zone)
         .bind(Json(input.answers))
+        .bind(input.consent)
         .fetch_one(pool)
         .await?;
     Ok(value)
