@@ -35,20 +35,36 @@ impl Provisioner {
         owner_name: &Name,
     ) -> Result<ProvisionedOrganization, CoreError> {
         let mut tx = self.begin().await?;
-        let organization = sqlx::query_as::<_, Organization>(
-            "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version, visible_services",
-        )
-        .bind(TenantId::new())
-        .bind(name.as_str())
-        .fetch_one(&mut *tx)
-        .await?;
-        let owner = insert_user(&mut tx, owner_name).await?;
-        insert_membership(&mut tx, organization.id, owner.id, Role::Owner).await?;
+        let provisioned = insert_organization(&mut tx, name, owner_name).await?;
         tx.commit().await?;
-        Ok(ProvisionedOrganization {
-            organization,
-            owner,
-        })
+        Ok(provisioned)
+    }
+
+    pub async fn has_organizations(&self) -> Result<bool, CoreError> {
+        Ok(
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM core.organizations)")
+                .fetch_one(&self.pool)
+                .await?,
+        )
+    }
+
+    pub async fn create_organization_with_password(
+        &self,
+        name: &Name,
+        owner_name: &Name,
+        email: &str,
+        password_hash: &str,
+    ) -> Result<ProvisionedOrganization, CoreError> {
+        let mut tx = self.begin().await?;
+        let provisioned = insert_organization(&mut tx, name, owner_name).await?;
+        sqlx::query("SELECT auth.password_admin_set($1, $2, $3)")
+            .bind(provisioned.owner.id)
+            .bind(email)
+            .bind(password_hash)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(provisioned)
     }
 
     pub async fn create_user(&self, name: &Name) -> Result<User, CoreError> {
@@ -69,6 +85,26 @@ impl Provisioner {
         tx.commit().await?;
         Ok(membership)
     }
+}
+
+async fn insert_organization(
+    tx: &mut Transaction<'_, Postgres>,
+    name: &Name,
+    owner_name: &Name,
+) -> Result<ProvisionedOrganization, CoreError> {
+    let organization = sqlx::query_as::<_, Organization>(
+        "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version, visible_services",
+    )
+    .bind(TenantId::new())
+    .bind(name.as_str())
+    .fetch_one(&mut **tx)
+    .await?;
+    let owner = insert_user(tx, owner_name).await?;
+    insert_membership(tx, organization.id, owner.id, Role::Owner).await?;
+    Ok(ProvisionedOrganization {
+        organization,
+        owner,
+    })
 }
 
 async fn insert_user(tx: &mut Transaction<'_, Postgres>, name: &Name) -> Result<User, CoreError> {

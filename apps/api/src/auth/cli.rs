@@ -2,8 +2,9 @@ use anyhow::{Result, bail};
 use clap::Subcommand;
 use sqlx::PgPool;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
-use crate::core::UserId;
+use crate::core::{Name, Provisioner, UserId};
 
 use super::{delivery, login::Email};
 
@@ -31,6 +32,31 @@ pub enum AuthCommand {
         #[arg(long, required = true)]
         password_stdin: bool,
     },
+    /// Create the first organization and its owner with a temporary password from stdin.
+    /// Does nothing when an organization already exists (admin DB role).
+    Bootstrap {
+        #[arg(long)]
+        organization: String,
+        #[arg(long)]
+        owner_name: String,
+        #[arg(long)]
+        email: String,
+        #[arg(long, required = true)]
+        password_stdin: bool,
+    },
+}
+
+fn read_password() -> Result<Zeroizing<String>> {
+    use std::io::Read;
+    let mut password = Zeroizing::new(String::new());
+    std::io::stdin().take(515).read_to_string(&mut password)?;
+    if password.ends_with('\n') {
+        password.pop();
+        if password.ends_with('\r') {
+            password.pop();
+        }
+    }
+    Ok(password)
 }
 
 pub async fn run(command: AuthCommand, pool: &PgPool, public_origin: &str) -> Result<()> {
@@ -54,18 +80,9 @@ pub async fn run(command: AuthCommand, pool: &PgPool, public_origin: &str) -> Re
             email,
             password_stdin: _,
         } => {
-            use std::io::Read;
             let email = Email::parse(&email)?;
-            let mut password = zeroize::Zeroizing::new(String::new());
-            std::io::stdin().take(515).read_to_string(&mut password)?;
-            if password.ends_with('\n') {
-                password.pop();
-                if password.ends_with('\r') {
-                    password.pop();
-                }
-            }
             let hash = super::password::PasswordEngine::default()
-                .hash(password)
+                .hash(read_password()?)
                 .await?;
             super::password::admin_set(pool, user, &email, &hash)
                 .await
@@ -78,6 +95,33 @@ pub async fn run(command: AuthCommand, pool: &PgPool, public_origin: &str) -> Re
                 "{}",
                 serde_json::json!({"status":"password_set","must_change":true,"sessions_revoked":true})
             );
+        }
+        AuthCommand::Bootstrap {
+            organization,
+            owner_name,
+            email,
+            password_stdin: _,
+        } => {
+            let provisioner = Provisioner::new(pool.clone());
+            if provisioner.has_organizations().await? {
+                println!("{}", serde_json::json!({"status": "exists"}));
+                return Ok(());
+            }
+            let organization = Name::parse(&organization)?;
+            let owner_name = Name::parse(&owner_name)?;
+            let email = Email::parse(&email)?;
+            let hash = super::password::PasswordEngine::default()
+                .hash(read_password()?)
+                .await?;
+            provisioner
+                .create_organization_with_password(
+                    &organization,
+                    &owner_name,
+                    email.as_str(),
+                    &hash,
+                )
+                .await?;
+            println!("{}", serde_json::json!({"status": "created"}));
         }
     }
     Ok(())

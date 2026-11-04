@@ -1060,3 +1060,39 @@ async fn fresh_mailbox_proof_recovers_temporary_password_and_invalidates_setup_g
     );
     f.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn first_organization_and_password_are_created_together() {
+    let f = Fixture::new().await;
+    let provisioner = Provisioner::new(f.admin.clone());
+    assert!(provisioner.has_organizations().await.unwrap());
+    let organization = format!("Bootstrap {}", Uuid::new_v4());
+    let name = Name::parse(&organization).unwrap();
+    let owner = Name::parse("Owner").unwrap();
+    let email = format!("bootstrap-{}@example.test", Uuid::new_v4());
+    let phrase = "A temporary bootstrap phrase";
+    let hash = PasswordEngine::default()
+        .hash(Zeroizing::new(phrase.into()))
+        .await
+        .unwrap();
+    provisioner
+        .create_organization_with_password(&name, &owner, &email, &hash)
+        .await
+        .unwrap();
+    let login = f.password_login(&email, phrase).await;
+    assert_eq!(body(login).await["status"], "password_change_required");
+    assert!(
+        provisioner
+            .create_organization_with_password(&name, &owner, &email, &hash)
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM core.organizations WHERE name=$1")
+        .bind(&organization)
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    f.close().await;
+}

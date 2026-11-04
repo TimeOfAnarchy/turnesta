@@ -12,32 +12,17 @@ Appointments, electronic queues and tips for service businesses.
 
 ## Getting started
 
-Requirements: Docker with Docker Compose. This setup is for local development: the app listens on 127.0.0.1 only and uses development database passwords.
-
-Create `.env` with random local keys and start the app:
+Requirements: Docker with Docker Compose. On Windows, run the command in Git Bash.
 
 ```sh
-./scripts/init-env.sh
-docker compose --env-file .env up --build --wait
+./scripts/install.sh
 ```
 
-Create an organization with its owner and note `owner.id` in the output:
+The script asks for a port, an organization name and an owner, builds and starts the app, and prints the sign-in address with a temporary password. You choose your own password on first sign-in. Running it again is safe: it restarts the app and keeps existing data.
 
-```sh
-docker compose --env-file .env run --rm admin core organization-create --name "My business" --owner-name "Owner"
-```
+This setup is for local use: the app listens on 127.0.0.1 only and uses development database passwords.
 
-Set a temporary password for the owner (typed input is hidden, 15–128 characters):
-
-```sh
-read -rs PW && printf '%s' "$PW" | docker compose --env-file .env run --rm -T admin auth password-set --user <owner-id> --email owner@example.com --password-stdin; unset PW
-```
-
-Sign in at http://127.0.0.1:8080/login. On first sign-in you will be asked to choose your own password.
-
-If port 8080 or 54329 is busy, change `TURNESTA_API_PORT` (together with the port in `TURNESTA_PUBLIC_ORIGIN`) or `TURNESTA_POSTGRES_PORT` in `.env`.
-
-On Windows, use PowerShell 7: `.\scripts\Initialize-Development.ps1` instead of `init-env.sh`, and `.\scripts\Set-LoginPassword.ps1 -User <owner-id> -Email owner@example.com` to set the password.
+If port 54329 is busy, change `TURNESTA_POSTGRES_PORT` in `.env` and run the script again.
 
 ## Tech stack
 
