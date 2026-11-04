@@ -22,7 +22,7 @@ The script asks for a port, an organization name and an owner, builds and starts
 
 This setup is for local use: the app listens on 127.0.0.1 only and uses development database passwords.
 
-If port 54329 is busy, change `TURNESTA_POSTGRES_PORT` in `.env` and run the script again.
+If a port is busy, change it in `.env` and run the script again: `TURNESTA_API_PORT` together with the port in `TURNESTA_PUBLIC_ORIGIN`, or `TURNESTA_POSTGRES_PORT`.
 
 ## Tech stack
 
