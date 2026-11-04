@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from './api';
 import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
-import { bookingWidgetApi, widgetSnippet } from './bookingWidget';
+import { bookingWidgetApi, ownAddress, widgetSnippet } from './bookingWidget';
 import type { WidgetSettings } from './bookingWidget';
 
 export function BookingWidgetSettings({
@@ -72,6 +72,7 @@ function WidgetEditor({
     [saved, setSaved] = useState(false),
     [copied, setCopied] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [selfAddress, setSelfAddress] = useState<string | null>(null);
   const changed = current.version !== baseline.version;
   const key = ['organization', tenant, 'bookings', location, 'widget'];
   const snippet = current.public_url
@@ -102,17 +103,21 @@ function WidgetEditor({
   async function save(event: FormEvent) {
     event.preventDefault();
     if (busy || changed || uncertain || !canManage) return;
-    setBusy(true);
+    const lines = origins
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     setError(null);
     setSaved(false);
+    const own = ownAddress(lines, current.script_url);
+    setSelfAddress(own);
+    if (own) return;
+    setBusy(true);
     try {
       const v = await bookingWidgetApi.configure(
         tenant,
         location,
-        origins
-          .split(/\r?\n/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+        lines,
         baseline.version,
       );
       accept(v);
@@ -151,14 +156,16 @@ function WidgetEditor({
               onChange={(e) => {
                 setOrigins(e.target.value);
                 setSaved(false);
+                setSelfAddress(null);
               }}
               aria-describedby={`widget-origins-hint-${location}`}
             />
             <p id={`widget-origins-hint-${location}`} className="field-hint">
               До 10 адресов с https://, без пути и звёздочек. clinic.ru и
               www.clinic.ru — разные сайты. Пустой список запрещает новое
-              встраивание. Для локальной разработки разрешён http://localhost с
-              портом. Сайт должен отличаться от адреса Turnesta.
+              встраивание. Для проверки на своём компьютере подойдут
+              http://localhost и http://127.0.0.1 с портом, например
+              http://localhost:5500. Адрес самого Turnesta указать нельзя.
             </p>
           </fieldset>
           {changed && (
@@ -199,10 +206,18 @@ function WidgetEditor({
           доступны владельцу и управляющему.
         </p>
       )}
-      {error instanceof ApiError && error.code === 'invalid_widget_origins' ? (
+      {selfAddress ? (
         <p className="notice" role="alert">
-          Проверьте адреса: нужен точный HTTPS-адрес сайта без пути, параметров
-          и звёздочек. Адрес самого Turnesta не подходит.
+          {selfAddress} — это адрес самого Turnesta, виджет работает только на
+          другом сайте. Укажите адрес страницы, куда вставляете код. Для
+          проверки на компьютере откройте её с другого адреса, например
+          http://localhost:5500.
+        </p>
+      ) : error instanceof ApiError && error.code === 'invalid_widget_origins' ? (
+        <p className="notice" role="alert">
+          Проверьте адреса: нужен точный адрес сайта с https:// без пути,
+          параметров и звёздочек. http:// подходит только для localhost и
+          127.0.0.1.
         </p>
       ) : error ? (
         <ErrorNotice error={error} />

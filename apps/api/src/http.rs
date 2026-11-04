@@ -328,6 +328,7 @@ pub fn router(state: AppState) -> Router {
             "/app/favicon.svg",
             ServeFile::new(web_root.join("favicon.svg")),
         )
+        .route_service("/favicon.ico", ServeFile::new(web_root.join("favicon.svg")))
         .route_service("/app/", ServeFile::new(web_root.join("index.html")))
         .route_service("/app/{*path}", ServeFile::new(web_root.join("index.html")));
     Router::new()

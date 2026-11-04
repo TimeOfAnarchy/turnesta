@@ -22,6 +22,19 @@ export const bookingWidgetApi = {
       body: JSON.stringify({ allowed_origins, expected_version }),
     }),
 };
+// The API refuses the service's own address; finding it here lets the cabinet say why.
+export function ownAddress(lines: string[], scriptUrl: string) {
+  const service = new URL(scriptUrl).origin;
+  return lines.some((line) => {
+    try {
+      return new URL(line).origin === service;
+    } catch {
+      return false;
+    }
+  })
+    ? service
+    : null;
+}
 function escapeAttribute(value: string) {
   return value
     .replaceAll('&', '&amp;')

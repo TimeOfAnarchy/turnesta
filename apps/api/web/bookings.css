@@ -1,17 +1,22 @@
 :root {
   font-family:
     Inter,
+    'Segoe UI Variable Text',
+    'Segoe UI',
     -apple-system,
     BlinkMacSystemFont,
-    'Segoe UI',
+    system-ui,
     sans-serif;
-  color: #19362c;
-  background: #f5f6f1;
+  color: #12261d;
+  background: #f4f6f4;
   font-synthesis: none;
-  --green: #234b39;
-  --muted: #718074;
-  --border: #e1e6dd;
-  --orange: #e49b54;
+  -webkit-font-smoothing: antialiased;
+  --green: #1f5a41;
+  --green-dark: #164430;
+  --hover: #f1f4f2;
+  --muted: #5f6d65;
+  --border: #e2e6e2;
+  --orange: #e3954a;
   color-scheme: light;
 }
 * {
@@ -38,7 +43,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid #8ba177;
+  outline: 3px solid #2f7a57;
   outline-offset: 3px;
 }
 button,
@@ -74,7 +79,7 @@ footer strong span {
 }
 .brand-line > span,
 .eyebrow {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   letter-spacing: 0.16em;
   font-weight: 700;
   color: var(--muted);
@@ -92,7 +97,7 @@ footer strong span {
 .muted,
 .hint {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1.7;
 }
 .panel {
@@ -118,7 +123,7 @@ h2 {
   margin: 0 0 1rem;
 }
 h3 {
-  font-size: 0.9rem;
+  font-size: 1rem;
   margin: 1.3rem 0 0.65rem;
 }
 .field {
@@ -128,11 +133,11 @@ h3 {
   min-width: 0;
 }
 .field label {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   line-height: 1.6;
 }
 .field label span {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 input,
@@ -159,7 +164,7 @@ select[aria-invalid='true'] {
   grid-template-columns: 1fr 1fr;
   gap: 0.3rem;
   padding: 0.3rem;
-  background: #f2f4ed;
+  background: #eef1ee;
   border-radius: 0.7rem;
   margin-block: 1rem;
 }
@@ -169,12 +174,12 @@ select[aria-invalid='true'] {
   padding: 0.65rem;
   background: transparent;
   color: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 .view-switch button[aria-pressed='true'] {
   background: white;
   border-color: var(--border);
-  box-shadow: 0 1px 4px #19362c10;
+  box-shadow: 0 1px 4px #12261d14;
 }
 .month-nav {
   display: flex;
@@ -184,7 +189,7 @@ select[aria-invalid='true'] {
   margin: 1rem 0;
 }
 .month-nav strong {
-  font-size: 0.9rem;
+  font-size: 1rem;
   text-align: center;
 }
 .icon-button {
@@ -204,7 +209,7 @@ select[aria-invalid='true'] {
 }
 .weekdays span {
   text-align: center;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--muted);
   padding: 0.4rem 0;
 }
@@ -214,14 +219,14 @@ select[aria-invalid='true'] {
   min-height: 2.6rem;
   border: 1px solid transparent;
   border-radius: 0.6rem;
-  background: #f5f6f1;
+  background: #f4f6f4;
   color: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   gap: 0.1rem;
   padding: 0.3rem;
 }
 .day small {
-  font-size: 0.5rem;
+  font-size: 0.625rem;
   color: var(--green);
 }
 .day[aria-pressed='true'] {
@@ -233,7 +238,7 @@ select[aria-invalid='true'] {
 }
 .day:disabled {
   background: transparent;
-  color: #aeb6ad;
+  color: #a9b3ad;
   opacity: 0.8;
 }
 .dates-list {
@@ -249,14 +254,14 @@ select[aria-invalid='true'] {
   border-radius: 0.6rem;
   background: white;
   color: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
 }
 .date-option[aria-pressed='true'] {
-  background: #edf3e7;
-  border-color: #73916c;
+  background: #e6f0e9;
+  border-color: #2f7a57;
 }
 .slots {
   display: grid;
@@ -276,12 +281,12 @@ select[aria-invalid='true'] {
   background: white;
 }
 .slot strong {
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1.6;
 }
 .slot span,
 .slot small {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -290,7 +295,7 @@ select[aria-invalid='true'] {
 }
 .slot[aria-pressed='true'] {
   border-color: var(--green);
-  background: #edf3e7;
+  background: #e6f0e9;
   box-shadow: 0 0 0 1px var(--green);
 }
 .primary,
@@ -300,7 +305,7 @@ select[aria-invalid='true'] {
   border-radius: 0.65rem;
   padding: 0.85rem 1.1rem;
   line-height: 1.4;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 .primary {
   background: var(--green);
@@ -330,7 +335,7 @@ select[aria-invalid='true'] {
   min-height: 2.8rem;
 }
 .summary {
-  background: #f5f6ef;
+  background: #f4f6f4;
   border: 1px solid var(--border);
   border-radius: 0.8rem;
   padding: 1.1rem;
@@ -342,7 +347,7 @@ select[aria-invalid='true'] {
   font-size: 0.95rem;
 }
 .summary p {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: var(--muted);
   line-height: 1.7;
   margin: 0.4rem 0;
@@ -354,7 +359,7 @@ select[aria-invalid='true'] {
   color: #785e38;
   border-radius: 0.8rem;
   padding: 1rem;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1.7;
   margin-bottom: 1rem;
   overflow-wrap: anywhere;
@@ -372,7 +377,7 @@ select[aria-invalid='true'] {
 .empty {
   padding: 1rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1.7;
 }
 .booking-form {
@@ -403,7 +408,7 @@ select[aria-invalid='true'] {
   width: 3.3rem;
   height: 3.3rem;
   border-radius: 50%;
-  background: #e7efdf;
+  background: #e6f0e9;
   color: var(--green);
   font-size: 1.7rem;
   margin-bottom: 1rem;
@@ -413,7 +418,7 @@ select[aria-invalid='true'] {
   margin: auto;
 }
 .receipt .reference {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -425,7 +430,7 @@ select[aria-invalid='true'] {
 }
 .saved-bookings summary {
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
 }
 .saved-list {
@@ -435,10 +440,10 @@ select[aria-invalid='true'] {
   margin-top: 1rem;
 }
 .saved-list button {
-  font-size: 0.75rem;
+  font-size: 0.85rem;
 }
 .legend {
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   color: var(--muted);
   line-height: 1.7;
   margin-top: 1rem;
@@ -447,7 +452,7 @@ footer {
   display: flex;
   justify-content: center;
   gap: 0.4rem;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   color: var(--muted);
   padding: 2rem 0 0.5rem;
 }
@@ -471,7 +476,7 @@ footer strong {
     flex: 1;
   }
   .brand-line > span {
-    font-size: 0.55rem;
+    font-size: 0.625rem;
   }
   .business-heading {
     margin-top: 1.6rem;
@@ -488,8 +493,74 @@ footer strong {
     min-height: 2.5rem;
   }
 }
-.booking-embedded #booking-app { padding:clamp(.75rem,2vw,1.5rem); }
-.booking-embedded .brand-line { display:none; }
-.booking-embedded .business-heading { margin:0 0 1.25rem; }
-.booking-embedded .business-heading h1 { font-size:clamp(1.4rem,4vw,2rem); }
-.booking-embedded .calendar-panel { position:static; }
+.panel {
+  box-shadow: 0 1px 2px rgba(16, 36, 27, 0.05);
+}
+.primary {
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 36, 27, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.secondary {
+  font-weight: 600;
+}
+.primary,
+.secondary,
+.icon-button,
+.slot,
+.day,
+.date-option {
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.primary:hover:not(:disabled) {
+  background: var(--green-dark);
+}
+.secondary:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.date-option:hover:not([aria-pressed='true']) {
+  background: var(--hover);
+}
+.slot:hover:not([aria-pressed='true']) {
+  border-color: #c5d0c8;
+  background: var(--hover);
+}
+.day:hover:not(:disabled):not([aria-pressed='true']) {
+  background: #e6f0e9;
+}
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: #c5d0c8;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+/* The widget card comes from the loader: the page inside is flat, white and compact. */
+.booking-embedded,
+.booking-embedded body {
+  background: #fff;
+}
+.booking-embedded #booking-app {
+  width: 100%;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+.booking-embedded .brand-line {
+  display: none;
+}
+.booking-embedded .business-heading {
+  margin: 0 0 1.25rem;
+}
+.booking-embedded .business-heading h1 {
+  font-size: clamp(1.3rem, 4vw, 1.75rem);
+  margin: 0.35rem 0;
+}
+.booking-embedded .calendar-panel {
+  position: static;
+}
+.booking-embedded .panel {
+  box-shadow: none;
+}
+.booking-embedded footer {
+  padding: 1.25rem 0 0;
+}

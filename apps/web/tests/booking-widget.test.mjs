@@ -6,7 +6,11 @@ import {
   validWidgetMessage,
   probeBookingStorage,
 } from '../../api/web/booking-widget-protocol.mjs';
-import { bookingWidgetApi, widgetSnippet } from '../src/bookingWidget.ts';
+import {
+  bookingWidgetApi,
+  ownAddress,
+  widgetSnippet,
+} from '../src/bookingWidget.ts';
 
 afterEach(() => {
   mock.restoreAll();
@@ -60,6 +64,10 @@ function host(count = 1, origin = 'https://clinic.example') {
       removeEventListener(k) {
         delete this.events[k];
       },
+      attachShadow() {
+        this.shadowRoot = element('#shadow');
+        return this.shadowRoot;
+      },
     };
   }
   const containers = Array.from({ length: count }, () => {
@@ -67,6 +75,7 @@ function host(count = 1, origin = 'https://clinic.example') {
     c.dataset.turnestaBooking = booking;
     return c;
   });
+  const warnings = [];
   const window = {
     addEventListener(type, fn) {
       if (type === 'message') listeners.add(fn);
@@ -91,6 +100,12 @@ function host(count = 1, origin = 'https://clinic.example') {
     location: { origin },
     URL,
     crypto,
+    console: { warn: (text) => warnings.push(text) },
+    CSSStyleSheet: class {
+      replaceSync(text) {
+        this.text = text;
+      }
+    },
     setTimeout(fn) {
       timers.set(++nextTimer, fn);
       return nextTimer;
@@ -116,13 +131,17 @@ function host(count = 1, origin = 'https://clinic.example') {
     timers,
     observers,
     context,
+    warnings,
     frames: () =>
-      containers.flatMap((c) => c.children.filter((n) => n.tag === 'iframe')),
+      containers.flatMap((c) =>
+        walk(c.shadowRoot).filter((n) => n.tag === 'iframe'),
+      ),
     emit(frame, data, from = service, source = frame.contentWindow) {
       for (const fn of [...listeners]) fn({ data, origin: from, source });
     },
   };
 }
+const walk = (node) => [node, ...node.children.flatMap(walk)];
 const channelOf = (frame) => new URL(frame.src).searchParams.get('channel');
 const resize = (frame, height, extra = {}) => ({
   v: 1,
@@ -164,6 +183,7 @@ test('host validates origin, frame, channel, type and exact fields before resizi
 test('handshake restarts after frame load and duplicate script does not mount twice', () => {
   const h = host(),
     [frame] = h.frames();
+  assert.equal(frame.contentWindow.sent.length, 0);
   h.emit(frame, { v: 1, type: 'turnesta:ready', channel: channelOf(frame) });
   assert.ok(
     frame.contentWindow.sent.every(
@@ -188,15 +208,96 @@ test('host keeps a plain link when embed cannot load and refuses same-origin san
   const h = host();
   const callback = [...h.timers.values()][0];
   callback();
+  const nodes = walk(h.containers[0].shadowRoot);
   assert.ok(
-    h.containers[0].children.some(
-      (n) => n.tag === 'p' && n.textContent?.includes('Не удалось'),
-    ),
+    nodes.some((n) => n.tag === 'p' && n.textContent?.includes('Не удалось')),
   );
-  assert.equal(h.containers[0].children.at(-1).children[0].href, booking);
+  assert.ok(nodes.some((n) => n.tag === 'a' && n.href === booking));
+  assert.ok(h.warnings[0].includes('https://clinic.example'));
   const same = host(1, service);
   assert.equal(same.frames().length, 0);
-  assert.equal(same.containers[0].children.at(-1).children[0].href, booking);
+  assert.ok(
+    walk(same.containers[0].shadowRoot).some(
+      (n) => n.tag === 'a' && n.href === booking,
+    ),
+  );
+  assert.ok(same.warnings[0].includes('адресе самого сервиса'));
+});
+test('widget renders in its own shadow root and keeps working without one', () => {
+  const h = host();
+  const [container] = h.containers;
+  assert.equal(container.children.length, 0);
+  assert.equal(container.shadowRoot.adoptedStyleSheets.length, 1);
+  assert.match(container.shadowRoot.adoptedStyleSheets[0].text, /all: initial/);
+  const plain = host();
+  plain.containers[0].attachShadow = () => {
+    throw new Error('unsupported');
+  };
+  delete plain.containers[0].dataset.turnestaMounted;
+  plain.containers[0].shadowRoot = undefined;
+  vm.runInContext(script, plain.context);
+  assert.ok(walk(plain.containers[0]).some((n) => n.tag === 'iframe'));
+});
+test('own Turnesta address is recognised whatever its spelling', () => {
+  const url = `${service}/assets/booking-widget.js`;
+  assert.equal(ownAddress([`${service}/`], url), service);
+  assert.equal(ownAddress(['HTTPS://TURNESTA.example'], url), service);
+  assert.equal(ownAddress(['https://clinic.example', 'broken'], url), null);
+  assert.equal(
+    ownAddress(
+      ['http://127.0.0.1:5500'],
+      'http://127.0.0.1:8080/assets/booking-widget.js',
+    ),
+    null,
+  );
+});
+test('off-screen embed reports its size without an animation frame', async () => {
+  const source = readFileSync(
+    new URL('../../api/web/bookings-embed.js', import.meta.url),
+    'utf8',
+  )
+    .replace(/^import .*$/m, '')
+    .replace('export function', 'function');
+  const sent = [],
+    listeners = {};
+  const parent = { postMessage: (data) => sent.push(JSON.stringify(data)) };
+  const context = vm.createContext({
+    parent,
+    window: {
+      addEventListener: (type, fn) => (listeners[type] = fn),
+      removeEventListener() {},
+    },
+    document: { documentElement: { classList: { add() {} } } },
+    validWidgetMessage,
+    ResizeObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+    setInterval: () => 1,
+    clearInterval() {},
+    setTimeout: () => 1,
+    clearTimeout() {},
+    requestAnimationFrame() {
+      throw new Error('frames are stopped');
+    },
+  });
+  vm.runInContext(`${source};globalThis.connect = connectBookingEmbed;`, context);
+  const connected = context.connect({
+    dataset: { parentOrigin: 'https://clinic.example', channel: 'c' },
+    getBoundingClientRect: () => ({ height: 640 }),
+  });
+  listeners.message({
+    source: parent,
+    origin: 'https://clinic.example',
+    data: { v: 1, type: 'turnesta:init', channel: 'c' },
+  });
+  assert.equal(await connected, true);
+  assert.deepEqual(JSON.parse(sent.at(-1)), {
+    v: 1,
+    type: 'turnesta:resize',
+    channel: 'c',
+    height: 640,
+  });
 });
 test('child protocol rejects ambiguous and extra messages', () => {
   const channel = crypto.randomUUID(),

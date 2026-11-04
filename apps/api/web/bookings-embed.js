@@ -11,16 +11,19 @@ export function connectBookingEmbed(app) {
       lastHeight = 0;
     const send = (type, extra = {}) =>
       parent.postMessage({ v: 1, type, channel, ...extra }, origin);
+    const report = () => {
+      const height = Math.ceil(app.getBoundingClientRect().height);
+      if (height !== lastHeight && height > 0 && height <= 100_000) {
+        lastHeight = height;
+        send('turnesta:resize', { height });
+      }
+    };
     const measure = () => {
       if (queued || !connected) return;
       queued = true;
       requestAnimationFrame(() => {
         queued = false;
-        const height = Math.ceil(app.getBoundingClientRect().height);
-        if (height !== lastHeight && height > 0 && height <= 100_000) {
-          lastHeight = height;
-          send('turnesta:resize', { height });
-        }
+        report();
       });
     };
     const listener = (event) => {
@@ -38,7 +41,9 @@ export function connectBookingEmbed(app) {
         resolve(true);
       }
       lastHeight = 0;
-      measure();
+      // Browsers stop animation frames for an off-screen cross-origin frame, so the
+      // first size cannot wait for one: a widget below the fold must still connect.
+      report();
     };
     const fail = () => {
       clearInterval(announce);
