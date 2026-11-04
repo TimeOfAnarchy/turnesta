@@ -20,9 +20,21 @@ Requirements: Docker with Docker Compose. On Windows, run the command in Git Bas
 
 The script asks for a port, an organization name and an owner, builds and starts the app, and prints the sign-in address with a temporary password. You choose your own password on first sign-in. Running it again is safe: it restarts the app and keeps existing data.
 
-This setup is for local use: the app listens on 127.0.0.1 only and uses development database passwords.
+This mode is for trying Turnesta on your computer: it listens on 127.0.0.1 only and uses development database passwords.
 
 If a port is busy, change it in `.env` and run the script again: `TURNESTA_API_PORT` together with the port in `TURNESTA_PUBLIC_ORIGIN`, or `TURNESTA_POSTGRES_PORT`.
+
+## Running on a server
+
+Requirements: a Linux server with Docker, a domain pointing to the server, and open ports 80 and 443.
+
+```sh
+git clone https://github.com/TimeOfAnarchy/turnesta.git
+cd turnesta
+./scripts/install.sh --server
+```
+
+The script generates strong passwords and uses a ready-made image, so the server does not need to compile anything. HTTPS certificates are issued automatically. To send email, fill in the SMTP settings in `.env`, uncomment `COMPOSE_PROFILES=mail` and run the script again.
 
 ## Tech stack
 
