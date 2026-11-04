@@ -5,6 +5,9 @@
 # Local notes
 /docs/
 
+# Database backups
+/backups/
+
 # Build output
 /target/
 **/node_modules/

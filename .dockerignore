@@ -3,6 +3,7 @@ AGENTS.md
 **/AGENTS.md
 .local/
 **/.local/
+backups/
 .env
 .env.*
 **/.env

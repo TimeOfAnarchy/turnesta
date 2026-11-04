@@ -36,6 +36,20 @@ cd turnesta
 
 The script generates strong passwords and uses a ready-made image, so the server does not need to compile anything. HTTPS certificates are issued automatically. To send email, fill in the SMTP settings in `.env`, uncomment `COMPOSE_PROFILES=mail` and run the script again.
 
+Everyday commands, run from the project folder:
+
+```sh
+./scripts/backup.sh
+git pull && ./scripts/update.sh
+./scripts/restore.sh backups/turnesta-<date>.dump
+```
+
+The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version. To keep copies off the server, configure an encrypted [rclone](https://rclone.org/crypt/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+
+Keep a copy of `.env` somewhere safe: it holds the keys needed to restore on a new server. Point an uptime monitor at `https://your-domain/health/ready`.
+
+To move to a new server, copy `.env` and a backup into a fresh clone, then run `restore.sh`.
+
 ## Tech stack
 
 - Rust, Axum, Tokio, SQLx

@@ -126,6 +126,20 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  inspector:
+    <<: *app
+    profiles: [tools]
+    command: [ops, inspect, --verify-runtime, --check-delivery-key]
+    environment:
+      <<: *runtime
+      DATABASE_URL: postgresql://turnesta_migrator:${TURNESTA_MIGRATOR_DB_PASSWORD}@db:5432/turnesta
+      TURNESTA_VERIFY_RUNTIME_DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD}@db:5432/turnesta
+      RUST_LOG: error
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped

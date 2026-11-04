@@ -1,11 +1,5 @@
 #!/bin/sh
-set -eu
-cd -- "$(dirname -- "$0")/.."
-
-fail() {
-    echo "$1" >&2
-    exit 1
-}
+. "$(dirname -- "$0")/common.sh"
 
 ask() {
     answer=''
@@ -15,20 +9,8 @@ ask() {
     done
 }
 
-setting() {
-    sed -n "s/^$1=//p" .env | tr -d '\r' | tail -n 1
-}
-
 key() {
     od -An -tx1 -N32 /dev/urandom | tr -d ' \n'
-}
-
-compose() {
-    if [ "$server" = true ]; then
-        docker compose --env-file .env --file deploy/compose.prod.yaml "$@"
-    else
-        docker compose --env-file .env "$@"
-    fi
 }
 
 create_local_env() {
@@ -70,21 +52,25 @@ TURNESTA_SMTP_PORT=465
 TURNESTA_SMTP_FROM=
 TURNESTA_SMTP_USERNAME=
 TURNESTA_SMTP_PASSWORD=
+
+# Set an rclone remote to copy each backup off the server, for example s3:bucket/turnesta.
+TURNESTA_BACKUP_REMOTE=
+TURNESTA_BACKUP_KEEP=14
 EOF
     )
 }
 
-server=false
-if [ "${1:-}" = --server ]; then
-    server=true
-fi
-
-if [ -e .env ]; then
-    if grep -q '^TURNESTA_DOMAIN=' .env; then
-        server=true
-    elif [ "$server" = true ]; then
-        fail 'This folder already has a local setup in .env.'
+schedule_backups() {
+    if [ -w /etc/cron.d ]; then
+        printf '30 3 * * * root %s/scripts/backup.sh >> /var/log/turnesta-backup.log 2>&1\n' "$PWD" > /etc/cron.d/turnesta
+    else
+        echo 'Add ./scripts/backup.sh to cron to back up the database every day.'
     fi
+}
+
+if [ "${1:-}" = --server ]; then
+    [ ! -e .env ] || [ "$server" = true ] || fail 'This folder already has a local setup in .env.'
+    server=true
 fi
 
 command -v docker >/dev/null 2>&1 || fail 'Docker is not installed: https://docs.docker.com/get-docker/'
@@ -109,6 +95,7 @@ email=$answer
 if [ "$server" = true ]; then
     echo 'Downloading and starting Turnesta.'
     compose up --pull always --wait
+    schedule_backups
     origin="https://$(setting TURNESTA_DOMAIN)"
 else
     echo 'Building and starting Turnesta. The first build takes several minutes.'
