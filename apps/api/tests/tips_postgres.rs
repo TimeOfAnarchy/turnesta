@@ -138,7 +138,7 @@ impl Fixture {
     async fn prioritize(&self, job: Uuid) {
         // Only a fresh fixture row is changed. Place it before historical jobs,
         // so this test never consumes another fixture's event from the queue.
-        db_ok(sqlx::query("UPDATE tips.mock_delivery_outbox SET available_at = (SELECT coalesce(min(available_at), clock_timestamp()) - interval '1 second' FROM tips.mock_delivery_outbox WHERE state IN ('pending', 'leased')) WHERE id = $1").bind(job).execute(&self.owner).await);
+        db_ok(sqlx::query("UPDATE tips.mock_delivery_outbox SET available_at = (SELECT least(min(available_at), clock_timestamp()) - interval '1 second' FROM tips.mock_delivery_outbox WHERE state IN ('pending', 'leased')) WHERE id = $1").bind(job).execute(&self.owner).await);
     }
 
     async fn close(self) {
