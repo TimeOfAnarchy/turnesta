@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { errorMessage } from './api';
 import { time24Pattern, typedTime } from './time24';
 
-type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right' | 'key';
+type IconName = 'calendar' | 'users' | 'clock' | 'locations' | 'settings' | 'grid' | 'arrow' | 'plus' | 'edit' | 'exit' | 'chevron' | 'check' | 'close' | 'globe' | 'heart' | 'refresh' | 'external' | 'queue' | 'left' | 'right' | 'key' | 'help';
 // One 24px grid, 1.75 stroke and round joins keep every glyph optically consistent.
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
@@ -15,6 +15,7 @@ export function Icon({ name, className = '' }: { name: IconName; className?: str
     settings: <><path d="M4 6.5h8.5M16.5 6.5H20M4 12h2.5M10.5 12H20M4 17.5h10M18 17.5h2"/><circle cx="14.5" cy="6.5" r="2"/><circle cx="8.5" cy="12" r="2"/><circle cx="16" cy="17.5" r="2"/></>,
     grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></>,
     arrow: <path d="M5 12h14M13 6l6 6-6 6"/>,
+    help: <><circle cx="12" cy="12" r="8.75"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.7 2.2c-.8.45-1.2.95-1.2 1.8M12 16.75v.01"/></>,
     plus: <path d="M12 5v14M5 12h14"/>,
     edit: <path d="M14.5 5.5l4 4M4 20l1-4.5L16 4.5a2.1 2.1 0 0 1 3 0l.5.5a2.1 2.1 0 0 1 0 3L8.5 19Z"/>,
     exit: <path d="M9.5 20.5h-3a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h3M15.5 16.5 20 12l-4.5-4.5M20 12H9"/>,

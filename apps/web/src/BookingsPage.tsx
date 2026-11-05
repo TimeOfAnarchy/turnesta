@@ -6,6 +6,7 @@ import { ApiError, errorMessage } from './api';
 import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
 import { keys, useLocations } from './queries';
 import { OfferEditor, CatalogEditor } from './BookingEditors';
+import { BookingsHelp } from './BookingsHelp';
 import { PublicBookingSettings } from './PublicBookingSettings';
 import { BookingBatchEditor } from './BookingBatchEditor';
 import {
@@ -45,19 +46,22 @@ function storage() {
 function distinct<T extends { id: string }>(items: T[]) {
   return [...new Map(items.map((i) => [i.id, i])).values()];
 }
-type View = 'schedule' | 'online' | 'catalog';
+type View = 'schedule' | 'online' | 'catalog' | 'help';
 const views: {
   id: View;
   label: string;
   extra?: string;
-  icon: 'calendar' | 'globe' | 'users';
+  icon: 'calendar' | 'globe' | 'users' | 'help';
 }[] = [
   { id: 'schedule', label: 'Расписание', icon: 'calendar' },
   { id: 'online', label: 'Онлайн-запись', icon: 'globe' },
   { id: 'catalog', label: 'Специалисты', extra: ' и заготовки', icon: 'users' },
+  { id: 'help', label: 'Справка', icon: 'help' },
 ];
 function readView(value: string | null): View {
-  return value === 'online' || value === 'catalog' ? value : 'schedule';
+  return value === 'online' || value === 'catalog' || value === 'help'
+    ? value
+    : 'schedule';
 }
 export function BookingsPage() {
   const { organization, canManage } = useWorkspace();
@@ -210,7 +214,9 @@ export function BookingsPage() {
             </div>
           </div>
           {point &&
-            (view === 'online' ? (
+            (view === 'help' ? (
+              <BookingsHelp />
+            ) : view === 'online' ? (
               <PublicBookingSettings
                 key={`${organization.id}:${location}`}
                 tenant={organization.id}

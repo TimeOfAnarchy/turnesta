@@ -754,6 +754,21 @@ body:has(dialog[open]) { overflow: hidden; }
 .booking-setting-icon { display:grid; place-items:center; width:2rem; height:2rem; flex-shrink:0; border-radius:.6rem; background:#ebf2ee; color:#738f7f; }
 .booking-setting-icon .icon { width:1rem; height:1rem; }
 .booking-online { display:grid; gap:1.5rem; }
+.booking-help { display:grid; gap:.6rem; max-width:48rem; }
+.booking-help summary { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.25rem; cursor:pointer; font-weight:600; list-style:none; }
+.booking-help summary::-webkit-details-marker { display:none; }
+.booking-help summary .icon { flex:none; width:1.1rem; height:1.1rem; color:var(--muted); transition:transform .15s; }
+.booking-help details[open] summary .icon { transform:rotate(180deg); }
+.booking-help-body { padding:0 1.25rem 1.1rem; color:#33463c; line-height:1.65; }
+.booking-help-body p { margin:0 0 .7rem; }
+.booking-help-body p:last-child { margin-bottom:0; }
+.booking-help-body ol, .booking-help-body ul { margin:0 0 .7rem; padding-left:1.25rem; display:grid; gap:.4rem; }
+.booking-help-body ol:last-child, .booking-help-body ul:last-child { margin-bottom:0; }
+.booking-help-body b { color:var(--ink); font-weight:600; }
+.booking-help-body dl { margin:0; display:grid; gap:.25rem; }
+.booking-help-body dt { color:var(--ink); font-weight:600; margin-top:.6rem; }
+.booking-help-body dt:first-child { margin-top:0; }
+.booking-help-body dd { margin:0; }
 .booking-public-settings { margin:0; }
 .booking-panel-head { display:flex; align-items:center; gap:.9rem; margin-bottom:1.25rem; }
 .booking-panel-head > div { flex:1; min-width:0; }
@@ -784,8 +799,8 @@ body:has(dialog[open]) { overflow: hidden; }
 @media(max-width:650px) {
   .booking-page-heading { margin-bottom:22px; }
   .booking-toolbar { padding-bottom:1rem; margin-bottom:1.1rem; }
-  .booking-tabs { width:100%; }
-  .booking-tabs a { flex:1 0 auto; justify-content:center; padding:.6rem .75rem; }
+  .booking-tabs { width:100%; display:grid; grid-template-columns:1fr 1fr; overflow:visible; }
+  .booking-tabs a { justify-content:center; padding:.6rem .5rem; }
   .booking-tabs a .icon, .booking-tab-extra { display:none; }
   .booking-onboarding { flex-direction:column; }
   .booking-daybar { gap:.75rem; }
