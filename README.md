@@ -26,7 +26,7 @@ If a port is busy, change it in `.env` and run the script again: `TURNESTA_API_P
 
 ## Running on a server
 
-Requirements: a Linux server with Docker, a domain pointing to the server, and open ports 80 and 443.
+Requirements: a Linux server with Docker, Docker Compose and Buildx, a domain pointing to the server, and open ports 80 and 443.
 
 ```sh
 git clone https://github.com/TimeOfAnarchy/turnesta.git
@@ -40,11 +40,11 @@ Everyday commands, run from the project folder:
 
 ```sh
 ./scripts/backup.sh
-git pull && ./scripts/update.sh
+git pull && ./scripts/update.sh ghcr.io/timeofanarchy/turnesta:latest
 ./scripts/restore.sh backups/turnesta-<date>.dump
 ```
 
-The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version. To keep copies off the server, configure an encrypted [rclone](https://rclone.org/crypt/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an encrypted [rclone](https://rclone.org/crypt/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
 
 Keep a copy of `.env` somewhere safe: it holds the keys needed to restore on a new server. Point an uptime monitor at `https://your-domain/health/ready`.
 

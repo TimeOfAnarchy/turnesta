@@ -27,6 +27,14 @@ jobs:
           npm test
           npm run build
 
+      - name: Deployment scripts
+        run: |
+          for script in scripts/common.sh scripts/install.sh scripts/update.sh tests/deploy-update.test.sh; do sh -n "$script"; done
+          sh tests/deploy-update.test.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck -s sh -x -P scripts scripts/common.sh scripts/install.sh scripts/update.sh tests/deploy-update.test.sh
+          fi
+
       - name: Start the stack
         run: |
           ./scripts/init-env.sh

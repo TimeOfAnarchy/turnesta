@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck source=common.sh
 . "$(dirname -- "$0")/common.sh"
 
 ask() {
@@ -32,11 +33,15 @@ create_server_env() {
     case $answer in
         *[!a-zA-Z0-9.-]*) fail 'Enter only the domain name, without https:// or a path.' ;;
     esac
+    image=${TURNESTA_IMAGE:-}
+    if [ -z "$image" ]; then
+        image=$(image_digest ghcr.io/timeofanarchy/turnesta:latest)
+    fi
     (
         umask 077
         cat > .env <<EOF
 TURNESTA_DOMAIN=$answer
-TURNESTA_IMAGE=${TURNESTA_IMAGE:-ghcr.io/timeofanarchy/turnesta:latest}
+TURNESTA_IMAGE=$image
 
 POSTGRES_PASSWORD=$(key)
 TURNESTA_API_DB_PASSWORD=$(key)
