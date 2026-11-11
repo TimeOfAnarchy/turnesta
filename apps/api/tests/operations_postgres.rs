@@ -1,6 +1,6 @@
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
-use turnesta_api::operations;
+use turnesta_api::{database, operations};
 
 async fn pool(variable: &str) -> PgPool {
     let pool = PgPoolOptions::new()
@@ -33,7 +33,17 @@ async fn operations_inspection_is_readonly_deterministic_and_checks_runtime() {
     )
     .unwrap();
     assert_eq!(before["tables"], after["tables"]);
-    assert_eq!(before["migrations"].as_array().unwrap().len(), 27);
+    let versions: Vec<_> = before["migrations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|migration| migration["version"].as_i64().unwrap())
+        .collect();
+    let expected: Vec<_> = database::MIGRATOR
+        .iter()
+        .map(|migration| migration.version)
+        .collect();
+    assert_eq!(versions, expected);
     assert_eq!(before["ownership_valid"], true);
     assert_eq!(before["runtime_verified"], true);
     assert!(

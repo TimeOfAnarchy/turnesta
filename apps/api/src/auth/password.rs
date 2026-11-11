@@ -159,10 +159,30 @@ pub struct SetupCredential {
     pub version: i64,
 }
 
-pub async fn budget(pool: &PgPool, email: &Email, scope: &str) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT auth.password_budget($1,$2)")
+pub async fn budget(
+    pool: &PgPool,
+    email: &Email,
+    scope: &str,
+    client: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT auth.password_budget_check($1,$2,$3)")
         .bind(email.as_str())
         .bind(scope)
+        .bind(client)
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn failure(
+    pool: &PgPool,
+    email: &Email,
+    scope: &str,
+    client: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT auth.password_failure($1,$2,$3)")
+        .bind(email.as_str())
+        .bind(scope)
+        .bind(client)
         .fetch_one(pool)
         .await
 }

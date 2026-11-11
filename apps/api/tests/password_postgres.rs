@@ -177,6 +177,28 @@ impl Fixture {
         )
         .await
     }
+    async fn password_login_from(&self, email: &str, password: &str, ip: &str) -> Response {
+        self.app
+            .clone()
+            .oneshot(
+                Request::post("/auth/password/login")
+                    .header("origin", ORIGIN)
+                    .header("content-type", "application/json")
+                    .header("x-real-ip", ip)
+                    .body(Body::from(
+                        json!({"email":email,"password":password}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+    fn use_client_header(&mut self) {
+        self.app = router(
+            AppState::new(self.runtime.clone(), Duration::from_secs(1))
+                .with_client_ip_header(Some("x-real-ip".parse().unwrap())),
+        );
+    }
     async fn setup_token(&self) -> String {
         let response = self.password_login(self.email.as_str(), TEMP).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -478,6 +500,151 @@ async fn setup_grants_expire_are_replaced_and_cannot_survive_admin_reset() {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated *_test database"]
+async fn repeated_successful_password_logins_do_not_exhaust_the_budget() {
+    let f = Fixture::new().await;
+    f.activate().await;
+    for _ in 0..20 {
+        assert_eq!(
+            f.password_login(f.email.as_str(), PERSONAL).await.status(),
+            StatusCode::OK
+        );
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn distributed_failures_do_not_block_another_client_or_email() {
+    let mut f = Fixture::new().await;
+    f.activate().await;
+    f.use_client_header();
+    for n in 0..300 {
+        let email = format!("unknown-{n}@example.test");
+        let ip = format!("198.18.{}.{}", n / 254, n % 254 + 1);
+        assert_eq!(
+            f.password_login_from(&email, TEMP, &ip).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        f.password_login_from(f.email.as_str(), PERSONAL, "203.0.113.9")
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn password_failure_limits_apply_per_pair_and_client() {
+    let mut f = Fixture::new().await;
+    f.activate().await;
+    f.use_client_header();
+    for _ in 0..10 {
+        assert_eq!(
+            f.password_login_from(f.email.as_str(), TEMP, "203.0.113.1")
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let blocked = f
+        .password_login_from(f.email.as_str(), PERSONAL, "::ffff:203.0.113.1")
+        .await;
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body(blocked).await["code"], "password_rate_limited");
+    assert_eq!(
+        f.password_login_from(f.email.as_str(), PERSONAL, "203.0.113.2")
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    for n in 0..50 {
+        let email = format!("another-{n}@example.test");
+        assert_eq!(
+            f.password_login_from(&email, TEMP, "198.51.100.1")
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        f.password_login_from(f.email.as_str(), PERSONAL, "198.51.100.1")
+            .await
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn password_change_counts_wrong_current_passwords_separately_from_login() {
+    let f = Fixture::new().await;
+    let signed = f.activate().await;
+    for _ in 0..10 {
+        let response = f
+            .post(
+                "/auth/password",
+                json!({"current_password":TEMP,"new_password":NEXT}),
+                Some(&signed),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    let response = f
+        .post(
+            "/auth/password",
+            json!({"current_password":PERSONAL,"new_password":NEXT}),
+            Some(&signed),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body(response).await["code"], "password_rate_limited");
+    assert_eq!(
+        f.password_login(f.email.as_str(), PERSONAL).await.status(),
+        StatusCode::OK
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn password_email_window_expiry_scope_and_concurrent_failures() {
+    let f = Fixture::new().await;
+    let email = &f.email;
+    let attempts = (0..100).map(|n| {
+        let pool = &f.runtime;
+        async move { password::failure(pool, email, "login", &format!("client-{n}")).await }
+    });
+    for result in futures_util::future::join_all(attempts).await {
+        result.unwrap();
+    }
+    assert!(
+        !password::budget(&f.runtime, email, "login", "another")
+            .await
+            .unwrap()
+    );
+    assert!(
+        password::budget(&f.runtime, email, "setup", "another")
+            .await
+            .unwrap()
+    );
+    sqlx::query("UPDATE auth.password_attempt_windows SET window_start=clock_timestamp()-interval '61 minutes'")
+        .execute(&f.migrator).await.unwrap();
+    assert!(
+        password::budget(&f.runtime, email, "login", "another")
+            .await
+            .unwrap()
+    );
+    assert!(!sqlx::query_scalar::<_, bool>("SELECT has_function_privilege('turnesta_runtime','auth.password_budget(text,text)','EXECUTE')")
+        .fetch_one(&f.migrator).await.unwrap());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
 async fn wrong_and_unknown_emails_share_errors_and_database_throttling_across_routers() {
     let f = Fixture::new().await;
     f.admin_password(TEMP).await;
@@ -510,17 +677,17 @@ async fn wrong_and_unknown_emails_share_errors_and_database_throttling_across_ro
         other.oneshot(request).await.unwrap().status(),
         StatusCode::TOO_MANY_REQUESTS
     );
-    sqlx::query("UPDATE auth.password_attempt_windows SET window_start=clock_timestamp()-interval '6 minutes'").execute(&f.migrator).await.unwrap();
+    sqlx::query("UPDATE auth.password_attempt_windows SET window_start=clock_timestamp()-interval '16 minutes'").execute(&f.migrator).await.unwrap();
     assert_eq!(
         f.password_login(&missing, TEMP).await.status(),
         StatusCode::UNAUTHORIZED
     );
-    sqlx::query("UPDATE auth.password_attempt_windows SET attempts=200 WHERE bucket=sha256(convert_to('turnesta.password.global:login','UTF8'))").execute(&f.migrator).await.unwrap();
+    sqlx::query("INSERT INTO auth.password_attempt_windows(bucket,window_start,attempts) VALUES(sha256(convert_to('turnesta.password.global:login','UTF8')),clock_timestamp(),200) ON CONFLICT(bucket) DO UPDATE SET window_start=excluded.window_start,attempts=excluded.attempts").execute(&f.migrator).await.unwrap();
     assert_eq!(
         f.password_login(&format!("another-{}@example.test", Uuid::new_v4()), TEMP)
             .await
             .status(),
-        StatusCode::TOO_MANY_REQUESTS
+        StatusCode::UNAUTHORIZED
     );
     f.close().await;
 }

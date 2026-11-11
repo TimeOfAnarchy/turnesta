@@ -93,9 +93,31 @@ async fn db<T>(future: impl Future<Output = Result<T, sqlx::Error>>) -> Result<T
         .map_err(|_| ApiError::unavailable())?
         .map_err(Into::into)
 }
-async fn budget(state: &AppState, email: &Email, scope: &str) -> Result<(), ApiError> {
-    if !db(password::budget(&state.pool, email, scope)).await? {
+fn client(state: &AppState, headers: &HeaderMap) -> String {
+    state
+        .client_limit
+        .client(headers)
+        .map_or_else(|| "unknown".into(), |ip| ip.to_string())
+}
+async fn budget(
+    state: &AppState,
+    email: &Email,
+    scope: &str,
+    client: &str,
+) -> Result<(), ApiError> {
+    if !db(password::budget(&state.pool, email, scope, client)).await? {
         return Err(rate_limited());
+    }
+    Ok(())
+}
+async fn failure(
+    state: &AppState,
+    email: &Email,
+    scope: &str,
+    client: &str,
+) -> Result<(), ApiError> {
+    if db(password::failure(&state.pool, email, scope, client)).await? {
+        tracing::warn!(scope, "elevated password verification failures");
     }
     Ok(())
 }
@@ -168,10 +190,12 @@ pub(super) async fn login(
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let secret = Zeroizing::new(body.password);
     let email = Email::parse(&body.email).map_err(|_| invalid_login())?;
-    budget(&state, &email, "login").await?;
+    let client = client(&state, &headers);
+    budget(&state, &email, "login", &client).await?;
     let credential = db(password::lookup(&state.pool, &email)).await?;
     let hash = credential.as_ref().map(|c| c.password_hash.clone());
     if !state.password_engine.verify(secret, hash).await? {
+        failure(&state, &email, "login", &client).await?;
         return Err(invalid_login());
     }
     let credential = credential.ok_or_else(invalid_login)?;
@@ -248,12 +272,14 @@ pub(super) async fn setup(
     .await?;
     let snapshot = snapshot.ok_or_else(invalid_login)?;
     let email = Email::parse(&snapshot.email).map_err(|_| ApiError::unavailable())?;
-    budget(&state, &email, "setup").await?;
+    let client = client(&state, &headers);
+    budget(&state, &email, "setup", &client).await?;
     if state
         .password_engine
         .verify(secret.clone(), snapshot.password_hash)
         .await?
     {
+        failure(&state, &email, "setup", &client).await?;
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "password_unchanged",
@@ -327,18 +353,15 @@ pub(super) async fn change(
     let own = db(password::own(&state.pool, &signed.token_hash))
         .await?
         .ok_or_else(ApiError::unauthorized)?;
-    budget(
-        &state,
-        &Email::parse(&own.email).map_err(|_| ApiError::unavailable())?,
-        "change",
-    )
-    .await?;
+    let email = Email::parse(&own.email).map_err(|_| ApiError::unavailable())?;
+    budget(&state, &email, "change", email.as_str()).await?;
     if own.requires_current_password
         && !state
             .password_engine
             .verify(current, own.password_hash.clone())
             .await?
     {
+        failure(&state, &email, "change", email.as_str()).await?;
         return Err(invalid_login());
     }
     if own.password_hash.is_some()
@@ -347,6 +370,7 @@ pub(super) async fn change(
             .verify(secret.clone(), own.password_hash)
             .await?
     {
+        failure(&state, &email, "change", email.as_str()).await?;
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "password_unchanged",

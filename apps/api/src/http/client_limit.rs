@@ -29,9 +29,10 @@ impl ClientLimit {
             .is_none_or(|client| self.record(client, Instant::now()))
     }
 
-    fn client(&self, headers: &HeaderMap) -> Option<IpAddr> {
+    pub(super) fn client(&self, headers: &HeaderMap) -> Option<IpAddr> {
         let value = headers.get(self.header.as_ref()?)?.to_str().ok()?;
-        match value.trim().parse().ok()? {
+        let ip: IpAddr = value.trim().parse().ok()?;
+        match ip.to_canonical() {
             IpAddr::V6(ip) => Some(IpAddr::V6((u128::from(ip) >> 64 << 64).into())),
             ip => Some(ip),
         }
@@ -97,6 +98,15 @@ mod tests {
         }
         assert!(!limit.allows(&from("2001:db8:1:1::ffff")));
         assert!(limit.allows(&from("2001:db8:1:2::1")));
+    }
+
+    #[test]
+    fn mapped_ipv4_addresses_share_the_ipv4_bucket() {
+        let limit = limit();
+        assert_eq!(
+            limit.client(&from("::ffff:203.0.113.1")),
+            limit.client(&from("203.0.113.1"))
+        );
     }
 
     #[test]
