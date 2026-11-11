@@ -71,11 +71,15 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<()> {
     telemetry::init()?;
     let config = Config::from_env()?;
-    let pool = database::connect(&config.database)
-        .await
-        .context("could not connect to PostgreSQL")?;
+    let command = cli.command.unwrap_or(Command::Serve);
+    let pool = if matches!(command, Command::Serve) {
+        database::connect_api(&config.database).await
+    } else {
+        database::connect(&config.database).await
+    }
+    .context("could not connect to PostgreSQL")?;
 
-    match cli.command.unwrap_or(Command::Serve) {
+    match command {
         Command::Migrate => {
             tracing::info!("applying database migrations");
             let result = database::migrate(&pool)
