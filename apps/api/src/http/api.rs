@@ -102,6 +102,13 @@ impl ApiError {
             "Service temporarily unavailable",
         )
     }
+    pub(super) fn internal() -> Self {
+        Self(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            "Internal server error",
+        )
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -119,8 +126,54 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        tracing::error!(sqlstate = ?error.as_database_error().and_then(|e| e.code()), "API database operation failed");
-        Self::unavailable()
+        let transient = match &error {
+            sqlx::Error::PoolTimedOut
+            | sqlx::Error::PoolClosed
+            | sqlx::Error::Io(_)
+            | sqlx::Error::Tls(_)
+            | sqlx::Error::WorkerCrashed => true,
+            sqlx::Error::Database(db) => {
+                let code = db.code();
+                tracing::error!(sqlstate = ?code, constraint = ?db.constraint(), table = ?db.table(),
+                    database_message = ?safe_database_message(db.message()), "API database operation failed");
+                code.as_deref().is_some_and(|code| {
+                    code.starts_with("08")
+                        || matches!(
+                            code,
+                            "57014"
+                                | "55P03"
+                                | "40001"
+                                | "40P01"
+                                | "57P01"
+                                | "57P02"
+                                | "57P03"
+                                | "53300"
+                        )
+                })
+            }
+            _ => false,
+        };
+        if !matches!(error, sqlx::Error::Database(_)) {
+            tracing::error!(kind = ?std::mem::discriminant(&error), "API database operation failed");
+        }
+        if transient {
+            Self::unavailable()
+        } else {
+            Self::internal()
+        }
+    }
+}
+
+fn safe_database_message(message: &str) -> Option<&str> {
+    // Database messages can include bound values; log only fixed known texts.
+    match message {
+        "canceling statement due to statement timeout"
+        | "canceling statement due to lock timeout"
+        | "deadlock detected"
+        | "could not serialize access due to concurrent update"
+        | "could not serialize access due to read/write dependencies among transactions"
+        | "division by zero" => Some(message),
+        _ => None,
     }
 }
 
@@ -153,7 +206,10 @@ impl From<CoreError> for ApiError {
                 "invalid_navigation",
                 "Select distinct known services",
             ),
-            _ => Self::unavailable(),
+            other => {
+                tracing::error!(error = %other, "unexpected core operation failure");
+                Self::internal()
+            }
         }
     }
 }
@@ -647,6 +703,128 @@ pub(super) async fn time_zones(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        borrow::Cow,
+        sync::{Arc, Mutex},
+    };
+
+    #[derive(Debug)]
+    struct DatabaseFailure {
+        code: &'static str,
+        message: &'static str,
+    }
+    impl std::fmt::Display for DatabaseFailure {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.message)
+        }
+    }
+    impl std::error::Error for DatabaseFailure {}
+    impl sqlx::error::DatabaseError for DatabaseFailure {
+        fn message(&self) -> &str {
+            self.message
+        }
+        fn code(&self) -> Option<Cow<'_, str>> {
+            Some(self.code.into())
+        }
+        fn constraint(&self) -> Option<&str> {
+            Some("example_constraint")
+        }
+        fn table(&self) -> Option<&str> {
+            Some("example_table")
+        }
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+    }
+
+    fn db_error(code: &'static str, message: &'static str) -> sqlx::Error {
+        sqlx::Error::Database(Box::new(DatabaseFailure { code, message }))
+    }
+    #[test]
+    fn unexpected_database_errors_are_internal() {
+        for error in [
+            sqlx::Error::RowNotFound,
+            sqlx::Error::ColumnNotFound("private".into()),
+        ] {
+            let response = ApiError::from(error);
+            assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(response.1, "internal");
+        }
+        for error in [
+            sqlx::Error::PoolTimedOut,
+            sqlx::Error::PoolClosed,
+            sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()),
+        ] {
+            assert_eq!(ApiError::from(error).0, StatusCode::SERVICE_UNAVAILABLE);
+        }
+        assert_eq!(
+            ApiError::from(CoreError::RuntimeRoleRequired).0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        for code in [
+            "57014", "55P03", "40001", "40P01", "08006", "57P01", "53300",
+        ] {
+            assert_eq!(
+                ApiError::from(db_error(code, "failure")).0,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{code}"
+            );
+        }
+        for code in ["23505", "23514", "22023", "XX000"] {
+            assert_eq!(
+                ApiError::from(db_error(code, "failure")).0,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn database_log_keeps_safe_diagnostics_without_parameter_values() {
+        #[derive(Clone)]
+        struct Log(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let output = Log(Arc::new(Mutex::new(Vec::new())));
+        let writer = output.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            let _ = ApiError::from(db_error("22007", "invalid input syntax: private-sentinel"));
+            let _ = ApiError::from(db_error(
+                "57014",
+                "canceling statement due to statement timeout",
+            ));
+            let _ = ApiError::from(sqlx::Error::Protocol("private-sentinel".into()));
+        });
+        let log = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            log.contains("22007")
+                && log.contains("example_constraint")
+                && log.contains("example_table")
+        );
+        assert!(log.contains("canceling statement due to statement timeout"));
+        assert!(!log.contains("private-sentinel"));
+    }
     #[test]
     fn duplicate_session_cookies_are_rejected_and_other_cookies_are_ignored() {
         let mut headers = HeaderMap::new();

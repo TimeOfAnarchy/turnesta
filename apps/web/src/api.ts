@@ -162,6 +162,7 @@ export const api = {
 
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.status === 500) return 'Ошибка на сервере. Сообщите администратору';
     if (error.code === 'tips_disabled') return 'Тестовый режим чаевых сейчас выключен. Обратитесь к администратору сервиса.';
     if (error.code === 'invalid_name') return 'Введите название от 1 до 120 символов без управляющих символов.';
     if (error.code === 'invalid_time_zone') return 'Такой часовой пояс не найден. Выберите значение из подсказок, например Europe/Moscow.';

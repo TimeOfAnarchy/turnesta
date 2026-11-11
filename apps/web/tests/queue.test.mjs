@@ -58,10 +58,12 @@ test('a fresh intention gets a fresh key even when CallNext was empty', async ()
 });
 
 test('uncertain errors and expired login retain the command; definitive rejection releases it', async () => {
-  for (const error of [new ApiError(503, 'service_unavailable'), new TypeError('network'), new SyntaxError('json'), new ApiError(401, 'unauthorized'), new ApiError(409, 'idempotency_conflict')]) {
-    const journal = new QueueCommands(scope, storage(), async () => { throw error; });
+  for (const error of [new ApiError(500, 'internal'), new ApiError(503, 'service_unavailable'), new TypeError('network'), new SyntaxError('json'), new ApiError(401, 'unauthorized'), new ApiError(409, 'idempotency_conflict')]) {
+    let calls = 0;
+    const journal = new QueueCommands(scope, storage(), async () => { calls++; throw error; });
     await assert.rejects(journal.run({ type: 'issue' }));
     assert.ok(journal.pending);
+    assert.equal(calls, 1);
   }
   for (const status of [400, 403, 404, 409, 429]) {
     const journal = new QueueCommands(scope, storage(), async () => { throw new ApiError(status, 'state_conflict'); });

@@ -86,5 +86,6 @@ test('unauthorized response invokes sign-out before rejecting the request', asyn
 test('user-facing errors do not echo arbitrary server data', () => {
   const text = errorMessage(new ApiError(500, '<sensitive-server-data>'));
   assert.equal(text.includes('sensitive'), false);
-  assert.ok(text.includes('недоступен'));
+  assert.equal(text, 'Ошибка на сервере. Сообщите администратору');
+  assert.ok(errorMessage(new ApiError(503, 'service_unavailable')).includes('временно недоступен'));
 });
