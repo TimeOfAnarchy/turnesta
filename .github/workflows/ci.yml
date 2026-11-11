@@ -29,10 +29,11 @@ jobs:
 
       - name: Deployment scripts
         run: |
-          for script in scripts/common.sh scripts/install.sh scripts/update.sh tests/deploy-update.test.sh; do sh -n "$script"; done
+          for script in scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh tests/deploy-update.test.sh tests/backup-restore.test.sh; do sh -n "$script"; done
           sh tests/deploy-update.test.sh
+          sh tests/backup-restore.test.sh
           if command -v shellcheck >/dev/null; then
-            shellcheck -s sh -x -P scripts scripts/common.sh scripts/install.sh scripts/update.sh tests/deploy-update.test.sh
+            shellcheck -s sh -x -P scripts scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh tests/deploy-update.test.sh tests/backup-restore.test.sh
           fi
 
       - name: Start the stack

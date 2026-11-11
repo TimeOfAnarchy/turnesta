@@ -61,6 +61,11 @@ TURNESTA_SMTP_PASSWORD=
 # Set an rclone remote to copy each backup off the server, for example s3:bucket/turnesta.
 TURNESTA_BACKUP_REMOTE=
 TURNESTA_BACKUP_KEEP=14
+
+# Public age recipient for encrypted backups; keep the private identity off-server.
+TURNESTA_BACKUP_AGE_RECIPIENT=
+# Optional healthchecks-compatible URL for backup success/failure pings.
+TURNESTA_BACKUP_PING_URL=
 EOF
     )
 }
@@ -70,6 +75,24 @@ schedule_backups() {
         printf '30 3 * * * root %s/scripts/backup.sh >> /var/log/turnesta-backup.log 2>&1\n' "$PWD" > /etc/cron.d/turnesta
     else
         echo 'Add ./scripts/backup.sh to cron to back up the database every day.'
+    fi
+    if [ -w /etc/logrotate.d ]; then
+        if [ -e /etc/logrotate.d/turnesta ]; then
+            echo 'Existing /etc/logrotate.d/turnesta retained; verify the backup log policy.'
+        else
+            (umask 022; set -C; cat > /etc/logrotate.d/turnesta <<'EOF'
+/var/log/turnesta-backup.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+}
+EOF
+            )
+        fi
+    else
+        echo 'Configure log rotation for /var/log/turnesta-backup.log.'
     fi
 }
 

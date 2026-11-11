@@ -21,6 +21,13 @@ image_digest() {
     printf '%s@%s\n' "$repository" "$digest"
 }
 
+acquire_backup_lock() {
+    command -v flock > /dev/null 2>&1 || fail 'flock is required for backup and restore.'
+    mkdir -p backups
+    exec 9>>backups/.turnesta-backup.lock
+    flock -x -w 600 9 || fail 'Could not acquire the backup and restore lock within 10 minutes.'
+}
+
 compose() {
     if [ "$server" = true ]; then
         docker compose --env-file .env --file deploy/compose.prod.yaml "$@"

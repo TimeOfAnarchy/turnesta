@@ -26,7 +26,7 @@ If a port is busy, change it in `.env` and run the script again: `TURNESTA_API_P
 
 ## Running on a server
 
-Requirements: a Linux server with Docker, Docker Compose and Buildx, a domain pointing to the server, and open ports 80 and 443.
+Requirements: a Linux server with Docker, Docker Compose, Buildx, `flock` and `curl`, a domain pointing to the server, and open ports 80 and 443. Install `age` too if backup encryption is enabled.
 
 ```sh
 git clone https://github.com/TimeOfAnarchy/turnesta.git
@@ -42,9 +42,13 @@ Everyday commands, run from the project folder:
 ./scripts/backup.sh
 git pull && ./scripts/update.sh ghcr.io/timeofanarchy/turnesta:latest
 ./scripts/restore.sh backups/turnesta-<date>.dump
+# For an encrypted backup:
+./scripts/restore.sh backups/turnesta-<date>.dump.age /path/to/age-identity.txt
 ```
 
-The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an encrypted [rclone](https://rclone.org/crypt/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an [rclone](https://rclone.org/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+
+For encrypted backups, generate an [age](https://github.com/FiloSottile/age) identity on a trusted device and set its public recipient (`age1…`) as `TURNESTA_BACKUP_AGE_RECIPIENT` in the server's `.env`. Keep the private identity separately from the server and backups; provide its file to `restore.sh` only when needed. Losing this identity makes encrypted copies unrecoverable. Without a recipient, backups remain unencrypted and the script warns on every run; use an encrypted rclone remote if sending these copies offsite. Set `TURNESTA_BACKUP_PING_URL` to a private healthchecks-style URL to report successful and failed backup runs.
 
 Keep a copy of `.env` somewhere safe: it holds the keys needed to restore on a new server. Point an uptime monitor at `https://your-domain/health/ready`.
 
