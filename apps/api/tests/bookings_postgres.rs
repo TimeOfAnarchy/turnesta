@@ -2437,6 +2437,105 @@ async fn public_bookings_quota_does_not_block_replay_or_staff() {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_booking_location_cap_counts_only_active_visits() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let seed = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 1,
+        },
+    )
+    .await;
+    let target = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 50,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    public_bookings::book(&f.runtime, slug, &[1; 32], public_input(&seed))
+        .await
+        .unwrap();
+
+    let mut tx = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)")
+        .bind(f.tenant.to_string())
+        .bind(f.owner.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE bookings.appointments DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("WITH copies AS (INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status,source,title,specialist_name,mode,local_date,starts_local,ends_local,starts_at,ends_at,time_zone,created_by,updated_by,form_snapshot,answers,consent_url,consent_at) SELECT a.tenant_id,a.location_id,a.specialist_id,a.offer_id,gen_random_uuid(),a.client_name,a.phone,a.email,a.note,a.status,a.source,a.title,a.specialist_name,a.mode,a.local_date,a.starts_local,a.ends_local,a.starts_at,a.ends_at,a.time_zone,a.created_by,a.updated_by,a.form_snapshot,a.answers,a.consent_url,a.consent_at FROM bookings.appointments a CROSS JOIN generate_series(1,999) WHERE a.tenant_id=$1 AND a.offer_id=$2 RETURNING tenant_id,location_id,id) INSERT INTO bookings.public_claims(tenant_id,location_id,token_hash,appointment_id,request_fingerprint,public_zone,created_at) SELECT tenant_id,location_id,sha256(convert_to(id::text,'UTF8')),id,sha256(convert_to(id::text,'UTF8')),'Europe/Moscow',clock_timestamp()-interval '2 minutes' FROM copies")
+        .bind(f.tenant).bind(seed.id).execute(&mut *tx).await.unwrap();
+    sqlx::query("UPDATE bookings.public_claims SET created_at=clock_timestamp()-interval '2 minutes' WHERE tenant_id=$1")
+        .bind(f.tenant).execute(&mut *tx).await.unwrap();
+    sqlx::query("ALTER TABLE bookings.appointments ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    for (case, starts, date, cancelled, limited) in [
+        ("future time", Some(86400_i64), Some(-1_i32), false, true),
+        ("999 future", Some(86400), Some(-1), false, false),
+        ("past time", Some(-86400), Some(1), false, false),
+        ("past date", None, Some(-1), false, false),
+        ("today in point timezone", None, Some(0), false, true),
+        ("future date", None, Some(1), false, true),
+        ("no date", None, None, false, true),
+        ("cancelled", None, None, true, false),
+    ] {
+        let mut tx = f.migrator.begin().await.unwrap();
+        sqlx::query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)")
+            .bind(f.tenant.to_string())
+            .bind(f.owner.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("ALTER TABLE bookings.appointments DISABLE TRIGGER USER")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE bookings.appointments SET starts_at=clock_timestamp()+($3::bigint * interval '1 second'),local_date=(clock_timestamp() AT TIME ZONE 'Europe/Moscow')::date+$4::integer,status=CASE WHEN $5 THEN 'cancelled' ELSE 'confirmed' END,cancelled_at=CASE WHEN $5 THEN clock_timestamp() ELSE NULL END WHERE tenant_id=$1 AND offer_id=$2")
+            .bind(f.tenant).bind(seed.id).bind(starts).bind(date).bind(cancelled).execute(&mut *tx).await.unwrap();
+        if case == "999 future" {
+            sqlx::query("UPDATE bookings.appointments SET status='cancelled',cancelled_at=clock_timestamp() WHERE tenant_id=$1 AND id=(SELECT id FROM bookings.appointments WHERE tenant_id=$1 AND offer_id=$2 LIMIT 1)")
+                .bind(f.tenant).bind(seed.id).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("ALTER TABLE bookings.appointments ENABLE TRIGGER USER")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let token = hex::encode(Sha256::digest(case.as_bytes()));
+        let (status, body) = f
+            .json(public_post(
+                slug,
+                &token,
+                serde_json::to_value(public_input(&target)).unwrap(),
+            ))
+            .await;
+        if limited {
+            assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{case}: {body}");
+            assert_eq!(body["code"], "booking_rate_limit", "{case}: {body}");
+        } else {
+            assert_eq!(status, StatusCode::OK, "{case}: {body}");
+        }
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn public_bookings_owner_capability_boundary_cannot_be_spoofed_by_runtime() {
     let f = Fixture::new("Europe/Moscow").await;
     let spec = f.specialist().await;
