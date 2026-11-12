@@ -93,6 +93,11 @@ impl From<PublicBookingError> for ApiError {
                 "booking_rate_limit",
                 "Please retry later",
             ),
+            PublicBookingError::PhoneLimit => Self::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "booking_phone_limit",
+                "Too many upcoming bookings for this phone number",
+            ),
             PublicBookingError::Invalid => Self::new(
                 StatusCode::BAD_REQUEST,
                 "invalid_booking_form",

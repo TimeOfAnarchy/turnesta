@@ -8,12 +8,16 @@ use std::{
 
 const WINDOW: Duration = Duration::from_secs(3600);
 const LIMIT: u32 = 10;
+const DAY: Duration = Duration::from_secs(86400);
+const DAY_LIMIT: u32 = 30;
 const MAX_TRACKED: usize = 10_000;
+
+type ClientWindows = HashMap<IpAddr, (Instant, u32, Instant, u32)>;
 
 #[derive(Clone, Default)]
 pub(super) struct ClientLimit {
     header: Option<HeaderName>,
-    windows: Arc<Mutex<HashMap<IpAddr, (Instant, u32)>>>,
+    windows: Arc<Mutex<ClientWindows>>,
 }
 
 impl ClientLimit {
@@ -25,8 +29,16 @@ impl ClientLimit {
     }
 
     pub(super) fn allows(&self, headers: &HeaderMap) -> bool {
-        self.client(headers)
-            .is_none_or(|client| self.record(client, Instant::now()))
+        if self.header.is_none() {
+            return true;
+        }
+        match self.client(headers) {
+            Some(client) => self.record(client, Instant::now()),
+            None => {
+                tracing::warn!("configured client IP header is missing or invalid");
+                false
+            }
+        }
     }
 
     pub(super) fn client(&self, headers: &HeaderMap) -> Option<IpAddr> {
@@ -40,18 +52,29 @@ impl ClientLimit {
 
     fn record(&self, client: IpAddr, now: Instant) -> bool {
         let mut windows = self.windows.lock().unwrap_or_else(PoisonError::into_inner);
-        if windows.len() >= MAX_TRACKED {
-            windows.retain(|_, (start, _)| now.duration_since(*start) < WINDOW);
-            if windows.len() >= MAX_TRACKED {
-                windows.clear();
+        if !windows.contains_key(&client) && windows.len() >= MAX_TRACKED {
+            windows.retain(|_, (_, _, day_start, _)| now.duration_since(*day_start) < DAY);
+            if windows.len() >= MAX_TRACKED
+                && let Some(oldest) = windows
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.2)
+                    .map(|(ip, _)| *ip)
+            {
+                windows.remove(&oldest);
             }
         }
-        let entry = windows.entry(client).or_insert((now, 0));
+        let entry = windows.entry(client).or_insert((now, 0, now, 0));
         if now.duration_since(entry.0) >= WINDOW {
-            *entry = (now, 0);
+            entry.0 = now;
+            entry.1 = 0;
         }
-        entry.1 += 1;
-        entry.1 <= LIMIT
+        if now.duration_since(entry.2) >= DAY {
+            entry.2 = now;
+            entry.3 = 0;
+        }
+        entry.1 = entry.1.saturating_add(1);
+        entry.3 = entry.3.saturating_add(1);
+        entry.1 <= LIMIT && entry.3 <= DAY_LIMIT
     }
 }
 
@@ -91,6 +114,36 @@ mod tests {
     }
 
     #[test]
+    fn daily_limit_survives_hourly_resets() {
+        let limit = limit();
+        let ip = "203.0.113.1".parse().unwrap();
+        let start = Instant::now();
+        for hour in 0..3 {
+            for _ in 0..10 {
+                assert!(limit.record(ip, start + WINDOW * hour));
+            }
+        }
+        assert!(!limit.record(ip, start + WINDOW * 3));
+        assert!(limit.record(ip, start + DAY));
+    }
+
+    #[test]
+    fn capacity_evicts_oldest_instead_of_clearing_all() {
+        let limit = limit();
+        let start = Instant::now();
+        for n in 0..MAX_TRACKED {
+            let ip = IpAddr::V4((n as u32).into());
+            assert!(limit.record(ip, start + Duration::from_millis(n as u64)));
+        }
+        let new = IpAddr::V4((MAX_TRACKED as u32).into());
+        assert!(limit.record(new, start + Duration::from_secs(11)));
+        let windows = limit.windows.lock().unwrap();
+        assert_eq!(windows.len(), MAX_TRACKED);
+        assert!(!windows.contains_key(&IpAddr::V4(0_u32.into())));
+        assert!(windows.contains_key(&IpAddr::V4(1_u32.into())));
+    }
+
+    #[test]
     fn ipv6_addresses_of_one_network_share_a_limit() {
         let limit = limit();
         for host in 0..LIMIT {
@@ -110,15 +163,15 @@ mod tests {
     }
 
     #[test]
-    fn without_a_configured_header_or_address_nothing_is_limited() {
+    fn configured_header_fails_closed_when_address_is_missing_or_invalid() {
         let direct = ClientLimit::default();
         for _ in 0..=LIMIT {
             assert!(direct.allows(&from("203.0.113.1")));
         }
         let limit = limit();
         for _ in 0..=LIMIT {
-            assert!(limit.allows(&HeaderMap::new()));
-            assert!(limit.allows(&from("not-an-address")));
+            assert!(!limit.allows(&HeaderMap::new()));
+            assert!(!limit.allows(&from("not-an-address")));
         }
     }
 }

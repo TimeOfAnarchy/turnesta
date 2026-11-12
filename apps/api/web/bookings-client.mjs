@@ -93,6 +93,7 @@ const definite = new Set([
   'invalid_booking_form',
   'invalid_request',
   'booking_rate_limit',
+  'booking_phone_limit',
 ]);
 export class PublicBookingClient {
   constructor(slug, storage, locks, send = bookingRequest, generate = token) {
@@ -292,6 +293,8 @@ export function guestError(error) {
         'Для записи нужен браузер с поддержкой защищённого хранилища и Web Locks. Откройте страницу в современном браузере.',
       booking_request_conflict:
         'Этот запрос отличается от сохранённого. Проверьте прежнюю запись или обратитесь в организацию.',
+      booking_phone_limit:
+        'На этот номер уже есть несколько будущих записей. Позвоните в клинику.',
       booking_rate_limit:
         'Сейчас поступает много записей. Попробуйте немного позже.',
       too_many_requests: 'Сервис занят. Повторите проверку чуть позже.',

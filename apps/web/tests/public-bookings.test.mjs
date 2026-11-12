@@ -4,6 +4,7 @@ import {
   PublicBookingClient,
   BookingGuestError,
   bookingRequest,
+  guestError,
   monthGrid,
   shiftMonth,
   timeLabel,
@@ -14,6 +15,9 @@ afterEach(() => {
   delete globalThis.document;
 });
 const id = 'b69920ef-d721-461c-a3f1-8962a2faef08';
+test('phone limit explains how to proceed', () => {
+  assert.equal(guestError({ code: 'booking_phone_limit' }), 'На этот номер уже есть несколько будущих записей. Позвоните в клинику.');
+});
 const body = () => ({
   offer_id: id,
   offer_version: 1,
@@ -156,6 +160,7 @@ test('known transaction rejections release intent but admission errors and unkno
     'booking_closed',
     'invalid_booking_form',
     'booking_rate_limit',
+    'booking_phone_limit',
   ]) {
     const c = new PublicBookingClient(
       id,

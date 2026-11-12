@@ -19,6 +19,8 @@ pub enum PublicBookingError {
     Closed,
     #[error("booking quota exceeded")]
     RateLimit,
+    #[error("phone booking limit exceeded")]
+    PhoneLimit,
     #[error("invalid booking form or answers")]
     Invalid,
     #[error("a valid privacy policy link is required")]
@@ -42,6 +44,7 @@ impl From<sqlx::Error> for PublicBookingError {
             Some("B2201") => Self::NotFound,
             Some("B2202") => Self::Closed,
             Some("B2203") => Self::RateLimit,
+            Some("B2208") => Self::PhoneLimit,
             Some("B2204" | "B2001") => Self::Invalid,
             Some("B2205") => Self::Changed,
             Some("B2206") => Self::IdempotencyConflict,

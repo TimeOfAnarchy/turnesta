@@ -2413,7 +2413,11 @@ async fn public_bookings_quota_does_not_block_replay_or_staff() {
     .await;
     let slug = publish(&f, BookingForm::default()).await;
     for n in 1..=30 {
-        public_bookings::book(&f.runtime, slug, &[n; 32], public_input(&o))
+        let mut input = public_input(&o);
+        input
+            .answers
+            .insert("phone".into(), format!("+7900000{n:04}"));
+        public_bookings::book(&f.runtime, slug, &[n; 32], input)
             .await
             .unwrap();
     }
@@ -2421,9 +2425,13 @@ async fn public_bookings_quota_does_not_block_replay_or_staff() {
         public_bookings::book(&f.runtime, slug, &[31; 32], public_input(&o)).await,
         Err(PubError::RateLimit)
     ));
-    public_bookings::book(&f.runtime, slug, &[1; 32], public_input(&o))
-        .await
-        .unwrap();
+    public_bookings::book(&f.runtime, slug, &[1; 32], {
+        let mut input = public_input(&o);
+        input.answers.insert("phone".into(), "+79000000001".into());
+        input
+    })
+    .await
+    .unwrap();
     appointment_execute(
         &f,
         f.owner,
@@ -2432,6 +2440,74 @@ async fn public_bookings_quota_does_not_block_replay_or_staff() {
     )
     .await
     .unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn public_phone_limit_counts_active_bookings_and_allows_replay() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let o = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 50,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let mut refs = Vec::new();
+    for n in 1..=3 {
+        let mut input = public_input(&o);
+        if n == 2 {
+            input.answers.insert("phone".into(), "+79000000000".into());
+        }
+        refs.push(
+            public_bookings::book(&f.runtime, slug, &[n; 32], input)
+                .await
+                .unwrap(),
+        );
+    }
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[4; 32], public_input(&o)).await,
+        Err(PubError::PhoneLimit)
+    ));
+    public_bookings::book(&f.runtime, slug, &[1; 32], public_input(&o))
+        .await
+        .unwrap();
+    let mut tx = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)")
+        .bind(f.tenant.to_string())
+        .bind(f.owner.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let appointment_id: Uuid = sqlx::query_scalar(
+        "SELECT appointment_id FROM bookings.public_claims WHERE tenant_id=$1 AND reference=$2",
+    )
+    .bind(f.tenant)
+    .bind(refs[0].reference)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: appointment_id,
+            specialist_id: spec.id,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    public_bookings::book(&f.runtime, slug, &[4; 32], public_input(&o))
+        .await
+        .unwrap();
     f.close().await;
 }
 
@@ -2521,7 +2597,14 @@ async fn public_booking_location_cap_counts_only_active_visits() {
             .json(public_post(
                 slug,
                 &token,
-                serde_json::to_value(public_input(&target)).unwrap(),
+                serde_json::to_value({
+                    let mut input = public_input(&target);
+                    input
+                        .answers
+                        .insert("phone".into(), format!("+7888{}", token.len() + case.len()));
+                    input
+                })
+                .unwrap(),
             ))
             .await;
         if limited {
