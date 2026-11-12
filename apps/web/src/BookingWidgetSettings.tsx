@@ -163,7 +163,7 @@ function WidgetEditor({
             <p id={`widget-origins-hint-${location}`} className="field-hint">
               До 10 адресов с https://, без пути и звёздочек. clinic.ru и
               www.clinic.ru — разные сайты. Пустой список запрещает новое
-              встраивание. Для проверки на своём компьютере подойдут
+              встраивание. Если Turnesta запущена на своём компьютере, подойдут
               http://localhost и http://127.0.0.1 с портом, например
               http://localhost:5500. Адрес самого Turnesta указать нельзя.
             </p>
@@ -216,8 +216,8 @@ function WidgetEditor({
       ) : error instanceof ApiError && error.code === 'invalid_widget_origins' ? (
         <p className="notice" role="alert">
           Проверьте адреса: нужен точный адрес сайта с https:// без пути,
-          параметров и звёздочек. http:// подходит только для localhost и
-          127.0.0.1.
+          параметров и звёздочек. http:// подходит для localhost и 127.0.0.1
+          только при локальном запуске Turnesta.
         </p>
       ) : error ? (
         <ErrorNotice error={error} />

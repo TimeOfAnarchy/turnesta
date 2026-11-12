@@ -125,6 +125,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
     let state = AppState::new(pool.clone(), config.ready_timeout)
         .with_queue_live(queue_live.clone())
         .with_auth(config.auth.clone())
+        .with_expose_openapi(config.expose_openapi)
         .with_payments(config.payments.clone())
         .with_client_ip_header(config.client_ip_header.clone())
         .with_web_dist(config.web_dist.clone());

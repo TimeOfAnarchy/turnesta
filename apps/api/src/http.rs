@@ -50,6 +50,7 @@ pub struct AppState {
     payments: crate::payments::PaymentConfig,
     public_gate: Arc<tokio::sync::Semaphore>,
     client_limit: client_limit::ClientLimit,
+    expose_openapi: bool,
     queue_live: Option<Arc<crate::queue_live::LiveHub>>,
 }
 
@@ -66,6 +67,7 @@ impl AppState {
             payments: crate::payments::PaymentConfig::default(),
             public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
             client_limit: client_limit::ClientLimit::default(),
+            expose_openapi: false,
             queue_live: None,
         }
     }
@@ -89,6 +91,11 @@ impl AppState {
 
     pub fn with_client_ip_header(mut self, header: Option<HeaderName>) -> Self {
         self.client_limit = client_limit::ClientLimit::new(header);
+        self
+    }
+
+    pub fn with_expose_openapi(mut self, expose: bool) -> Self {
+        self.expose_openapi = expose;
         self
     }
 
@@ -446,7 +453,16 @@ fn not_ready() -> (StatusCode, Json<HealthResponse>) {
     )
 }
 
-async fn openapi(State(state): State<AppState>) -> Json<utoipa::openapi::OpenApi> {
+async fn openapi(
+    State(state): State<AppState>,
+) -> Result<Json<utoipa::openapi::OpenApi>, api::ApiError> {
+    if !state.expose_openapi && !crate::auth::is_loopback_origin(&state.auth.public_origin) {
+        return Err(api::ApiError::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "Not found",
+        ));
+    }
     use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
     let mut document = ApiDoc::openapi();
     if let Some(components) = document.components.as_mut() {
@@ -461,7 +477,7 @@ async fn openapi(State(state): State<AppState>) -> Json<utoipa::openapi::OpenApi
             SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("X-Queue-Ticket"))),
         );
     }
-    Json(document)
+    Ok(Json(document))
 }
 
 async fn not_found() -> (StatusCode, Json<ErrorResponse>) {

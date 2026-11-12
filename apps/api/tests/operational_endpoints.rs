@@ -7,6 +7,7 @@ use axum::{
 use serde_json::Value;
 use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
+use turnesta_api::auth::AuthConfig;
 use turnesta_api::http::{AppState, router};
 
 fn offline_state() -> AppState {
@@ -49,7 +50,7 @@ async fn missing_database_returns_unavailable_instead_of_false_readiness() {
 
 #[tokio::test]
 async fn api_contract_contains_operational_routes() {
-    let response = router(offline_state())
+    let response = router(offline_state().with_expose_openapi(true))
         .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -58,6 +59,27 @@ async fn api_contract_contains_operational_routes() {
     let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(document["paths"]["/health"]["get"].is_object());
     assert!(document["paths"]["/health/ready"]["get"]["responses"]["503"].is_object());
+}
+
+#[tokio::test]
+async fn openapi_is_local_or_explicitly_enabled() {
+    for (origin, exposed, expected) in [
+        ("http://localhost:8080", false, StatusCode::OK),
+        ("http://[::1]:8080", false, StatusCode::OK),
+        ("https://127.0.0.1", false, StatusCode::OK),
+        ("https://turnesta.example", false, StatusCode::NOT_FOUND),
+        ("https://localhost.example", false, StatusCode::NOT_FOUND),
+        ("https://turnesta.example", true, StatusCode::OK),
+    ] {
+        let state = offline_state()
+            .with_auth(AuthConfig::parse(origin, 3600).unwrap())
+            .with_expose_openapi(exposed);
+        let response = router(state)
+            .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected, "{origin} expose={exposed}");
+    }
 }
 
 #[tokio::test]

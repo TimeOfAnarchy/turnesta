@@ -121,6 +121,12 @@ async fn postgres_migrations_readiness_and_shutdown() {
     database::migrate(&pool)
         .await
         .expect("repeated migration is safe");
+    let removed: bool =
+        sqlx::query_scalar("SELECT to_regprocedure('auth.password_for_session(bytea)') IS NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(removed);
     let has_core: bool =
         sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'core')")
             .fetch_one(&pool)

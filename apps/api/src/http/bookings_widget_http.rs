@@ -71,7 +71,7 @@ impl From<WidgetError> for ApiError {
             WidgetError::InvalidOrigins => Self::new(
                 StatusCode::BAD_REQUEST,
                 "invalid_widget_origins",
-                "Use exact HTTPS origins; HTTP only on loopback",
+                "Use exact HTTPS origins; HTTP loopback requires a local Turnesta origin",
             ),
         }
     }

@@ -2864,6 +2864,41 @@ async fn booking_widget_settings_are_scoped_versioned_and_manager_only() {
         saved.allowed_origins,
         vec!["http://[::1]:8000", "https://clinic.example"]
     );
+    assert!(
+        widget::permits(
+            &f.runtime,
+            slug,
+            "http://[::1]:8000",
+            "http://127.0.0.1:8080"
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        !widget::permits(
+            &f.runtime,
+            slug,
+            "http://[::1]:8000",
+            "https://turnesta.example"
+        )
+        .await
+        .unwrap()
+    );
+    assert!(matches!(
+        widget::configure(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.point,
+            "https://turnesta.example",
+            WidgetConfigure {
+                allowed_origins: vec!["http://localhost:8000".into()],
+                expected_version: 1
+            }
+        )
+        .await,
+        Err(WidgetError::InvalidOrigins)
+    ));
     assert!(matches!(
         widget::configure(
             &f.runtime,

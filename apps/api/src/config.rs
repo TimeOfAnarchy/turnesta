@@ -13,6 +13,7 @@ pub struct Config {
     pub web_dist: PathBuf,
     pub client_ip_header: Option<axum::http::HeaderName>,
     pub payments: crate::payments::PaymentConfig,
+    pub expose_openapi: bool,
 }
 
 // No Debug implementation: connection options can contain credentials.
@@ -57,6 +58,11 @@ impl Config {
             .map_err(|_| invalid("TURNESTA_CLIENT_IP_HEADER", "must be a header name"))?;
 
         Ok(Self {
+            expose_openapi: match lookup("TURNESTA_EXPOSE_OPENAPI").as_deref() {
+                None | Some("false") => false,
+                Some("true") => true,
+                Some(_) => return Err(invalid("TURNESTA_EXPOSE_OPENAPI", "must be true or false")),
+            },
             client_ip_header,
             payments: crate::payments::PaymentConfig::from_lookup(&lookup).map_err(|_| {
                 invalid(
@@ -147,6 +153,26 @@ mod tests {
         assert!(settings.bind_addr.ip().is_loopback());
         assert_eq!(settings.database.max_connections, 10);
         assert_eq!(settings.ready_timeout, Duration::from_secs(1));
+        assert!(!settings.expose_openapi);
+    }
+
+    #[test]
+    fn expose_openapi_requires_explicit_boolean() {
+        let db = (
+            "DATABASE_URL",
+            "postgres://user:password@localhost/turnesta",
+        );
+        assert!(
+            config(&[db, ("TURNESTA_EXPOSE_OPENAPI", "true")])
+                .unwrap()
+                .expose_openapi
+        );
+        assert!(
+            !config(&[db, ("TURNESTA_EXPOSE_OPENAPI", "false")])
+                .unwrap()
+                .expose_openapi
+        );
+        assert!(config(&[db, ("TURNESTA_EXPOSE_OPENAPI", "yes")]).is_err());
     }
 
     #[test]

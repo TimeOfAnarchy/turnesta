@@ -42,6 +42,8 @@ create_server_env() {
         cat > .env <<EOF
 TURNESTA_DOMAIN=$answer
 TURNESTA_IMAGE=$image
+# Set true only if the OpenAPI document should be public on this server.
+TURNESTA_EXPOSE_OPENAPI=false
 
 POSTGRES_PASSWORD=$(key)
 TURNESTA_API_DB_PASSWORD=$(key)

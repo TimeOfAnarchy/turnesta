@@ -8,6 +8,15 @@ pub(crate) mod token;
 
 use url::Url;
 
+pub(crate) fn is_loopback_origin(origin: &str) -> bool {
+    Url::parse(origin).ok().is_some_and(|url| match url.host() {
+        Some(url::Host::Domain("localhost")) => true,
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        _ => false,
+    })
+}
+
 #[derive(Clone)]
 pub struct AuthConfig {
     pub public_origin: String,

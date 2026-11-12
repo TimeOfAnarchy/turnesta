@@ -79,12 +79,19 @@ fn normalize_origins(origins: Vec<String>, service: &str) -> Result<Vec<String>,
         .iter()
         .map(|o| normalize_origin(o))
         .collect::<Result<Vec<_>, _>>()?;
-    if normalized.iter().any(|o| o == service) {
+    if normalized
+        .iter()
+        .any(|o| o == service || !origin_allowed(o, service))
+    {
         return Err(WidgetError::InvalidOrigins);
     }
     normalized.sort();
     normalized.dedup();
     Ok(normalized)
+}
+
+fn origin_allowed(parent: &str, service: &str) -> bool {
+    !parent.starts_with("http://") || crate::auth::is_loopback_origin(service)
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -193,7 +200,7 @@ pub async fn permits(
     service: &str,
 ) -> Result<bool, WidgetError> {
     let normalized = normalize_origin(parent)?;
-    if normalized != parent || normalized == service {
+    if normalized != parent || normalized == service || !origin_allowed(&normalized, service) {
         return Ok(false);
     }
     let origins: Vec<String> = sqlx::query_scalar("SELECT bookings.widget_origins($1)")
@@ -257,5 +264,17 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn http_loopback_widget_requires_local_service() {
+        let parent = "http://localhost:3000";
+        assert!(normalize_origins(vec![parent.into()], "http://127.0.0.1:8080").is_ok());
+        assert!(normalize_origins(vec![parent.into()], "https://clinic.example").is_err());
+        assert!(!origin_allowed(parent, "https://clinic.example"));
+        assert!(origin_allowed(
+            "https://localhost:3000",
+            "https://clinic.example"
+        ));
     }
 }
