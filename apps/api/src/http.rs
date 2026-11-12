@@ -13,8 +13,8 @@ use axum::{
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
     http::{HeaderName, HeaderValue, StatusCode, header::CACHE_CONTROL},
     middleware::{self, Next},
-    response::Redirect,
     response::Response,
+    response::{IntoResponse, Redirect},
     routing::get,
 };
 use serde::Serialize;
@@ -360,8 +360,40 @@ pub fn router(state: AppState) -> Router {
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_admission,
+        ))
         .layer(middleware::from_fn(request_context))
         .with_state(state)
+}
+
+async fn public_admission(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let path = request.uri().path();
+    let is_public = path.starts_with("/api/public/")
+        || path.starts_with("/api/mock-payments/")
+        || path.starts_with("/q/")
+        || path.starts_with("/display/")
+        || path.starts_with("/book/")
+        || path.starts_with("/embed/book/")
+        || path.starts_with("/tips/")
+        || path.starts_with("/mock-payments/");
+    let is_public_sse = path.starts_with("/api/public/queues/") && path.ends_with("/events");
+    if !is_public || is_public_sse {
+        return next.run(request).await;
+    }
+    let _permit = match state.client_limit.acquire(request.headers()) {
+        Ok(permit) => permit,
+        Err(()) => {
+            return api::ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Please retry later",
+            )
+            .into_response();
+        }
+    };
+    next.run(request).await
 }
 
 #[utoipa::path(

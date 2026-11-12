@@ -118,6 +118,7 @@ pub(super) async fn staff(
         state,
         hub.subscribe(key),
         permit,
+        None,
         Access::Staff {
             user: signed.user_id,
             hash: signed.token_hash,
@@ -136,6 +137,13 @@ pub(super) async fn public(
     origin(&headers, &state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Query(query) = query.map_err(|_| ApiError::bad_request())?;
+    let client_permit = state.client_limit.acquire(&headers).map_err(|()| {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too_many_streams",
+            "Live connection capacity reached",
+        )
+    })?;
     let hub = hub(&state)?;
     let permit = slot(&hub, true)?;
     let display = matches!(query.audience, Audience::Display);
@@ -156,6 +164,7 @@ pub(super) async fn public(
         state,
         hub.subscribe(target.key()),
         permit,
+        client_permit,
         Access::Public { slug, display },
     ))
 }
@@ -175,6 +184,7 @@ struct Connection {
     state: AppState,
     receiver: watch::Receiver<Signal>,
     _permit: OwnedSemaphorePermit,
+    _client_permit: Option<super::client_limit::ClientPermit>,
     access: Access,
     first: bool,
     closed: bool,
@@ -283,12 +293,14 @@ fn connection(
     state: AppState,
     receiver: watch::Receiver<Signal>,
     permit: OwnedSemaphorePermit,
+    client_permit: Option<super::client_limit::ClientPermit>,
     access: Access,
 ) -> Response {
     let connection = Connection {
         state,
         receiver,
         _permit: permit,
+        _client_permit: client_permit,
         access,
         first: true,
         closed: false,

@@ -13,11 +13,30 @@ const DAY_LIMIT: u32 = 30;
 const MAX_TRACKED: usize = 10_000;
 
 type ClientWindows = HashMap<IpAddr, (Instant, u32, Instant, u32)>;
+type ActiveClients = Arc<Mutex<HashMap<IpAddr, usize>>>;
+
+pub(super) struct ClientPermit {
+    active: ActiveClients,
+    client: IpAddr,
+}
+
+impl Drop for ClientPermit {
+    fn drop(&mut self) {
+        let mut active = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(count) = active.get_mut(&self.client) {
+            *count -= 1;
+            if *count == 0 {
+                active.remove(&self.client);
+            }
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub(super) struct ClientLimit {
     header: Option<HeaderName>,
     windows: Arc<Mutex<ClientWindows>>,
+    active: ActiveClients,
 }
 
 impl ClientLimit {
@@ -48,6 +67,25 @@ impl ClientLimit {
             IpAddr::V6(ip) => Some(IpAddr::V6((u128::from(ip) >> 64 << 64).into())),
             ip => Some(ip),
         }
+    }
+
+    pub(super) fn acquire(&self, headers: &HeaderMap) -> Result<Option<ClientPermit>, ()> {
+        if self.header.is_none() {
+            return Ok(None);
+        }
+        let client = self.client(headers).ok_or_else(|| {
+            tracing::warn!("configured client IP header is missing or invalid");
+        })?;
+        let mut active = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+        let count = active.entry(client).or_default();
+        if *count >= 8 {
+            return Err(());
+        }
+        *count += 1;
+        Ok(Some(ClientPermit {
+            active: self.active.clone(),
+            client,
+        }))
     }
 
     fn record(&self, client: IpAddr, now: Instant) -> bool {
@@ -89,6 +127,22 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-real-ip", ip.parse().unwrap());
         headers
+    }
+
+    #[test]
+    fn concurrent_permits_are_scoped_and_released() {
+        let limit = limit();
+        let first = from("203.0.113.1");
+        let other = from("203.0.113.2");
+        let mut permits: Vec<_> = (0..8).map(|_| limit.acquire(&first).unwrap()).collect();
+        assert!(limit.acquire(&first).is_err());
+        assert!(limit.acquire(&other).is_ok());
+        permits.pop();
+        assert!(limit.acquire(&first).is_ok());
+        drop(permits);
+        assert!(limit.active.lock().unwrap().is_empty());
+        assert!(ClientLimit::default().acquire(&HeaderMap::new()).is_ok());
+        assert!(limit.acquire(&HeaderMap::new()).is_err());
     }
 
     #[test]

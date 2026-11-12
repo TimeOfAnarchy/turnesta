@@ -80,11 +80,11 @@ impl PasswordEngine {
         &self,
         operation: impl FnOnce() -> Result<T, PasswordError> + Send + 'static,
     ) -> Result<T, PasswordError> {
-        let permit = self
-            .gate
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| PasswordError::Busy)?;
+        let permit =
+            tokio::time::timeout(Duration::from_secs(2), self.gate.clone().acquire_owned())
+                .await
+                .map_err(|_| PasswordError::Busy)?
+                .map_err(|_| PasswordError::Unavailable)?;
         let task = tokio::task::spawn_blocking(move || {
             // A timeout cannot cancel blocking code: keep its permit until it exits.
             let _permit = permit;
@@ -270,8 +270,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blocking_capacity_is_bounded_without_waiting() {
+    async fn blocking_capacity_waits_and_times_out() {
         let engine = PasswordEngine::default();
+        let permits = engine.gate.clone().acquire_many_owned(2).await.unwrap();
+        let waiting = {
+            let engine = engine.clone();
+            tokio::spawn(async move { engine.blocking(|| Ok(42)).await })
+        };
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!waiting.is_finished());
+        drop(permits);
+        assert_eq!(waiting.await.unwrap().unwrap(), 42);
+
         let _permits = engine.gate.clone().acquire_many_owned(2).await.unwrap();
         assert!(matches!(
             engine
