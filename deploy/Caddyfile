@@ -1,7 +1,47 @@
+{
+	log {
+		output stderr
+		format filter {
+			wrap json
+			request>headers delete
+			request>uri delete
+			resp_headers delete
+		}
+	}
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
 {$TURNESTA_DOMAIN} {
 	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy api:8080 {
-		header_up X-Real-IP {remote_host}
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>headers delete
+			request>uri delete
+			resp_headers delete
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Content-Type-Options "nosniff"
+		defer
+	}
+	route {
+		@oversized `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 1000000`
+		respond @oversized 413
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 }
