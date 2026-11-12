@@ -220,6 +220,12 @@ pub struct AppointmentReceipt {
     pub resource: AppointmentResource,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum StoredAppointmentResult {
+    Appointment { id: Uuid, version: i32 },
+}
+
 pub struct AppointmentPage<'a> {
     pub specialist: Uuid,
     pub date: &'a str,
@@ -293,13 +299,18 @@ pub async fn execute(
     let claimed=sqlx::query("INSERT INTO bookings.appointment_commands(tenant_id,location_id,actor_id,idempotency_key,fingerprint) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
         .bind(tenant).bind(location).bind(user).bind(key).bind(fingerprint.as_slice()).execute(s.connection()).await?.rows_affected();
     if claimed == 0 {
-        let (previous,Json(receipt)):(Vec<u8>,Json<AppointmentReceipt>)=sqlx::query_as("SELECT fingerprint,result FROM bookings.appointment_commands WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
+        let (previous,Json(result)):(Vec<u8>,Json<StoredAppointmentResult>)=sqlx::query_as("SELECT fingerprint,result FROM bookings.appointment_commands WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
             .bind(tenant).bind(location).bind(user).bind(key).fetch_one(s.connection()).await?;
         if previous.as_slice() != fingerprint.as_slice() {
             return Err(BookingError::IdempotencyConflict);
         }
+        let StoredAppointmentResult::Appointment { id, .. } = result;
+        let appointment = sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND id=$3")
+            .bind(tenant).bind(location).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
         s.commit().await?;
-        return Ok(receipt);
+        return Ok(AppointmentReceipt {
+            resource: AppointmentResource::Appointment(appointment),
+        });
     }
     let (id, specialist) = command.identity();
     // A separate statement before reading occupancy sees the committed winner
@@ -335,17 +346,21 @@ pub async fn execute(
     if changed != 1 {
         return Err(CoreError::VersionConflict.into());
     }
-    let appointment =
+    let appointment: Appointment =
         sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND id=$2")
             .bind(tenant)
             .bind(id)
             .fetch_one(s.connection())
             .await?;
+    let stored = StoredAppointmentResult::Appointment {
+        id: appointment.id,
+        version: appointment.version,
+    };
     let receipt = AppointmentReceipt {
         resource: AppointmentResource::Appointment(appointment),
     };
     sqlx::query("UPDATE bookings.appointment_commands SET result=$5 WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
-        .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&receipt)).execute(s.connection()).await?;
+        .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&stored)).execute(s.connection()).await?;
     s.commit().await?;
     Ok(receipt)
 }

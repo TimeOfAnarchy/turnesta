@@ -277,6 +277,35 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
     assert_eq!(item.created_by, Some(f.owner));
     assert_eq!(item.starts_at, timed.starts_at);
     assert_eq!(item.specialist_name, "Doctor");
+    let updated = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::UpdateClient {
+            id: item.id,
+            specialist_id: spec.id,
+            expected_version: 1,
+            client: client("Updated Client"),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.version, 2);
+    let replay = appointment_execute(&f, f.owner, key, command.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.client_name, "Updated Client");
+    assert_eq!(replay.version, 2);
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let result: Value = sqlx::query_scalar("SELECT result FROM bookings.appointment_commands WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
+        .bind(f.tenant).bind(f.point).bind(f.owner).bind(key).fetch_one(session.connection()).await.unwrap();
+    assert_eq!(
+        result,
+        json!({"kind":"appointment", "id":item.id, "version":1})
+    );
+    session.commit().await.unwrap();
     let cancelled = appointment_execute(
         &f,
         f.owner,
@@ -284,7 +313,7 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
         AppointmentCmd::CancelAppointment {
             id: item.id,
             specialist_id: spec.id,
-            expected_version: 1,
+            expected_version: 2,
         },
     )
     .await
@@ -294,8 +323,8 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
     let replay = appointment_execute(&f, f.owner, key, command.clone())
         .await
         .unwrap();
-    assert_eq!(replay.status, "confirmed");
-    assert_eq!(replay.version, 1);
+    assert_eq!(replay.status, "cancelled");
+    assert_eq!(replay.version, 3);
     assert_eq!(replay.created_at, item.created_at);
     let mut different = command.clone();
     if let AppointmentCmd::RecordAppointment { client, .. } = &mut different {
@@ -349,6 +378,46 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
             .reserved_places,
         Some(1)
     );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn concurrent_appointment_replays_share_one_result() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 1,
+        },
+    )
+    .await;
+    let command = record(spec.id, offer.id, offer.version, "Concurrent Client");
+    let key = Uuid::new_v4();
+    let (first, second) = tokio::join!(
+        appointment_execute(&f, f.owner, key, command.clone()),
+        appointment_execute(&f, f.owner, key, command)
+    );
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.version, second.version);
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM bookings.appointments WHERE tenant_id=$1 AND offer_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(offer.id)
+    .fetch_one(session.connection())
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    session.commit().await.unwrap();
     f.close().await;
 }
 

@@ -9,9 +9,142 @@ use sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
 use turnesta_api::{
     config::DatabaseConfig,
+    core::{Name, Provisioner, TenantSession},
     database,
     http::{AppState, router},
 };
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointment_journal_migration_scrubs_all_tenants_and_restores_rls() {
+    let migration_url = std::env::var("TEST_MIGRATION_DATABASE_URL").unwrap();
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&migration_url)
+        .await
+        .unwrap();
+    let database: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(database.ends_with("_test"));
+    database::migrate(&pool).await.unwrap();
+    let admin = PgPoolOptions::new()
+        .connect(&std::env::var("TEST_ADMIN_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let runtime = PgPoolOptions::new()
+        .connect(&std::env::var("TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let mut fixtures = Vec::new();
+    for _ in 0..2 {
+        let org = Provisioner::new(admin.clone())
+            .create_organization(
+                &Name::parse("Migration QA").unwrap(),
+                &Name::parse("Owner").unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut session = TenantSession::begin(&runtime, org.owner.id, org.organization.id)
+            .await
+            .unwrap();
+        let point = session
+            .create_location(&Name::parse("Clinic").unwrap(), "UTC")
+            .await
+            .unwrap()
+            .id;
+        session.commit().await.unwrap();
+        fixtures.push((
+            org.organization.id,
+            point,
+            org.owner.id,
+            uuid::Uuid::new_v4(),
+        ));
+    }
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::raw_sql("ALTER TABLE bookings.appointment_commands DROP CONSTRAINT appointment_commands_minimal_result; ALTER TABLE bookings.appointment_commands NO FORCE ROW LEVEL SECURITY;").execute(&mut *tx).await.unwrap();
+    for (tenant, point, owner, appointment) in &fixtures {
+        let legacy = serde_json::json!({"resource":{"kind":"appointment","item":{"id":appointment,"version":2,"client_name":"private","phone":"123","email":"private@example.test","note":"secret","answers":{"medical":"private"}}}});
+        sqlx::query("INSERT INTO bookings.appointment_commands(tenant_id,location_id,actor_id,idempotency_key,fingerprint,result) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(tenant).bind(point).bind(owner).bind(uuid::Uuid::new_v4()).bind(&[0_u8;32][..]).bind(sqlx::types::Json(legacy)).execute(&mut *tx).await.unwrap();
+    }
+    sqlx::query("ALTER TABLE bookings.appointment_commands FORCE ROW LEVEL SECURITY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::raw_sql("SAVEPOINT malformed_result; ALTER TABLE bookings.appointment_commands NO FORCE ROW LEVEL SECURITY;")
+        .execute(&mut *tx).await.unwrap();
+    sqlx::query("UPDATE bookings.appointment_commands SET result=jsonb_set(result,'{resource,item,version}',to_jsonb('broken'::text)) WHERE tenant_id=$1")
+        .bind(fixtures[0].0).execute(&mut *tx).await.unwrap();
+    sqlx::query("ALTER TABLE bookings.appointment_commands FORCE ROW LEVEL SECURITY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/202611120032_minimize_appointment_journal.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    );
+    sqlx::query("ROLLBACK TO SAVEPOINT malformed_result")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let force: bool = sqlx::query_scalar("SELECT relforcerowsecurity FROM pg_class WHERE oid='bookings.appointment_commands'::regclass").fetch_one(&mut *tx).await.unwrap();
+    assert!(force);
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/202611120032_minimize_appointment_journal.sql"
+    ))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let force: bool = sqlx::query_scalar("SELECT relforcerowsecurity FROM pg_class WHERE oid='bookings.appointment_commands'::regclass").fetch_one(&mut *tx).await.unwrap();
+    assert!(force);
+    sqlx::query("ALTER TABLE bookings.appointment_commands NO FORCE ROW LEVEL SECURITY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    for (tenant, _, _, appointment) in &fixtures {
+        let result: serde_json::Value = sqlx::query_scalar(
+            "SELECT result FROM bookings.appointment_commands WHERE tenant_id=$1",
+        )
+        .bind(tenant)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            result,
+            serde_json::json!({"kind":"appointment","id":appointment,"version":2})
+        );
+    }
+    sqlx::query("SAVEPOINT invalid_result")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let result = sqlx::query("UPDATE bookings.appointment_commands SET result=jsonb_set(result,'{phone}',to_jsonb('private'::text)) WHERE tenant_id=$1")
+        .bind(fixtures[0].0).execute(&mut *tx).await.unwrap_err();
+    assert_eq!(
+        result.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    sqlx::query("ROLLBACK TO SAVEPOINT invalid_result")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let error = sqlx::query("UPDATE bookings.appointment_commands SET result=jsonb_set(result,'{kind}','null'::jsonb) WHERE tenant_id=$1")
+        .bind(fixtures[0].0).execute(&mut *tx).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    tx.rollback().await.unwrap();
+    pool.close().await;
+    admin.close().await;
+    runtime.close().await;
+}
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL pointing to a dedicated PostgreSQL *_test database"]
