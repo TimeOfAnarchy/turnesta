@@ -31,7 +31,7 @@ x-runtime: &runtime
 
 services:
   db:
-    image: postgres:18-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5 # postgres:18-bookworm
+    image: postgres:18-bookworm@sha256:ece55f7868da684e400f82f1030a050718adbdd65c23aa500c486f6e2950dc0f # postgres:18-bookworm
     restart: unless-stopped
     mem_limit: 1536m
     cpus: 1.00
@@ -54,7 +54,7 @@ services:
     logging: *logging
 
   db-bootstrap:
-    image: postgres:18-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5 # postgres:18-bookworm
+    image: postgres:18-bookworm@sha256:ece55f7868da684e400f82f1030a050718adbdd65c23aa500c486f6e2950dc0f # postgres:18-bookworm
     mem_limit: 128m
     cpus: 0.50
     pids_limit: 128
