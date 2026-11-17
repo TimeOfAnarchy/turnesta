@@ -1,93 +1,50 @@
 # Turnesta
 
-Appointments, electronic queues and tips for service businesses.
+Appointments, electronic queues and mock tips for service businesses.
 
-## Features
+- **Bookings:** specialist schedules, staff appointments, a public booking page and a website widget.
+- **Queues:** visitor tickets via link or QR code, an operator workspace and a live display board.
+- **Team:** organizations, locations and owner/manager/operator/employee roles.
+- **Mock Tips:** simulated checkout and callbacks; real charges and payouts are unavailable.
 
-- **Online booking** — specialist schedules, a public booking page and an embeddable widget for your website.
-- **Appointments** — book, reschedule and cancel clients from the staff cabinet.
-- **Electronic queue** — tickets via link or QR code, an operator workspace and a live display board.
-- **Mock Tips** — a test checkout via link or QR code after a visit; real payments and payouts are not implemented.
-- **Team** — organizations, locations and roles for owners, managers, operators and employees.
+The interface is currently Russian. Booking holds, visitor cancellation/rescheduling and reminders are not implemented. Local integration checks have passed; a real VPS, external SMTP and a business website have not yet been verified.
 
-## Getting started
+## Try locally
 
-Requirements: Docker with Docker Compose. On Windows, run the command in Git Bash.
-
-```sh
-./scripts/install.sh
-```
-
-The script asks for a port, an organization name and an owner, builds and starts the app, and prints the sign-in address with a temporary password. You choose your own password on first sign-in. Running it again is safe: it restarts the app and keeps existing data.
-
-This mode is for trying Turnesta on your computer: it listens on 127.0.0.1 only and uses development database passwords.
-
-If a port is busy, change it in `.env` and run the script again: `TURNESTA_API_PORT` together with the port in `TURNESTA_PUBLIC_ORIGIN`, or `TURNESTA_POSTGRES_PORT`.
-
-## Running on a server
-
-Requirements: a Linux server with Docker, Docker Compose, Buildx, `flock` and `curl`, a domain pointing to the server, and open ports 80 and 443. Install `age` too if backup encryption is enabled.
+Install Git and Docker with the Compose plugin. Run these commands in a POSIX shell; on Windows use Git Bash and Docker Desktop with Linux containers.
 
 ```sh
 git clone https://github.com/TimeOfAnarchy/turnesta.git
 cd turnesta
+./scripts/install.sh
+```
+
+The installer builds the application, creates the first organization/owner and prints the sign-in address and temporary password. Set a personal password on first sign-in, then follow [first configuration](docs/GETTING-STARTED.md).
+
+Local mode binds to loopback and uses development database credentials. Its included [MailHog inbox](http://127.0.0.1:8025) captures email without sending it externally. Ports and restart behavior are covered in [deployment](docs/DEPLOYMENT.md#local-evaluation).
+
+## Run on a Linux server
+
+In a fresh server checkout with Docker, Compose, Buildx, flock, curl and a configured domain, run:
+
+```sh
 ./scripts/install.sh --server
 ```
 
-The script generates strong passwords and uses a ready-made image, so the server does not need to compile anything. HTTPS certificates are issued automatically. To send email, fill in the SMTP settings in `.env`, uncomment `COMPOSE_PROFILES=mail` and run the script again.
+The server uses a prebuilt application image and Caddy HTTPS. PowerShell, host Rust and host Node.js are not required. Follow the [deployment guide](docs/DEPLOYMENT.md#linux-vps) for prerequisites, email and first acceptance, then the [operations runbook](docs/OPERATIONS.md) for updates, backups and recovery.
 
-Everyday commands, run from the project folder:
+## Documentation
 
-```sh
-./scripts/backup.sh
-git pull && ./scripts/update.sh ghcr.io/timeofanarchy/turnesta:latest
-./scripts/restore.sh backups/turnesta-<date>.dump
-# For an encrypted backup:
-./scripts/restore.sh backups/turnesta-<date>.dump.age /path/to/age-identity.txt
-```
+| Task | Guide |
+| --- | --- |
+| Find the right instructions | [Documentation index](docs/INDEX.md) |
+| Configure a business and staff | [First configuration](docs/GETTING-STARTED.md) |
+| Install locally or on a VPS | [Deployment](docs/DEPLOYMENT.md) |
+| Update, back up or restore | [Operations](docs/OPERATIONS.md) |
+| Embed booking on a website | [Booking widget](docs/BOOKINGS-WIDGET.md) |
+| Build, test and contribute | [Development](docs/DEVELOPMENT.md) |
+| Understand the implementation | [Architecture](docs/ARCHITECTURE.md) |
 
-The installer schedules daily backups at 03:30 in the server's cron time zone. If it cannot write to `/etc/cron.d`, it prints a crontab entry for you to install. Verify the schedule and time zone on the server; use UTC if you want the backup to run at 03:30 UTC. The last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an [rclone](https://rclone.org/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+Built with Rust, Axum, Tokio, SQLx, PostgreSQL, React, TypeScript and Vite.
 
-For encrypted backups, generate an [age](https://github.com/FiloSottile/age) identity on a trusted device and set its public recipient (`age1…`) as `TURNESTA_BACKUP_AGE_RECIPIENT` in the server's `.env`. Keep the private identity separately from the server and backups; provide its file to `restore.sh` only when needed. Losing this identity makes encrypted copies unrecoverable. Without a recipient, backups remain unencrypted and the script warns on every run; use an encrypted rclone remote if sending these copies offsite. Set `TURNESTA_BACKUP_PING_URL` to a private healthchecks-style URL to report successful and failed backup runs.
-
-Keep a copy of `.env` somewhere safe: it holds the keys needed to restore on a new server. Point an uptime monitor at `https://your-domain/health/ready`.
-
-To move to a new server, copy `.env` and a backup into a fresh clone, then run `restore.sh`.
-
-[Operations runbook and first VPS launch checklist (local documentation, in Russian)](docs/OPERATIONS.md#регламент)
-
-## Tech stack
-
-- Rust, Axum, Tokio, SQLx
-- PostgreSQL
-- React, TypeScript, Vite
-- Docker Compose
-
-## Checking the web client
-
-Use Node.js 22.13 or newer. From `apps/web`, run these checks.
-
-```sh
-npm ci
-npm --prefix tools/lint ci
-npm run lint
-npm test
-npm run build
-```
-
-The linter has its own dependency lockfile because its parser requires TypeScript 5. The web client uses TypeScript 7. ESLint checks the recommended TypeScript and React Hooks rules and fails on warnings.
-
-## Updating the web API types
-
-From `apps/web`, run `npm ci` and `npm run api:types` to generate TypeScript types from the committed OpenAPI snapshot. After changing the API contract, start the updated local HTTP stack and run `npm run api:snapshot` before generating the types. For a custom port, pass the schema URL, for example `npm run api:snapshot -- http://127.0.0.1:8086/openapi.json`.
-
-CI runs `npm run api:snapshot -- --check` against the local API, then `npm run api:types -- --check` to detect stale generated types.
-
-## Project information
-
-- [Security policy and reporting a vulnerability](SECURITY.md)
-- [Changelog](CHANGELOG.md)
-
-## License
-
-[AGPL-3.0](LICENSE)
+[Security policy](SECURITY.md) · [Changelog](CHANGELOG.md) · [AGPL-3.0 license](LICENSE)

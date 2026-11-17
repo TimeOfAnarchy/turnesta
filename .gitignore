@@ -2,8 +2,15 @@
 /AGENTS.md
 /.local/
 
-# Local notes
-/docs/
+# Documentation: publish only the selected guides; other notes stay local.
+/docs/*
+!/docs/INDEX.md
+!/docs/GETTING-STARTED.md
+!/docs/DEPLOYMENT.md
+!/docs/OPERATIONS.md
+!/docs/BOOKINGS-WIDGET.md
+!/docs/DEVELOPMENT.md
+!/docs/ARCHITECTURE.md
 
 # Database backups
 /backups/
