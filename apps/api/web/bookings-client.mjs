@@ -42,11 +42,13 @@ export function validPublicInput(v) {
     v &&
     typeof v === 'object' &&
     Object.keys(v)
-      .filter((k) => k !== 'consent')
+      .filter((k) => k !== 'consent' && k !== 'consent_version')
       .sort()
       .join(',') ===
       'answers,form_version,offer_id,offer_version,specialist_version,time_zone' &&
     (v.consent === undefined || v.consent === true) &&
+    (v.consent_version === undefined ||
+      (Number.isInteger(v.consent_version) && v.consent_version > 0)) &&
     uuid.test(v.offer_id) &&
     ['offer_version', 'specialist_version', 'form_version'].every(
       (k) => Number.isInteger(v[k]) && v[k] > 0,
@@ -159,7 +161,13 @@ export class PublicBookingClient {
           )
             throw new BookingGuestError(0, 'booking_pending');
           if (!s.pending) {
-            if (!body || !validPublicInput(body))
+            if (
+              !body ||
+              !validPublicInput(body) ||
+              body.consent !== true ||
+              !Number.isInteger(body.consent_version) ||
+              body.consent_version < 1
+            )
               throw new BookingGuestError(0, 'invalid_booking_form');
             s.pending = {
               token: this.generate(),

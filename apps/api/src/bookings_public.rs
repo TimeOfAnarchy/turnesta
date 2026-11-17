@@ -7,6 +7,9 @@ use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+pub const DEFAULT_CONSENT_TEXT: &str =
+    "Согласен(на) на обработку персональных данных в соответствии с политикой организации";
+
 #[derive(Debug, Error)]
 pub enum PublicBookingError {
     #[error(transparent)]
@@ -111,6 +114,8 @@ pub struct BookingPublicSettings {
     pub public_slug: Option<Uuid>,
     pub enabled: bool,
     pub privacy_url: Option<String>,
+    pub consent_text: String,
+    pub consent_version: i32,
     pub form: BookingForm,
     pub version: i32,
 }
@@ -119,6 +124,8 @@ struct SettingsRow {
     public_slug: Uuid,
     enabled: bool,
     privacy_url: Option<String>,
+    consent_text: String,
+    consent_version: i32,
     form: Json<BookingForm>,
     version: i32,
 }
@@ -128,6 +135,8 @@ impl From<SettingsRow> for BookingPublicSettings {
             public_slug: Some(row.public_slug),
             enabled: row.enabled,
             privacy_url: row.privacy_url,
+            consent_text: row.consent_text,
+            consent_version: row.consent_version,
             form: row.form.0,
             version: row.version,
         }
@@ -136,6 +145,7 @@ impl From<SettingsRow> for BookingPublicSettings {
 pub struct PublicBookingConfig {
     pub enabled: bool,
     pub privacy_url: Option<String>,
+    pub consent_text: Option<String>,
     pub form: BookingForm,
 }
 fn normalized_privacy_url(value: Option<String>) -> Result<Option<String>, PublicBookingError> {
@@ -161,13 +171,15 @@ pub async fn settings(
 ) -> Result<BookingPublicSettings, PublicBookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     check_location(&mut s, location).await?;
-    let row: Option<SettingsRow> = sqlx::query_as("SELECT public_slug,enabled,privacy_url,form,version FROM bookings.public_settings WHERE tenant_id=$1 AND location_id=$2").bind(tenant).bind(location).fetch_optional(s.connection()).await?;
+    let row: Option<SettingsRow> = sqlx::query_as("SELECT public_slug,enabled,privacy_url,consent_text,consent_version,form,version FROM bookings.public_settings WHERE tenant_id=$1 AND location_id=$2").bind(tenant).bind(location).fetch_optional(s.connection()).await?;
     s.commit().await?;
     Ok(row.map_or_else(
         || BookingPublicSettings {
             public_slug: None,
             enabled: false,
             privacy_url: None,
+            consent_text: DEFAULT_CONSENT_TEXT.to_owned(),
+            consent_version: 1,
             form: BookingForm::default(),
             version: 0,
         },
@@ -211,11 +223,21 @@ pub async fn configure(
     let PublicBookingConfig {
         enabled,
         privacy_url,
+        consent_text,
         mut form,
     } = config;
     let privacy_url = normalized_privacy_url(privacy_url)?;
     if enabled && privacy_url.is_none() {
         return Err(PublicBookingError::PrivacyUrl);
+    }
+    let consent_text = consent_text.map(|text| text.trim().to_owned());
+    if consent_text.as_ref().is_some_and(|text| {
+        text.is_empty()
+            || text.chars().count() > 1000
+            || text.len() > 4000
+            || text.chars().any(char::is_control)
+    }) {
+        return Err(PublicBookingError::Invalid);
     }
     for field in &mut form.fields {
         field.label = field.label.trim().into();
@@ -231,9 +253,9 @@ pub async fn configure(
         return Err(PublicBookingError::Invalid);
     }
     let row: Option<SettingsRow> = if version == 0 {
-        sqlx::query_as("INSERT INTO bookings.public_settings(tenant_id,location_id,public_slug,enabled,privacy_url,form) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING public_slug,enabled,privacy_url,form,version").bind(tenant).bind(location).bind(Uuid::new_v4()).bind(enabled).bind(&privacy_url).bind(Json(&form)).fetch_optional(s.connection()).await?
+        sqlx::query_as("INSERT INTO bookings.public_settings(tenant_id,location_id,public_slug,enabled,privacy_url,form,consent_text) VALUES($1,$2,$3,$4,$5,$6,coalesce($7,$8)) ON CONFLICT DO NOTHING RETURNING public_slug,enabled,privacy_url,consent_text,consent_version,form,version").bind(tenant).bind(location).bind(Uuid::new_v4()).bind(enabled).bind(&privacy_url).bind(Json(&form)).bind(&consent_text).bind(DEFAULT_CONSENT_TEXT).fetch_optional(s.connection()).await?
     } else {
-        sqlx::query_as("UPDATE bookings.public_settings SET enabled=$3,privacy_url=$4,form=$5,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND version=$6 RETURNING public_slug,enabled,privacy_url,form,version").bind(tenant).bind(location).bind(enabled).bind(&privacy_url).bind(Json(&form)).bind(version).fetch_optional(s.connection()).await?
+        sqlx::query_as("UPDATE bookings.public_settings SET enabled=$3,privacy_url=$4,form=$5,version=version+1,consent_text=coalesce($7,consent_text) WHERE tenant_id=$1 AND location_id=$2 AND version=$6 RETURNING public_slug,enabled,privacy_url,consent_text,consent_version,form,version").bind(tenant).bind(location).bind(enabled).bind(&privacy_url).bind(Json(&form)).bind(version).bind(&consent_text).fetch_optional(s.connection()).await?
     };
     let saved = row.ok_or(CoreError::VersionConflict)?;
     s.commit().await?;
@@ -256,6 +278,8 @@ pub struct PublicBookingProfile {
     pub enabled: bool,
     pub version: i32,
     pub privacy_url: Option<String>,
+    pub consent_text: Option<String>,
+    pub consent_version: Option<i32>,
     pub form: Option<BookingForm>,
     pub specialists: Vec<PublicBookingSpecialist>,
 }
@@ -318,6 +342,8 @@ pub struct PublicBookingInput {
     pub answers: BTreeMap<String, String>,
     #[serde(default)]
     pub consent: bool,
+    #[serde(default)]
+    pub consent_version: Option<i32>,
 }
 pub struct AvailabilityQuery<'a> {
     pub month: &'a str,
@@ -387,18 +413,20 @@ pub async fn book(
     {
         return Err(PublicBookingError::Invalid);
     }
-    let Json(value) = sqlx::query_scalar("SELECT bookings.public_book($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(slug)
-        .bind(hash.as_slice())
-        .bind(input.offer_id)
-        .bind(input.offer_version)
-        .bind(input.specialist_version)
-        .bind(input.form_version)
-        .bind(input.time_zone)
-        .bind(Json(input.answers))
-        .bind(input.consent)
-        .fetch_one(pool)
-        .await?;
+    let Json(value) =
+        sqlx::query_scalar("SELECT bookings.public_book($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+            .bind(slug)
+            .bind(hash.as_slice())
+            .bind(input.offer_id)
+            .bind(input.offer_version)
+            .bind(input.specialist_version)
+            .bind(input.form_version)
+            .bind(input.time_zone)
+            .bind(Json(input.answers))
+            .bind(input.consent)
+            .bind(input.consent_version)
+            .fetch_one(pool)
+            .await?;
     Ok(value)
 }
 pub async fn receipt(

@@ -23,6 +23,8 @@ const body = () => ({
   offer_version: 1,
   specialist_version: 1,
   form_version: 1,
+  consent: true,
+  consent_version: 1,
   time_zone: 'Europe/Moscow',
   answers: {
     client_name: 'Private Client',
@@ -107,6 +109,19 @@ test('public booking survives reload without automatic mutation and removes answ
   assert.equal(restored.read().pending, null);
   assert.equal(restored.read().history[0].token, token);
   assert.ok(!saved.getItem(first.key).includes('Private'));
+});
+test('legacy pending recovery keeps its original body, while new submissions require a consent version', async () => {
+  const saved = storage();
+  const legacy = body();
+  delete legacy.consent_version;
+  const c = new PublicBookingClient(id, saved, locks(), async (_url, options) => {
+    assert.deepEqual(JSON.parse(options.body), legacy);
+    return receipt;
+  }, () => token);
+  await assert.rejects(c.submit(legacy), error => error.code === 'invalid_booking_form');
+  saved.setItem(c.key, JSON.stringify({ pending: { token, body: legacy, created_at: new Date().toISOString() }, history: [] }));
+  await c.recover();
+  assert.equal(c.read().pending, null);
 });
 test('a changed intent cannot replace an unresolved booking capability', async () => {
   const saved = storage();
@@ -303,12 +318,14 @@ test('form editor keeps stable field keys and sends tenant-scoped optimistic con
     'point',
     true,
     'https://clinic.example/privacy',
+    'Согласие на обработку данных',
     { fields: [field] },
     2,
   );
   assert.ok(sent.url.endsWith('/locations/point/bookings/public-access'));
   assert.equal(sent.options.headers.get('X-CSRF-Token'), 'csrf');
   assert.equal(JSON.parse(sent.options.body).expected_version, 2);
+  assert.equal(JSON.parse(sent.options.body).consent_text, 'Согласие на обработку данных');
   assert.equal(
     JSON.parse(sent.options.body).privacy_url,
     'https://clinic.example/privacy',

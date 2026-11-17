@@ -114,6 +114,7 @@ function PublicSettingsEditor({
   );
   const [enabled, setEnabled] = useState(initial.enabled);
   const [privacyUrl, setPrivacyUrl] = useState(initial.privacy_url ?? '');
+  const [consentText, setConsentText] = useState(initial.consent_text);
   const [busy, setBusy] = useState(false),
     [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState<unknown>(null),
@@ -142,6 +143,7 @@ function PublicSettingsEditor({
       setForm(structuredClone(value.form));
       setEnabled(value.enabled);
       setPrivacyUrl(value.privacy_url ?? '');
+      setConsentText(value.consent_text);
       setUncertain(false);
       setError(null);
       await queryClient.invalidateQueries({
@@ -164,7 +166,8 @@ function PublicSettingsEditor({
     void save(enabled);
   }
   async function save(nextEnabled: boolean) {
-    if (busy || changed || uncertain || !canManage) return;
+    if (busy || changed || uncertain || !canManage || !consentText.trim())
+      return;
     setBusy(true);
     setError(null);
     setSaved(false);
@@ -174,6 +177,7 @@ function PublicSettingsEditor({
         location,
         nextEnabled,
         privacyUrl,
+        consentText,
         {
           fields: form.fields.map((field) => ({
             ...field,
@@ -187,6 +191,7 @@ function PublicSettingsEditor({
       setForm(structuredClone(result.form));
       setEnabled(result.enabled);
       setPrivacyUrl(result.privacy_url ?? '');
+      setConsentText(result.consent_text);
       await queryClient.invalidateQueries({
         queryKey: [
           'organization',
@@ -227,7 +232,9 @@ function PublicSettingsEditor({
           <button
             type="button"
             className="button primary"
-            disabled={busy || changed || uncertain || !privacyUrl.trim()}
+            disabled={
+              busy || changed || uncertain || !privacyUrl.trim() || !consentText.trim()
+            }
             onClick={() => void save(true)}
           >
             {busy ? 'Включаем…' : 'Включить онлайн-запись'}
@@ -300,6 +307,26 @@ function PublicSettingsEditor({
               <p className="field-hint">
                 Клиент подтверждает согласие в анкете, ссылка откроется рядом с
                 галочкой. Без неё онлайн-запись не включить.
+              </p>
+            </div>
+            <div className="form-field">
+              <label htmlFor="booking-consent-text">
+                Текст согласия клиента
+              </label>
+              <input
+                id="booking-consent-text"
+                type="text"
+                maxLength={1000}
+                required
+                value={consentText}
+                onChange={(event) => {
+                  setConsentText(event.target.value);
+                  setSaved(false);
+                }}
+              />
+              <p className="field-hint">
+                Этот текст увидит клиент перед записью. После изменения
+                потребуется новое подтверждение.
               </p>
             </div>
             <h3 className="booking-form-settings-title">Анкета посетителя</h3>
@@ -457,7 +484,7 @@ function PublicSettingsEditor({
           <div className="dialog-actions">
             <button
               className="button primary"
-              disabled={busy || changed || uncertain}
+              disabled={busy || changed || uncertain || !consentText.trim()}
             >
               {busy ? 'Сохраняем…' : 'Сохранить настройки записи'}
             </button>

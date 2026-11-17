@@ -231,6 +231,7 @@ async function start(slug, root) {
           time_zone: p.time_zone,
           answers,
           consent: true,
+          consent_version: s.profile.consent_version,
         });
       }
       s.receipt = result;
@@ -700,7 +701,8 @@ async function start(slug, root) {
         node(
           'span',
           {},
-          'Согласен(на) на обработку персональных данных в соответствии с ',
+          s.profile.consent_text,
+          ' ',
           node(
             'a',
             {
@@ -708,7 +710,7 @@ async function start(slug, root) {
               target: '_blank',
               rel: 'noopener noreferrer',
             },
-            'политикой организации',
+            'Открыть политику',
           ),
         ),
       ),

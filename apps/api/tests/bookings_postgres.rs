@@ -2582,12 +2582,14 @@ fn public_config(enabled: bool, form: BookingForm) -> PublicBookingConfig {
     PublicBookingConfig {
         enabled,
         privacy_url: Some("https://clinic.example/privacy".into()),
+        consent_text: None,
         form,
     }
 }
 fn public_input(offer: &bookings::Offer) -> PublicBookingInput {
     PublicBookingInput {
         consent: true,
+        consent_version: Some(1),
         offer_id: offer.id,
         offer_version: offer.version,
         specialist_version: 1,
@@ -4063,7 +4065,7 @@ async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
     let offers = public["items"].as_array().unwrap();
     assert_eq!(offers.len(), 2);
     let body = json!({"offer_id":offers[0]["id"],"offer_version":offers[0]["version"],"specialist_version":offers[0]["specialist_version"],"form_version":1,"time_zone":"Europe/Moscow",
-        "answers":{"client_name":"Pilot visitor","phone":"+7 900 000 00 00","email":"pilot-visitor@example.test","note":"Synthetic only","field_visit":"First"},"consent":true});
+        "answers":{"client_name":"Pilot visitor","phone":"+7 900 000 00 00","email":"pilot-visitor@example.test","note":"Synthetic only","field_visit":"First"},"consent":true,"consent_version":1});
     let mut secret = [0u8; 32];
     getrandom::fill(&mut secret).unwrap();
     let token = hex::encode(secret);
@@ -4788,6 +4790,7 @@ async fn public_booking_requires_a_policy_and_records_consent() {
                 PublicBookingConfig {
                     enabled: true,
                     privacy_url,
+                    consent_text: None,
                     form: BookingForm::default(),
                 },
                 0,
@@ -4827,5 +4830,221 @@ async fn public_booking_requires_a_policy_and_records_consent() {
     .await
     .unwrap();
     assert_eq!(consent, ("https://clinic.example/privacy".to_owned(), true));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn consent_version_hash_and_recovery_match_the_displayed_text() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let specialist = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        specialist.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 8,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let first_profile = public_bookings::profile(&f.runtime, slug).await.unwrap();
+    assert_eq!(first_profile.consent_version, Some(1));
+    let original = first_profile.consent_text.clone().unwrap();
+    assert_eq!(original, public_bookings::DEFAULT_CONSENT_TEXT);
+    let input = public_input(&offer);
+    let receipt = public_bookings::book(&f.runtime, slug, &[201; 32], input.clone())
+        .await
+        .unwrap();
+    let first: (i32, Vec<u8>, String) = sqlx::query_as("SELECT a.consent_version,a.consent_text_sha256,a.consent_url FROM bookings.appointments a JOIN bookings.public_claims c ON c.tenant_id=a.tenant_id AND c.appointment_id=a.id WHERE c.tenant_id=$1 AND c.token_hash=$2")
+        .bind(f.tenant).bind(&[201_u8;32][..]).fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(first.0, 1);
+    assert_eq!(first.1, Sha256::digest(original.as_bytes()).to_vec());
+    let new_text = "Я согласен(на) на обработку данных 🩺 e\u{301}";
+    let changed = public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        PublicBookingConfig {
+            enabled: true,
+            privacy_url: Some("https://clinic.example/new-policy".into()),
+            consent_text: Some(new_text.into()),
+            form: BookingForm::default(),
+        },
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(changed.version, 2);
+    assert_eq!(changed.consent_version, 2);
+    let shown = public_bookings::profile(&f.runtime, slug).await.unwrap();
+    assert_eq!(shown.consent_text.as_deref(), Some(new_text));
+    assert_eq!(shown.consent_version, Some(2));
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[202; 32], input.clone()).await,
+        Err(PubError::Changed)
+    ));
+    let mut no_version = input.clone();
+    no_version.form_version = 2;
+    no_version.consent_version = None;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[202; 32], no_version).await,
+        Err(PubError::Changed)
+    ));
+    let mut same_form_wrong_consent = input.clone();
+    same_form_wrong_consent.form_version = 2;
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[202; 32], same_form_wrong_consent).await,
+        Err(PubError::Changed)
+    ));
+    let mut legacy_replay = input.clone();
+    legacy_replay.consent_version = None;
+    let recovered = public_bookings::book(&f.runtime, slug, &[201; 32], legacy_replay)
+        .await
+        .unwrap();
+    assert_eq!(recovered.reference, receipt.reference);
+    let mut fresh = input;
+    fresh.form_version = 2;
+    fresh.consent_version = Some(2);
+    public_bookings::book(&f.runtime, slug, &[202; 32], fresh)
+        .await
+        .unwrap();
+    let second: (i32, Vec<u8>) = sqlx::query_as("SELECT a.consent_version,a.consent_text_sha256 FROM bookings.appointments a JOIN bookings.public_claims c ON c.tenant_id=a.tenant_id AND c.appointment_id=a.id WHERE c.tenant_id=$1 AND c.token_hash=$2")
+        .bind(f.tenant).bind(&[202_u8;32][..]).fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(second.0, 2);
+    assert_eq!(second.1, Sha256::digest(new_text.as_bytes()).to_vec());
+    let first_again: (i32, Vec<u8>, String) = sqlx::query_as("SELECT a.consent_version,a.consent_text_sha256,a.consent_url FROM bookings.appointments a JOIN bookings.public_claims c ON c.tenant_id=a.tenant_id AND c.appointment_id=a.id WHERE c.tenant_id=$1 AND c.token_hash=$2")
+        .bind(f.tenant).bind(&[201_u8;32][..]).fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(first_again, first);
+    let saved_again = public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        PublicBookingConfig {
+            enabled: true,
+            privacy_url: changed.privacy_url.clone(),
+            consent_text: Some(new_text.into()),
+            form: BookingForm::default(),
+        },
+        2,
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved_again.consent_version, 2);
+    let restored = public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        PublicBookingConfig {
+            enabled: true,
+            privacy_url: changed.privacy_url,
+            consent_text: Some(original),
+            form: BookingForm::default(),
+        },
+        3,
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored.consent_version, 3);
+    let grants: (bool,bool,bool) = sqlx::query_as("SELECT has_function_privilege('turnesta_api','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb,boolean)','EXECUTE'),has_function_privilege('turnesta_api','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb,boolean,integer)','EXECUTE'),has_function_privilege('turnesta_admin','bookings.public_book(uuid,bytea,uuid,integer,integer,integer,text,jsonb,boolean,integer)','EXECUTE')").fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(grants, (false, true, false));
+    for invalid in [String::new(), "two\nlines".to_owned(), "я".repeat(1001)] {
+        assert!(matches!(
+            public_bookings::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                f.point,
+                PublicBookingConfig {
+                    enabled: true,
+                    privacy_url: Some("https://clinic.example/privacy".into()),
+                    consent_text: Some(invalid),
+                    form: BookingForm::default(),
+                },
+                4
+            )
+            .await,
+            Err(PubError::Invalid)
+        ));
+    }
+    let mut tx = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.tenant_id',$1,true),set_config('app.user_id',$2,true)")
+        .bind(f.tenant.to_string())
+        .bind(f.owner.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let tamper = sqlx::query("UPDATE bookings.appointments SET consent_version=99,version=version+1 WHERE tenant_id=$1 AND id=(SELECT appointment_id FROM bookings.public_claims WHERE tenant_id=$1 AND token_hash=$2)")
+        .bind(f.tenant).bind(&[201_u8;32][..]).execute(&mut *tx).await.unwrap_err();
+    assert_eq!(
+        tamper.as_database_error().unwrap().code().as_deref(),
+        Some("B2102")
+    );
+    tx.rollback().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn consent_change_and_public_booking_are_serialized() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let specialist = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        specialist.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 2,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let input = public_input(&offer);
+    let change = public_bookings::configure(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        PublicBookingConfig {
+            enabled: true,
+            privacy_url: Some("https://clinic.example/privacy".into()),
+            consent_text: Some("Новая версия".into()),
+            form: BookingForm::default(),
+        },
+        1,
+    );
+    let (booked, saved) = tokio::join!(
+        public_bookings::book(&f.runtime, slug, &[203; 32], input),
+        change
+    );
+    assert_eq!(saved.unwrap().consent_version, 2);
+    match booked {
+        Ok(_) => {
+            let snapshot: (i32, Vec<u8>) = sqlx::query_as("SELECT a.consent_version,a.consent_text_sha256 FROM bookings.appointments a JOIN bookings.public_claims c ON c.tenant_id=a.tenant_id AND c.appointment_id=a.id WHERE c.tenant_id=$1 AND c.token_hash=$2")
+                .bind(f.tenant).bind(&[203_u8;32][..]).fetch_one(&f.migrator).await.unwrap();
+            assert_eq!(
+                snapshot,
+                (
+                    1,
+                    Sha256::digest(public_bookings::DEFAULT_CONSENT_TEXT.as_bytes()).to_vec()
+                )
+            );
+        }
+        Err(PubError::Changed) => {
+            let claims: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM bookings.public_claims WHERE tenant_id=$1 AND token_hash=$2",
+            )
+            .bind(f.tenant)
+            .bind(&[203_u8; 32][..])
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap();
+            assert_eq!(claims, 0);
+        }
+        Err(error) => panic!("unexpected booking result: {error:?}"),
+    }
     f.close().await;
 }

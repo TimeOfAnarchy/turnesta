@@ -183,6 +183,8 @@ fn links(state: &AppState, settings: BookingPublicSettings) -> BookingAccessResp
 pub(super) struct BookingPublicConfigureInput {
     enabled: bool,
     privacy_url: Option<String>,
+    #[serde(default)]
+    consent_text: Option<String>,
     form: BookingForm,
     expected_version: i32,
 }
@@ -221,6 +223,7 @@ pub(super) async fn configure(
         PublicBookingConfig {
             enabled: v.enabled,
             privacy_url: v.privacy_url,
+            consent_text: v.consent_text,
             form: v.form,
         },
         v.expected_version,
