@@ -191,6 +191,6 @@ export function validateName(value: string): string | undefined {
   const trimmed = value.trim();
   if (!trimmed) return 'Введите название.';
   if ([...trimmed].length > 120) return 'Название должно быть не длиннее 120 символов.';
-  if (/[\u0000-\u001f\u007f-\u009f]/u.test(trimmed)) return 'Уберите управляющие символы из названия.';
+  if (/\p{Cc}/u.test(trimmed)) return 'Уберите управляющие символы из названия.';
   return undefined;
 }

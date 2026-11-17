@@ -109,7 +109,7 @@ export function CatalogEditor({
       validateName(name) ||
       (kind === 'specialist' &&
       ([...description.trim()].length > 500 ||
-        /[\u0000-\u001f\u007f-\u009f]/u.test(description))
+        /\p{Cc}/u.test(description))
         ? 'Описание — до 500 символов, без переносов строк.'
         : undefined) ||
       (kind === 'preset' &&
@@ -453,7 +453,7 @@ export function OfferEditor({
       end = draft.end ? `${draft.endDate}T${draft.end}` : null;
     const invalid =
       [...draft.title.trim()].length > 120 ||
-      /[\u0000-\u001f\u007f-\u009f]/u.test(draft.title)
+      /\p{Cc}/u.test(draft.title)
         ? 'Название — до 120 символов, без управляющих знаков.'
         : draft.agreement
           ? !/^\d+$/.test(draft.places) ||
