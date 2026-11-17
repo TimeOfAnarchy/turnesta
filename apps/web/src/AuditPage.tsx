@@ -4,7 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useWorkspace } from './App';
 import { ApiError } from './api';
 import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
-import { auditApi } from './audit';
+import { auditApi, formatAuditTime } from './audit';
 import type { AuditCursor, AuditEntry, AuditFilters, AuditSettings } from './audit';
 import { teamApi } from './team';
 
@@ -72,7 +72,16 @@ function Audit({ tenant }: { tenant: string }) {
 
 function AuditRow({ item }: { item: AuditEntry }) {
   const action = item.action === 'list' ? 'Список записей' : item.action === 'detail' ? 'Карточка клиента' : 'Результат команды';
-  return <article className="audit-entry"><div><strong>{item.actor_name}</strong><span>{item.location_name}</span></div><div><strong>{action}</strong><span>{item.action === 'list' ? `Дата: ${item.visit_date}; возвращено: ${item.result_count}${item.include_cancelled ? '; с отменёнными' : ''}` : `Запись: ${item.appointment_id}`}</span></div><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time></article>;
+  return <article className="audit-entry">
+    <div><strong>{item.actor_name}</strong><span>{item.location_name}</span></div>
+    <div><strong>{action}</strong>
+      {item.action === 'list' ? <>
+        <span>{item.specialist_name ?? item.specialist_id}</span>
+        <span>Дата: {item.visit_date} · возвращено: {item.result_count}{item.include_cancelled ? ' · с отменёнными' : ''}</span>
+      </> : <span>Запись: {item.appointment_id}</span>}
+    </div>
+    <time dateTime={item.created_at}>{formatAuditTime(item.created_at)}</time>
+  </article>;
 }
 
 function Retention({ tenant, initial, onChange, onSaved }: { tenant: string; initial: AuditSettings; onChange: () => void; onSaved: () => void }) {

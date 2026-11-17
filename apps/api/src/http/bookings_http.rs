@@ -3,7 +3,7 @@ use super::{
     api::{ApiError, SignedIn, check_mutation, single_header},
 };
 use crate::{
-    appointments::{self, Appointment, AppointmentCommand, AppointmentReceipt},
+    appointments::{self, Appointment, AppointmentCommand, AppointmentReceipt, AppointmentSummary},
     bookings::{
         self, BookingCommand, BookingError, BookingReceipt, ConflictNotice, Offer, Preset,
         Specialist,
@@ -270,7 +270,7 @@ pub(super) async fn appointment(
 }
 #[derive(Serialize, ToSchema)]
 pub(super) struct AppointmentPage {
-    items: Vec<Appointment>,
+    items: Vec<AppointmentSummary>,
     next_cursor: Option<Uuid>,
 }
 

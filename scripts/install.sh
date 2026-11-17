@@ -73,12 +73,14 @@ EOF
 }
 
 schedule_backups() {
+    case "$PWD" in *'%'*|*'"'*|*'$'*|*'`'*|*\\*|*'
+'*) fail 'The installation path contains characters that cannot be used in cron.' ;; esac
+    daily=$(printf '/bin/sh "%s/scripts/backup.sh" && /bin/sh "%s/scripts/purge.sh"' "$PWD" "$PWD")
     if [ -w /etc/cron.d ]; then
-        case "$PWD" in *'%'*|*'"'*|*'$'*|*'`'*|*'\'*|*'
-'*) fail 'The installation path cannot contain percent signs, quotes or newlines for cron.' ;; esac
-        printf '30 3 * * * root /bin/sh "%s/scripts/backup.sh" >> /var/log/turnesta-backup.log 2>&1 && /bin/sh "%s/scripts/purge.sh" >> /var/log/turnesta-backup.log 2>&1\n' "$PWD" "$PWD" > /etc/cron.d/turnesta
+        printf '30 3 * * * root ( %s ) >> /var/log/turnesta-backup.log 2>&1\n' "$daily" > /etc/cron.d/turnesta
     else
-        echo 'Add ./scripts/backup.sh to cron to back up the database every day.'
+        echo 'Add this line to your crontab to run daily backup and cleanup:'
+        printf '30 3 * * * %s\n' "$daily"
     fi
     if [ -w /etc/logrotate.d ]; then
         if [ -e /etc/logrotate.d/turnesta ]; then

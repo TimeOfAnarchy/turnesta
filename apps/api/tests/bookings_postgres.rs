@@ -70,6 +70,10 @@ async fn audit_records_access_and_replays_without_contacts_and_is_owner_scoped()
     .await
     .unwrap();
     assert_eq!(items.len(), 1);
+    let summary = serde_json::to_value(&items[0]).unwrap();
+    for field in ["note", "email", "answers", "form_snapshot"] {
+        assert!(summary.get(field).is_none(), "list exposed {field}");
+    }
     appointments::get(&f.runtime, operator, f.tenant, f.point, created.id)
         .await
         .unwrap();
@@ -89,6 +93,10 @@ async fn audit_records_access_and_replays_without_contacts_and_is_owner_scoped()
         vec!["command", "detail", "list", "command"]
     );
     assert_eq!(entries[2].visit_date.as_deref(), Some("2026-11-16"));
+    assert_eq!(
+        entries[2].specialist_name.as_deref(),
+        Some(specialist.name.as_str())
+    );
     assert_eq!(entries[2].result_count, Some(1));
     assert_eq!(entries[1].appointment_id, Some(created.id));
     let page = audit::list(
@@ -972,7 +980,46 @@ async fn automatic_retention_is_opt_in_and_skips_unknown_end_and_fresh_cancellat
     );
     let allowed: bool = sqlx::query_scalar("SELECT has_function_privilege('turnesta_api','bookings.retention_batch(boolean)','EXECUTE')").fetch_one(&f.migrator).await.unwrap();
     assert!(!allowed);
+    check_retention_past_locked_calendar(&f, spec.id).await;
     f.close().await;
+}
+
+async fn check_retention_past_locked_calendar(f: &Fixture, first: Uuid) {
+    let second = f.specialist().await.id;
+    let (busy, free) = (first.min(second), first.max(second));
+    let mut setup = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    // The first 1000 eligible visits belong to one busy calendar; the last visit is free.
+    sqlx::query(
+        "INSERT INTO bookings.offers(tenant_id,location_id,specialist_id,id,title,mode,local_date,
+            starts_local,ends_local,starts_at,ends_at,time_zone,places,state)
+         SELECT $1,$2,CASE WHEN n<1000 THEN $3::uuid ELSE $4::uuid END,gen_random_uuid(),
+            'Archived visit','interval',t::date,t,t+interval '1 hour',t AT TIME ZONE 'Europe/Moscow',
+            (t+interval '1 hour') AT TIME ZONE 'Europe/Moscow','Europe/Moscow',1,'ready'
+         FROM generate_series(0,1000) n CROSS JOIN LATERAL (SELECT timestamp '2015-01-01'+n*interval '1 day' AS t) times"
+    ).bind(f.tenant).bind(f.point).bind(busy).bind(free).execute(setup.connection()).await.unwrap();
+    sqlx::query(
+        "INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status)
+         SELECT tenant_id,location_id,specialist_id,id,gen_random_uuid(),'Archived','','','','confirmed'
+         FROM bookings.offers WHERE tenant_id=$1 AND location_id=$2 AND title='Archived visit'"
+    ).bind(f.tenant).bind(f.point).execute(setup.connection()).await.unwrap();
+    setup.commit().await.unwrap();
+
+    let mut hold = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM bookings.calendars WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 FOR UPDATE")
+        .bind(f.tenant).bind(f.point).bind(busy).fetch_one(&mut *hold).await.unwrap();
+    let purge = || {
+        sqlx::query_scalar::<_, i64>("SELECT bookings.retention_batch(false)")
+            .fetch_one(&f.migrator)
+    };
+    assert_eq!(purge().await.unwrap(), 1);
+    let erased: Vec<Uuid> = sqlx::query_scalar("SELECT specialist_id FROM bookings.appointments WHERE tenant_id=$1 AND client_name='Удалено' AND title='Archived visit'")
+        .bind(f.tenant).fetch_all(&f.migrator).await.unwrap();
+    assert_eq!(erased, [free]);
+    hold.rollback().await.unwrap();
+    assert_eq!(purge().await.unwrap(), 1000);
+    assert_eq!(purge().await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -1257,7 +1304,9 @@ async fn anonymization_of_public_booking_preserves_receipt_without_contacts() {
     )
     .await
     .unwrap();
-    let item = &items[0];
+    let item = appointments::get(&f.runtime, f.owner, f.tenant, f.point, items[0].id)
+        .await
+        .unwrap();
     assert!(!item.answers.0.as_object().unwrap().is_empty());
     let erased = appointment_execute(
         &f,
@@ -3210,6 +3259,9 @@ async fn public_bookings_snapshot_answers_privacy_and_replay_after_pause() {
     .unwrap()
     .remove(0);
     assert_eq!(a.source, "public");
+    let a = appointments::get(&f.runtime, f.owner, f.tenant, f.point, a.id)
+        .await
+        .unwrap();
     assert_eq!(a.created_by, None);
     assert_eq!(a.answers.0["field_visit"], "Первый визит");
     assert!(a.form_snapshot.is_some());
@@ -4442,7 +4494,17 @@ async fn pilot_owner_operator_visitor_booking_move_cancel_and_access_revoke() {
         .find(|a| a["source"] == "public")
         .unwrap();
     let guest_id: Uuid = guest["id"].as_str().unwrap().parse().unwrap();
-    assert_eq!(guest["answers"]["field_visit"], "First");
+    assert!(guest.get("answers").is_none());
+    let (status, detail) = f
+        .json(
+            Request::get(f.url(&format!("appointments/{guest_id}")))
+                .header("cookie", &staff.0)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["answers"]["field_visit"], "First");
     let employee = f.member(Role::Employee).await;
     let employee_login = f.login(employee).await;
     assert_eq!(

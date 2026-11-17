@@ -440,6 +440,10 @@ select[aria-invalid='true'] {
   padding: 0;
   accent-color: var(--green);
 }
+.consent > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .consent a {
   color: var(--green);
   text-underline-offset: 0.2rem;

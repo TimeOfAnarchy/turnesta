@@ -42,6 +42,7 @@ try {
         '--network', $config.networks.default.name,
         '--mount', "type=bind,source=$projectPath,target=/workspace",
         '--mount', 'type=volume,source=turnesta_cargo_registry,target=/usr/local/cargo/registry',
+        '--mount', 'type=volume,source=turnesta_cargo_git,target=/usr/local/cargo/git',
         '--mount', 'type=volume,source=turnesta_target,target=/workspace/target',
         '-w', '/workspace',
         '-e', ('TEST_MIGRATION_DATABASE_URL=' + (Test-DatabaseUrl $config.services.migrator.environment.DATABASE_URL)),

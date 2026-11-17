@@ -1,8 +1,12 @@
 import { afterEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auditApi } from '../src/audit.ts';
+import { auditApi, formatAuditTime } from '../src/audit.ts';
 
 afterEach(() => { mock.restoreAll(); delete globalThis.document; });
+
+test('audit row uses the UTC filter date across local midnight', () => {
+  assert.match(formatAuditTime('2026-11-17T00:30:00+03:00'), /16\.11\.2026.*21:30:00 UTC/);
+});
 
 test('audit filters and cursor stay scoped to the organization', async () => {
   const signal = new AbortController().signal;

@@ -71,6 +71,10 @@ export type AppointmentCommand =
       expected_version: number;
     };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export type AppointmentSummary = Pick<Appointment,
+  'id' | 'offer_id' | 'client_name' | 'phone' | 'status' | 'source' |
+  'title' | 'date' | 'starts_local' | 'ends_local' | 'anonymized_at'
+>;
 export function isAppointmentAction(value: { type?: unknown }): boolean {
   return [
     'record_appointment',
@@ -153,7 +157,7 @@ export const appointmentApi = {
     after: string | null,
     signal: AbortSignal,
   ) =>
-    request<Page<Appointment>>(
+    request<Page<AppointmentSummary>>(
       `${base(tenant, location)}?${new URLSearchParams({ specialist_id: specialist, date, include_cancelled: String(cancelled), limit: '50', ...(after ? { after } : {}) })}`,
       { signal },
     ),

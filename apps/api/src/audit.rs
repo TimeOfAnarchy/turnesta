@@ -25,6 +25,7 @@ pub struct AuditEntry {
     pub action: String,
     pub appointment_id: Option<Uuid>,
     pub specialist_id: Option<Uuid>,
+    pub specialist_name: Option<String>,
     pub visit_date: Option<String>,
     pub after_id: Option<Uuid>,
     pub page_limit: Option<i32>,
@@ -182,7 +183,12 @@ pub async fn list(
         return Err(AuditError::Invalid);
     }
     let mut session = owner(pool, user, tenant).await?;
-    let rows = sqlx::query_as("SELECT * FROM audit.list_access($1,$2,$3,$4,$5,$6,$7)")
+    let rows = sqlx::query_as(
+        "SELECT entry.*, s.name AS specialist_name
+         FROM audit.list_access($1,$2,$3,$4,$5,$6,$7) entry
+         LEFT JOIN bookings.specialists s ON s.tenant_id=$1 AND s.location_id=entry.location_id AND s.id=entry.specialist_id
+         ORDER BY entry.created_at DESC, entry.id::bigint DESC",
+    )
         .bind(tenant)
         .bind(query.from)
         .bind(query.to)

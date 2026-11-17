@@ -9,6 +9,7 @@ export type AuditEntry = {
   action: 'list' | 'detail' | 'command';
   appointment_id: string | null;
   specialist_id: string | null;
+  specialist_name: string | null;
   visit_date: string | null;
   after_id: string | null;
   page_limit: number | null;
@@ -20,6 +21,9 @@ export type AuditCursor = { before_at: string; before_id: string };
 export type AuditPage = { items: AuditEntry[]; next_cursor: AuditCursor | null };
 export type AuditSettings = { retention_days: number; version: number };
 export type AuditFilters = { from: string; to: string; actor: string };
+export function formatAuditTime(instant: string) {
+  return new Date(instant).toLocaleString('ru-RU', { timeZone: 'UTC' }) + ' UTC';
+}
 const base = (tenant: string) => `/api/organizations/${encodeURIComponent(tenant)}/audit`;
 export const auditApi = {
   list: (tenant: string, filters: AuditFilters, cursor: AuditCursor | null, signal: AbortSignal) => {

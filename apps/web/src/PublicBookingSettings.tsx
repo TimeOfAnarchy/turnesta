@@ -313,14 +313,14 @@ function PublicSettingsEditor({
               <label htmlFor="booking-consent-text">
                 Текст согласия клиента
               </label>
-              <input
+              <textarea
                 id="booking-consent-text"
-                type="text"
+                rows={4}
                 maxLength={1000}
                 required
                 value={consentText}
                 onChange={(event) => {
-                  setConsentText(event.target.value);
+                  setConsentText(event.target.value.replace(/\r\n?|\n/g, ' '));
                   setSaved(false);
                 }}
               />

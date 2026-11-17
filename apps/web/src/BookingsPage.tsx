@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { Link, useSearchParams } from 'react-router-dom';
 import { useWorkspace } from './App';
 import { ApiError, errorMessage } from './api';
-import { ErrorNotice, Icon, Loading, SuccessNotice } from './components';
+import { ErrorNotice, Icon, Loading, Modal, SuccessNotice } from './components';
 import { keys, useLocations } from './queries';
 import { OfferEditor, CatalogEditor } from './BookingEditors';
 import { BookingsHelp } from './BookingsHelp';
@@ -11,12 +11,12 @@ import { PublicBookingSettings } from './PublicBookingSettings';
 import { BookingBatchEditor } from './BookingBatchEditor';
 import {
   RecordAppointmentEditor,
-  AppointmentEditor,
+  AppointmentDetails,
   AppointmentsPanel,
   useDayAppointments,
 } from './AppointmentEditors';
 import { canRecord, occupancyLabel, isAppointmentAction } from './appointments';
-import type { Appointment } from './appointments';
+import type { AppointmentSummary } from './appointments';
 import {
   bookingApi,
   BookingCommands,
@@ -240,7 +240,7 @@ export function BookingsPage() {
 type Editor =
   | { kind: 'batch'; specialist: Specialist }
   | { kind: 'record'; offer: Offer; specialist: Specialist }
-  | { kind: 'appointment'; item: Appointment }
+  | { kind: 'appointment'; id: string; erased: boolean; opening: string }
   | { kind: 'specialist'; item: Specialist | null }
   | { kind: 'preset'; item: Preset | null; back?: Specialist }
   | {
@@ -349,14 +349,9 @@ function Schedule({
     retry: false,
     refetchInterval: 10_000,
   });
-  const appointments = useDayAppointments(
-    tenant,
-    location,
-    selected?.id ?? '',
-    date,
-    false,
-    canBook && Boolean(selected) && view === 'schedule',
-  );
+  const showClients = canBook && Boolean(selected) && view === 'schedule';
+  const appointments = useDayAppointments(tenant, location, selected?.id ?? '', date, false, showClients);
+  const history = useDayAppointments(tenant, location, selected?.id ?? '', date, true, showClients && cancelled);
   const items = distinct(offers.data?.pages.flatMap((p) => p.items) ?? []);
   // An empty day points to the nearest scheduled day within two weeks.
   const nextDay = useQuery({
@@ -410,9 +405,10 @@ function Schedule({
         a.id.localeCompare(b.id),
     );
   const visible = new Set(items.map((i) => i.id));
-  const clients = new Map<string, Appointment[]>();
+  const clients = new Map<string, AppointmentSummary[]>();
   const placed = new Set<string>();
-  for (const a of appointments.data?.pages.flatMap((p) => p.items) ?? []) {
+  const dayAppointments = appointments.data?.pages.flatMap((p) => p.items) ?? [];
+  for (const a of dayAppointments) {
     if (a.status !== 'confirmed' || !visible.has(a.offer_id) || placed.has(a.id))
       continue;
     placed.add(a.id);
@@ -436,6 +432,14 @@ function Schedule({
   );
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
+  let currentAppointment: AppointmentSummary | undefined;
+  if (editor?.kind === 'appointment' && showClients && !appointments.isError && !(cancelled && history.isError)) {
+    currentAppointment = dayAppointments.find((a) => a.id === editor.id);
+    if (cancelled && !currentAppointment?.anonymized_at) {
+      const historyRow = history.data?.pages.flatMap((p) => p.items).find((a) => a.id === editor.id);
+      currentAppointment = historyRow ?? currentAppointment;
+    }
+  }
   useEffect(() => {
     if (
       editor &&
@@ -538,6 +542,9 @@ function Schedule({
   function openOffer(item: Offer | null, copy = false) {
     if (selected) open({ kind: 'offer', item, copy, specialist: selected });
   }
+  function openAppointment(item: AppointmentSummary) {
+    open({ kind: 'appointment', id: item.id, erased: Boolean(item.anonymized_at), opening: crypto.randomUUID() });
+  }
   const actionsDisabled = disabled || Boolean(journal.pending);
   function list(values: Offer[]) {
     return (
@@ -585,7 +592,7 @@ function Schedule({
                           type="button"
                           className="booking-client"
                           disabled={bookingDisabled}
-                          onClick={() => open({ kind: 'appointment', item: a })}
+                          onClick={() => openAppointment(a)}
                           aria-label={`Открыть запись ${a.client_name} ${timeLabel(a)}`}
                         >
                           <span className="booking-avatar" aria-hidden="true">
@@ -1130,14 +1137,11 @@ function Schedule({
           )}
           {canBook && selected && (
             <AppointmentsPanel
-              tenant={tenant}
-              location={location}
-              specialist={selected.id}
-              date={date}
+              query={cancelled ? history : appointments}
               placed={placed}
               cancelled={cancelled}
               disabled={bookingDisabled}
-              open={(item) => open({ kind: 'appointment', item })}
+              open={openAppointment}
             />
           )}
         </>
@@ -1183,17 +1187,27 @@ function Schedule({
             close={() => setEditor(null)}
           />
         ) : editor.kind === 'appointment' ? (
-          <AppointmentEditor
-            key={`appointment:${editor.item.id}`}
-            tenant={tenant}
-            location={location}
-            initial={editor.item}
-            role={role}
-            busy={busy}
-            journal={journal}
-            run={run}
-            close={() => setEditor(null)}
-          />
+          currentAppointment && Boolean(currentAppointment.anonymized_at) === editor.erased ? (
+            <AppointmentDetails
+              key={editor.opening}
+              tenant={tenant}
+              location={location}
+              id={editor.id}
+              opening={editor.opening}
+              role={role}
+              busy={busy}
+              journal={journal}
+              run={run}
+              close={() => setEditor(null)}
+            />
+          ) : (
+            <Modal title="Карточка обновлена" close={() => setEditor(null)}
+              description={currentAppointment?.anonymized_at
+                ? 'Данные клиента удалены. Открытый черновик закрыт.'
+                : 'Запись сейчас недоступна. Проверьте расписание.'}>
+              <button type="button" className="button secondary" onClick={() => setEditor(null)}>Закрыть</button>
+            </Modal>
+          )
         ) : editor.kind === 'offer' ? (
           <OfferEditor
             tenant={tenant}

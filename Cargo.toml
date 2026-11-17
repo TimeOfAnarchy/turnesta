@@ -43,6 +43,11 @@ zeroize = "1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# SQLx 0.9.0 locks its optional SQLite driver even in PostgreSQL-only builds.
+# Upstream #4502 permits the fixed libsqlite3-sys until the next SQLx release.
+[patch.crates-io]
+sqlx-sqlite = { git = "https://github.com/launchbadge/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

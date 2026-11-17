@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ApiError, errorMessage, validateName } from './api';
 import { ErrorNotice, Icon, Loading, Modal } from './components';
 import {
@@ -17,7 +17,7 @@ import type {
   Specialist,
 } from './bookings';
 import { appointmentApi, canAnonymizeAppointment } from './appointments';
-import type { Appointment, ClientInput } from './appointments';
+import type { Appointment, AppointmentSummary, ClientInput } from './appointments';
 
 type Controls = {
   busy: boolean;
@@ -326,7 +326,27 @@ export function RecordAppointmentEditor({
   );
 }
 
-export function AppointmentEditor({
+export function AppointmentDetails({ id, opening, ...props }: Controls & {
+  id: string; opening: string; tenant: string; location: string; role: string;
+}) {
+  const detail = useQuery({
+    queryKey: ['organization', props.tenant, 'appointment-detail', props.location, id, opening],
+    // A StrictMode remount shares this opening's request. A new click always has a new key.
+    queryFn: () => appointmentApi.get(props.tenant, props.location, id, AbortSignal.timeout(10_000)),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  });
+  if (detail.isSuccess) return <AppointmentEditor {...props} initial={detail.data} />;
+  return <Modal title="Запись клиента" description="Подробности записи" close={props.close}>
+    {detail.isError ? <ErrorNotice error={detail.error} retry={() => void detail.refetch()} />
+      : <Loading label="Загружаем карточку…" />}
+  </Modal>;
+}
+
+function AppointmentEditor({
   tenant,
   location,
   initial,
@@ -339,6 +359,10 @@ export function AppointmentEditor({
   const [item, setItem] = useState(initial);
   const [client, setClient] = useState(() => clientOf(initial));
   const [mode, setMode] = useState<'view' | 'edit' | 'move' | 'cancel' | 'anonymize'>('view');
+  const backButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (mode === 'anonymize') backButton.current?.focus();
+  }, [mode]);
   const [date, setDate] = useState(initial.date ?? todayAt(initial.time_zone));
   const [target, setTarget] = useState<Offer | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -701,6 +725,7 @@ export function AppointmentEditor({
               type="button"
               disabled={blocked}
               onClick={() => changeMode('view')}
+              ref={backButton}
             >
               Назад
             </button>
@@ -715,7 +740,7 @@ export function AppointmentEditor({
           </button>
           {mode !== 'view' && (
             <button
-              className={`button ${mode === 'cancel' ? 'appointment-cancel' : 'primary'}`}
+              className={`button ${mode === 'cancel' || mode === 'anonymize' ? 'appointment-cancel' : 'primary'}`}
               disabled={
                 blocked ||
                 (item.status !== 'confirmed' && mode !== 'anonymize') ||
@@ -779,31 +804,18 @@ export function useDayAppointments(
 // Confirmed appointments of visible slots are shown inside the slot cards;
 // this panel keeps the rest: cancelled history and records outside the list.
 export function AppointmentsPanel({
-  tenant,
-  location,
-  specialist,
-  date,
+  query,
   placed,
   cancelled,
   open,
   disabled,
 }: {
-  tenant: string;
-  location: string;
-  specialist: string;
-  date: string;
+  query: ReturnType<typeof useDayAppointments>;
   placed: ReadonlySet<string>;
   cancelled: boolean;
-  open: (item: Appointment) => void;
+  open: (item: AppointmentSummary) => void;
   disabled: boolean;
 }) {
-  const query = useDayAppointments(
-    tenant,
-    location,
-    specialist,
-    date,
-    cancelled,
-  );
   const items = [
     ...new Map(
       (query.data?.pages.flatMap((p) => p.items) ?? []).map((a) => [a.id, a]),

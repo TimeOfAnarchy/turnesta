@@ -262,6 +262,7 @@ struct ErrorResponse {
         bookings_public_http::BookingPublicConfigureInput,
         bookings_public_http::BookingAccessResponse,
         crate::appointments::Appointment,
+        crate::appointments::AppointmentSummary,
         crate::appointments::ClientInput,
         crate::appointments::AppointmentCommand,
         crate::appointments::AppointmentReceipt,

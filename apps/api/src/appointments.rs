@@ -190,6 +190,21 @@ impl AppointmentCommand {
     }
 }
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct AppointmentSummary {
+    pub id: Uuid,
+    pub offer_id: Uuid,
+    pub client_name: String,
+    pub phone: String,
+    pub status: String,
+    pub source: String,
+    pub title: String,
+    pub date: Option<String>,
+    pub starts_local: Option<String>,
+    pub ends_local: Option<String>,
+    pub anonymized_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct Appointment {
     pub id: Uuid,
     pub specialist_id: Uuid,
@@ -268,7 +283,7 @@ pub async fn list(
     tenant: TenantId,
     location: LocationId,
     page: AppointmentPage<'_>,
-) -> Result<Vec<Appointment>, BookingError> {
+) -> Result<Vec<AppointmentSummary>, BookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     if s.role() == Role::Employee {
         return Err(CoreError::Forbidden.into());
@@ -277,9 +292,22 @@ pub async fn list(
         .bind(page.date)
         .execute(s.connection())
         .await?;
-    let rows: Vec<Appointment>=sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=$4 OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR status='confirmed') ORDER BY id LIMIT $7")
-        .bind(tenant).bind(location).bind(page.specialist).bind(page.date).bind(page.after).bind(page.include_cancelled).bind(page.limit.clamp(1,100)+1).fetch_all(s.connection()).await?;
     let limit = page.limit.clamp(1, 100) as i32;
+    let rows: Vec<AppointmentSummary> = sqlx::query_as(
+        "SELECT id,offer_id,client_name,phone,status,source,title,date,starts_local,ends_local,anonymized_at
+         FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3
+           AND (date=$4 OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR status='confirmed')
+         ORDER BY id LIMIT $7",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(page.specialist)
+    .bind(page.date)
+    .bind(page.after)
+    .bind(page.include_cancelled)
+    .bind(i64::from(limit) + 1)
+    .fetch_all(s.connection())
+    .await?;
     audit::record(
         &mut s,
         location,
