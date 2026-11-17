@@ -76,38 +76,53 @@ pub(super) fn routes() -> Router<AppState> {
 }
 
 #[derive(Debug)]
-pub(super) struct ApiError(StatusCode, &'static str, &'static str);
+pub(super) struct ApiError {
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+    limit_reason: crate::metrics::LimitReason,
+}
 
 impl ApiError {
     pub(super) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
-        Self(status, code, message)
+        Self {
+            status,
+            code,
+            message,
+            limit_reason: crate::metrics::LimitReason(code),
+        }
+    }
+
+    pub(super) fn with_limit_reason(mut self, reason: &'static str) -> Self {
+        self.limit_reason = crate::metrics::LimitReason(reason);
+        self
     }
     pub(super) fn unauthorized() -> Self {
-        Self(
+        Self::new(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
             "A valid session is required",
         )
     }
     pub(super) fn forbidden() -> Self {
-        Self(StatusCode::FORBIDDEN, "forbidden", "Request not permitted")
+        Self::new(StatusCode::FORBIDDEN, "forbidden", "Request not permitted")
     }
     pub(super) fn bad_request() -> Self {
-        Self(
+        Self::new(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "Invalid request",
         )
     }
     pub(super) fn unavailable() -> Self {
-        Self(
+        Self::new(
             StatusCode::SERVICE_UNAVAILABLE,
             "service_unavailable",
             "Service temporarily unavailable",
         )
     }
     pub(super) fn internal() -> Self {
-        Self(
+        Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal",
             "Internal server error",
@@ -117,14 +132,18 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
-            self.0,
+        let mut response = (
+            self.status,
             Json(ErrorResponse {
-                code: self.1,
-                message: self.2,
+                code: self.code,
+                message: self.message,
             }),
         )
-            .into_response()
+            .into_response();
+        if self.status == StatusCode::TOO_MANY_REQUESTS {
+            response.extensions_mut().insert(self.limit_reason);
+        }
+        response
     }
 }
 
@@ -185,27 +204,27 @@ impl From<CoreError> for ApiError {
     fn from(error: CoreError) -> Self {
         match error {
             CoreError::AccessDenied | CoreError::ReferenceNotFound => {
-                Self(StatusCode::NOT_FOUND, "not_found", "Organization not found")
+                Self::new(StatusCode::NOT_FOUND, "not_found", "Organization not found")
             }
             CoreError::Forbidden => Self::forbidden(),
-            CoreError::InvalidName => Self(
+            CoreError::InvalidName => Self::new(
                 StatusCode::BAD_REQUEST,
                 "invalid_name",
                 "Name must contain 1..120 characters and no controls",
             ),
-            CoreError::InvalidTimeZone => Self(
+            CoreError::InvalidTimeZone => Self::new(
                 StatusCode::BAD_REQUEST,
                 "invalid_time_zone",
                 "Unknown IANA time zone",
             ),
             CoreError::Database(error) => error.into(),
-            CoreError::VersionConflict => Self(
+            CoreError::VersionConflict => Self::new(
                 StatusCode::CONFLICT,
                 "version_conflict",
                 "Record has changed; reload before saving again",
             ),
             CoreError::InvalidVersion | CoreError::InvalidRetention => Self::bad_request(),
-            CoreError::InvalidNavigation => Self(
+            CoreError::InvalidNavigation => Self::new(
                 StatusCode::BAD_REQUEST,
                 "invalid_navigation",
                 "Select distinct known services",
@@ -374,11 +393,12 @@ pub(super) async fn login(
 ) -> Result<Response, ApiError> {
     check_origin(&headers, &state.auth)?;
     let _permit = state.login_gate.try_acquire().map_err(|_| {
-        ApiError(
+        ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "busy",
             "Please retry shortly",
         )
+        .with_limit_reason("login_capacity")
     })?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let code = SecretToken::parse(&body.code).map_err(|_| ApiError::unauthorized())?;
@@ -811,32 +831,35 @@ mod tests {
             sqlx::Error::ColumnNotFound("private".into()),
         ] {
             let response = ApiError::from(error);
-            assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
-            assert_eq!(response.1, "internal");
+            assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(response.code, "internal");
         }
         for error in [
             sqlx::Error::PoolTimedOut,
             sqlx::Error::PoolClosed,
             sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()),
         ] {
-            assert_eq!(ApiError::from(error).0, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(
+                ApiError::from(error).status,
+                StatusCode::SERVICE_UNAVAILABLE
+            );
         }
         assert_eq!(
-            ApiError::from(CoreError::RuntimeRoleRequired).0,
+            ApiError::from(CoreError::RuntimeRoleRequired).status,
             StatusCode::INTERNAL_SERVER_ERROR
         );
         for code in [
             "57014", "55P03", "40001", "40P01", "08006", "57P01", "53300",
         ] {
             assert_eq!(
-                ApiError::from(db_error(code, "failure")).0,
+                ApiError::from(db_error(code, "failure")).status,
                 StatusCode::SERVICE_UNAVAILABLE,
                 "{code}"
             );
         }
         for code in ["23505", "23514", "22023", "XX000"] {
             assert_eq!(
-                ApiError::from(db_error(code, "failure")).0,
+                ApiError::from(db_error(code, "failure")).status,
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "{code}"
             );

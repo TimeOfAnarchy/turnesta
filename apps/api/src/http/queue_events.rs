@@ -70,6 +70,7 @@ fn slot(hub: &LiveHub, public: bool) -> Result<OwnedSemaphorePermit, ApiError> {
             "too_many_streams",
             "Live connection capacity reached",
         )
+        .with_limit_reason("sse_capacity")
     })
 }
 fn origin(headers: &HeaderMap, state: &AppState) -> Result<(), ApiError> {
@@ -143,6 +144,7 @@ pub(super) async fn public(
             "too_many_streams",
             "Live connection capacity reached",
         )
+        .with_limit_reason("public_client_admission")
     })?;
     let hub = hub(&state)?;
     let permit = slot(&hub, true)?;
@@ -289,6 +291,11 @@ impl Connection {
         }
     }
 }
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.state.metrics.sse.dec();
+    }
+}
 fn connection(
     state: AppState,
     receiver: watch::Receiver<Signal>,
@@ -296,6 +303,7 @@ fn connection(
     client_permit: Option<super::client_limit::ClientPermit>,
     access: Access,
 ) -> Response {
+    state.metrics.sse.inc();
     let connection = Connection {
         state,
         receiver,
@@ -318,4 +326,40 @@ fn connection(
         .headers_mut()
         .insert("x-accel-buffering", "no".parse().expect("static header"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn active_metric_follows_the_sse_body_through_disconnect_and_end_of_stream() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        let state = AppState::new(pool, Duration::from_secs(1));
+        let slots = Arc::new(tokio::sync::Semaphore::new(2));
+        let (_sender, receiver) = watch::channel(Signal::Stopping);
+        let open = || {
+            connection(
+                state.clone(),
+                receiver.clone(),
+                slots.clone().try_acquire_owned().unwrap(),
+                None,
+                Access::Public {
+                    slug: Uuid::nil(),
+                    display: false,
+                },
+            )
+        };
+        let first = open();
+        let second = open();
+        assert_eq!(state.metrics.sse.get(), 2);
+        drop(first);
+        assert_eq!(state.metrics.sse.get(), 1);
+        axum::body::to_bytes(second.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(state.metrics.sse.get(), 0);
+    }
 }

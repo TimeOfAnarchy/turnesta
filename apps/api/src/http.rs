@@ -42,6 +42,7 @@ mod tips_http;
 #[derive(Clone)]
 pub struct AppState {
     pool: PgPool,
+    metrics: Arc<crate::metrics::ApiMetrics>,
     ready_timeout: Duration,
     draining: Arc<AtomicBool>,
     auth: AuthConfig,
@@ -59,6 +60,7 @@ impl AppState {
     pub fn new(pool: PgPool, ready_timeout: Duration) -> Self {
         Self {
             pool,
+            metrics: Arc::new(crate::metrics::ApiMetrics::new()),
             ready_timeout,
             draining: Arc::new(AtomicBool::new(false)),
             auth: AuthConfig::default(),
@@ -71,6 +73,10 @@ impl AppState {
             expose_openapi: false,
             queue_live: None,
         }
+    }
+
+    pub fn metrics_router(&self) -> Router {
+        crate::metrics::api_router(self.pool.clone(), self.metrics.clone())
     }
 
     pub fn begin_shutdown(&self) {
@@ -389,7 +395,10 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             public_admission,
         ))
-        .layer(middleware::from_fn(request_context))
+        .layer(middleware::from_fn_with_state(
+            state.metrics.clone(),
+            request_context,
+        ))
         .with_state(state)
 }
 
@@ -415,6 +424,7 @@ async fn public_admission(State(state): State<AppState>, request: Request, next:
                 "too_many_requests",
                 "Please retry later",
             )
+            .with_limit_reason("public_client_admission")
             .into_response();
         }
     };
@@ -518,7 +528,11 @@ async fn method_not_allowed() -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-async fn request_context(request: Request, next: Next) -> Response {
+async fn request_context(
+    State(metrics): State<Arc<crate::metrics::ApiMetrics>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let is_cabinet_asset = request.uri().path().starts_with("/app/assets/");
     let request_id = Uuid::new_v4().to_string();
     let route = request
@@ -537,6 +551,7 @@ async fn request_context(request: Request, next: Next) -> Response {
     async move {
         let started = Instant::now();
         let mut response = next.run(request).await;
+        metrics.record(&route, &response, started.elapsed());
         response.headers_mut().insert(
             "x-request-id",
             HeaderValue::from_str(&request_id).expect("UUID is a valid header value"),

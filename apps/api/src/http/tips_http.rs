@@ -288,13 +288,7 @@ pub(super) async fn create_attempt(
 ) -> Result<(StatusCode, Json<CheckoutLinks>), ApiError> {
     enabled(&state)?;
     check_origin(&headers, &state.auth)?;
-    let _permit = state.public_gate.try_acquire().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too_many_requests",
-            "Please retry later",
-        )
-    })?;
+    let _permit = super::queue_public_http::permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let checkout = bounded(tips::create_attempt(
@@ -322,13 +316,7 @@ pub(super) async fn complete_checkout(
 ) -> Result<Json<StatusLink>, ApiError> {
     enabled(&state)?;
     check_origin(&headers, &state.auth)?;
-    let _permit = state.public_gate.try_acquire().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too_many_requests",
-            "Please retry later",
-        )
-    })?;
+    let _permit = super::queue_public_http::permit(&state)?;
     let Path(token) = path.map_err(|_| ApiError::bad_request())?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     if !matches!(body.outcome.as_str(), "succeeded" | "failed") {

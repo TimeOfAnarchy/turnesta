@@ -6,6 +6,7 @@ use thiserror::Error;
 
 pub struct Config {
     pub bind_addr: SocketAddr,
+    pub metrics_bind_addr: Option<SocketAddr>,
     pub database: DatabaseConfig,
     pub ready_timeout: Duration,
     pub shutdown_timeout: Duration,
@@ -71,6 +72,15 @@ impl Config {
                 )
             })?,
             bind_addr,
+            metrics_bind_addr: lookup("TURNESTA_METRICS_BIND_ADDR")
+                .map(|value| value.parse())
+                .transpose()
+                .map_err(|_| {
+                    invalid(
+                        "TURNESTA_METRICS_BIND_ADDR",
+                        "must be an IP address and port",
+                    )
+                })?,
             web_dist: lookup("TURNESTA_WEB_DIST")
                 .unwrap_or_else(|| "apps/web/dist".into())
                 .into(),
@@ -151,6 +161,7 @@ mod tests {
         )])
         .expect("valid configuration");
         assert!(settings.bind_addr.ip().is_loopback());
+        assert!(settings.metrics_bind_addr.is_none());
         assert_eq!(settings.database.max_connections, 10);
         assert_eq!(settings.ready_timeout, Duration::from_secs(1));
         assert!(!settings.expose_openapi);
@@ -202,10 +213,12 @@ mod tests {
 
     #[test]
     fn malformed_bind_address_is_rejected() {
-        let result = config(&[
-            ("DATABASE_URL", "postgres://localhost/turnesta"),
-            ("TURNESTA_BIND_ADDR", "localhost:8080"),
-        ]);
-        assert!(matches!(result, Err(error) if error.name == "TURNESTA_BIND_ADDR"));
+        for name in ["TURNESTA_BIND_ADDR", "TURNESTA_METRICS_BIND_ADDR"] {
+            let result = config(&[
+                ("DATABASE_URL", "postgres://localhost/turnesta"),
+                (name, "localhost:8080"),
+            ]);
+            assert!(matches!(result, Err(error) if error.name == name));
+        }
     }
 }

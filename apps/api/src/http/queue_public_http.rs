@@ -166,6 +166,7 @@ pub(super) fn permit(state: &AppState) -> Result<SemaphorePermit<'_>, ApiError> 
             "too_many_requests",
             "Please retry later",
         )
+        .with_limit_reason("public_capacity")
     })
 }
 

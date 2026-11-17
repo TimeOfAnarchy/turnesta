@@ -9,6 +9,7 @@ x-turnesta-service: &turnesta-service
   environment: &turnesta-environment
     DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD:-turnesta_api_local_dev}@db:5432/${POSTGRES_DB:-turnesta}
     TURNESTA_BIND_ADDR: 0.0.0.0:8080
+    TURNESTA_METRICS_BIND_ADDR: 0.0.0.0:9090
     TURNESTA_DB_MAX_CONNECTIONS: ${TURNESTA_DB_MAX_CONNECTIONS:-10}
     TURNESTA_DB_ACQUIRE_TIMEOUT_MS: ${TURNESTA_DB_ACQUIRE_TIMEOUT_MS:-3000}
     TURNESTA_READY_TIMEOUT_MS: ${TURNESTA_READY_TIMEOUT_MS:-1000}

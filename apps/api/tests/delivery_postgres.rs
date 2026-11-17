@@ -199,6 +199,14 @@ async fn worker_has_narrow_delivery_capability_without_core_or_private_table_acc
     assert!(db_ok(delivery::is_worker_role(&fixture.worker).await));
     assert!(!db_ok(delivery::is_worker_role(&fixture.runtime).await));
     assert!(!db_ok(delivery::is_worker_role(&fixture.admin).await));
+    let age_query = "SELECT auth.oldest_unsent_email_age_seconds()";
+    assert!(
+        db_ok(
+            sqlx::query_scalar::<_, f64>(age_query)
+                .fetch_one(&fixture.worker)
+                .await
+        ) >= 0.0
+    );
     for pool in [&fixture.runtime, &fixture.admin, &fixture.worker] {
         let result = sqlx::query("SELECT * FROM auth.invitation_deliveries LIMIT 0")
             .execute(pool)
@@ -221,6 +229,11 @@ async fn worker_has_narrow_delivery_capability_without_core_or_private_table_acc
         );
     }
     for pool in [&fixture.runtime, &fixture.admin] {
+        let denied = sqlx::query(age_query).execute(pool).await;
+        assert_eq!(
+            sqlstate(&denied.expect_err("outbox age is worker-only")),
+            "42501"
+        );
         let denied = claim(pool, &fixture.key_id).await;
         let Err(error) = denied else {
             panic!("only worker may claim delivery jobs");

@@ -299,7 +299,8 @@ pub(super) async fn book(
 ) -> Result<Json<PublicBookingReceipt>, ApiError> {
     check_origin(&headers, &state.auth)?;
     if !state.client_limit.allows(&headers) {
-        return Err(PublicBookingError::RateLimit.into());
+        return Err(ApiError::from(PublicBookingError::RateLimit)
+            .with_limit_reason("booking_client_budget"));
     }
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;

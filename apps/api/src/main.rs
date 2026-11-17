@@ -129,6 +129,53 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         .with_payments(config.payments.clone())
         .with_client_ip_header(config.client_ip_header.clone())
         .with_web_dist(config.web_dist.clone());
+    with_metrics(
+        config,
+        state.metrics_router(),
+        run_http(config, pool, state, queue_live),
+    )
+    .await
+}
+
+async fn with_metrics(
+    config: &Config,
+    router: axum::Router,
+    service: impl Future<Output = Result<()>>,
+) -> Result<()> {
+    let Some(address) = config.metrics_bind_addr else {
+        return service.await;
+    };
+    let listener = TcpListener::bind(address)
+        .await
+        .context("could not bind internal metrics listener")?;
+    tracing::info!(%address, "internal metrics listener ready");
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let metrics = axum::serve(listener, router)
+        .with_graceful_shutdown(async {
+            let _ = stopped.await;
+        })
+        .into_future();
+    tokio::pin!(metrics);
+    tokio::select! {
+        result = service => {
+            let _ = stop.send(());
+            tokio::time::timeout(config.shutdown_timeout, metrics).await
+                .context("metrics shutdown deadline exceeded")??;
+            result
+        }
+        result = &mut metrics => {
+            result.context("metrics listener failed")?;
+            anyhow::bail!("metrics listener exited unexpectedly")
+        }
+    }
+}
+
+async fn run_http(
+    config: &Config,
+    pool: PgPool,
+    state: AppState,
+    queue_live: std::sync::Arc<LiveHub>,
+) -> Result<()> {
     let app = http::router(state.clone());
     let listener = TcpListener::bind(config.bind_addr)
         .await
@@ -208,6 +255,20 @@ async fn run_worker(config: &Config, pool: PgPool, once: bool) -> Result<()> {
             .context("database pool shutdown deadline exceeded")?;
         return Ok(());
     }
+    with_metrics(
+        config,
+        turnesta_api::metrics::worker_router(pool.clone()),
+        deliver(config, pool, worker, payments),
+    )
+    .await
+}
+
+async fn deliver(
+    config: &Config,
+    pool: PgPool,
+    worker: Worker,
+    payments: MockDispatcher,
+) -> Result<()> {
     let (stop_tx, mut stop_rx) = watch::channel(false);
     let mut task = tokio::spawn(async move {
         loop {

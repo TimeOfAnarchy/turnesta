@@ -35,6 +35,8 @@
 		defer
 	}
 	route {
+		@metrics path /metrics /metrics/*
+		respond @metrics 404
 		@oversized `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 1000000`
 		respond @oversized 413
 		request_body {

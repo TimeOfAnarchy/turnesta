@@ -20,6 +20,7 @@ x-app: &app
 x-runtime: &runtime
   DATABASE_URL: postgresql://turnesta_api:${TURNESTA_API_DB_PASSWORD:?required}@db:5432/turnesta
   TURNESTA_BIND_ADDR: 0.0.0.0:8080
+  TURNESTA_METRICS_BIND_ADDR: 0.0.0.0:9090
   TURNESTA_PUBLIC_ORIGIN: https://${TURNESTA_DOMAIN:?required}
   TURNESTA_EXPOSE_OPENAPI: ${TURNESTA_EXPOSE_OPENAPI:-false}
   TURNESTA_WEB_DIST: /app/web

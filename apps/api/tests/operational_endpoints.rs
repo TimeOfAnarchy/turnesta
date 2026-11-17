@@ -26,6 +26,80 @@ async fn json(response: axum::response::Response) -> Value {
 }
 
 #[tokio::test]
+async fn worker_scrape_fails_when_outbox_age_is_unknown() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://localhost/unused")
+        .unwrap();
+    pool.close().await;
+    let res = turnesta_api::metrics::worker_router(pool)
+        .oneshot(Request::get("/metrics").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn idle_api_can_be_scraped_before_the_first_request() {
+    let res = offline_state()
+        .metrics_router()
+        .oneshot(Request::get("/metrics").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn metrics_are_internal_and_aggregate_only_route_templates_and_limit_reasons() {
+    let state = offline_state().with_client_ip_header(Some("x-real-ip".parse().unwrap()));
+    let metrics = state.metrics_router();
+    let app = router(state);
+    for (path, status) in [
+        ("/metrics", StatusCode::NOT_FOUND),
+        ("/private-path?token=secret", StatusCode::NOT_FOUND),
+        ("/api/public/queues/first/events", StatusCode::BAD_REQUEST),
+        ("/api/public/queues/second/events", StatusCode::BAD_REQUEST),
+        ("/book/secret", StatusCode::TOO_MANY_REQUESTS),
+    ] {
+        let res = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), status, "{path}");
+    }
+    let res = metrics
+        .oneshot(Request::get("/metrics").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["content-type"], "text/plain; version=0.0.4");
+    let text =
+        String::from_utf8(to_bytes(res.into_body(), 64 * 1024).await.unwrap().to_vec()).unwrap();
+    for sample in [
+        r#"turnesta_http_responses_total{route="/api/public/queues/{slug}/events",status="400"} 2"#,
+        r#"turnesta_http_responses_total{route="<unmatched>",status="404"} 2"#,
+        r#"turnesta_http_request_duration_seconds_count{route="/api/public/queues/{slug}/events"} 2"#,
+        r#"turnesta_http_rate_limited_total{reason="public_client_admission"} 1"#,
+        r#"turnesta_db_pool_connections{state="in_use"} 0"#,
+        "turnesta_sse_connections 0",
+    ] {
+        assert!(text.contains(sample), "{sample} missing from {text}");
+    }
+    for private in [
+        "first",
+        "second/events",
+        "private-path",
+        "secret",
+        "oldest_unsent_email",
+    ] {
+        assert!(
+            !text.contains(private),
+            "unexpected label or metric: {private}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn liveness_does_not_depend_on_postgres() {
     let response = router(offline_state())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())

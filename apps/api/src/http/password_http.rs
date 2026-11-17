@@ -68,17 +68,18 @@ impl From<PasswordError> for ApiError {
                 "invalid_password",
                 "Use a passphrase of 15..128 characters without controls",
             ),
-            PasswordError::Busy => rate_limited(),
+            PasswordError::Busy => rate_limited("password_hash_capacity"),
             PasswordError::Unavailable => Self::unavailable(),
         }
     }
 }
-fn rate_limited() -> ApiError {
+fn rate_limited(reason: &'static str) -> ApiError {
     ApiError::new(
         StatusCode::TOO_MANY_REQUESTS,
         "password_rate_limited",
         "Please wait before trying again",
     )
+    .with_limit_reason(reason)
 }
 fn invalid_login() -> ApiError {
     ApiError::new(
@@ -106,7 +107,7 @@ async fn budget(
     client: &str,
 ) -> Result<(), ApiError> {
     if !db(password::budget(&state.pool, email, scope, client)).await? {
-        return Err(rate_limited());
+        return Err(rate_limited("password_budget"));
     }
     Ok(())
 }
@@ -186,7 +187,10 @@ pub(super) async fn login(
     body: Result<Json<PasswordLoginRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     check_origin(&headers, &state.auth)?;
-    let _gate = state.login_gate.try_acquire().map_err(|_| rate_limited())?;
+    let _gate = state
+        .login_gate
+        .try_acquire()
+        .map_err(|_| rate_limited("login_capacity"))?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let secret = Zeroizing::new(body.password);
     let email = Email::parse(&body.email).map_err(|_| invalid_login())?;
@@ -258,7 +262,10 @@ pub(super) async fn setup(
     body: Result<Json<PasswordSetupRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     check_origin(&headers, &state.auth)?;
-    let _gate = state.login_gate.try_acquire().map_err(|_| rate_limited())?;
+    let _gate = state
+        .login_gate
+        .try_acquire()
+        .map_err(|_| rate_limited("login_capacity"))?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let secret = Zeroizing::new(body.new_password);
     password::validate(&secret)?;
@@ -444,7 +451,7 @@ pub(super) async fn create_account(
                     "email_in_use",
                     "Account already exists; password was not changed",
                 ),
-                Some("P2303") => rate_limited(),
+                Some("P2303") => rate_limited("password_account_budget"),
                 Some("M2201") => ApiError::forbidden(),
                 _ => e.into(),
             },
