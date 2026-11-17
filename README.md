@@ -54,6 +54,8 @@ Keep a copy of `.env` somewhere safe: it holds the keys needed to restore on a n
 
 To move to a new server, copy `.env` and a backup into a fresh clone, then run `restore.sh`.
 
+[Operations runbook and first VPS launch checklist (local documentation, in Russian)](docs/OPERATIONS.md#регламент)
+
 ## Tech stack
 
 - Rust, Axum, Tokio, SQLx
