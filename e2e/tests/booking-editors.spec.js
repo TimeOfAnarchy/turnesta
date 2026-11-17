@@ -1,0 +1,110 @@
+import { expect } from '@playwright/test';
+import { checkAccessibility, checkWidth, mobile, test } from '../fixtures.js';
+
+test('Редакторы записи сохраняют черновики и восстанавливают выполненную команду без дубликата', async ({ page, owner }) => {
+  const dialog = page.getByRole('dialog');
+  const tabs = page.getByRole('navigation', { name: 'Разделы записи' });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(owner.email);
+  await page.getByLabel('Пароль', { exact: true }).fill(owner.temporary);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  const setup = page.getByRole('region', { name: 'Задайте свой пароль' });
+  await setup.getByLabel('Новый пароль', { exact: true }).fill(owner.password);
+  await setup.getByLabel('Повторите новый пароль').fill(owner.password);
+  await page.getByRole('button', { name: 'Сохранить пароль и войти' }).click();
+  await page.getByRole('link', { name: 'Точки', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить точку', exact: true }).click();
+  await dialog.getByLabel('Название точки').fill('Клиника редакторов');
+  await dialog.getByLabel('Часовой пояс').fill('UTC');
+  await dialog.getByRole('button', { name: 'Добавить точку' }).click();
+  await page.getByRole('link', { name: 'Настроить запись к специалистам' }).click();
+  await page.getByRole('button', { name: 'Добавить специалиста' }).click();
+  await dialog.getByLabel('Имя специалиста').fill('Доктор Соколова');
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await test.step('Заготовка и пересчёт окончания при смене времени', async () => {
+    await tabs.getByRole('link', { name: /Специалисты/ }).click();
+    await page.getByRole('region', { name: 'Заготовки приёмов' }).getByRole('button', { name: 'Добавить', exact: true }).click();
+    await dialog.getByLabel('Название заготовки').fill('Контрольный приём');
+    await dialog.getByLabel('Длительность, минут', { exact: false }).fill('30');
+    await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await tabs.getByRole('link', { name: /Расписание/ }).click();
+    await page.getByRole('button', { name: 'Добавить талон' }).click();
+    await dialog.locator('summary').click();
+    await dialog.getByLabel('Заготовка приёма').selectOption({ label: 'Контрольный приём · 30 мин' });
+    await dialog.getByLabel('Начало', { exact: true }).fill('14:00');
+    await expect(dialog.getByLabel('Окончание', { exact: true })).toHaveValue('14:30');
+    await dialog.getByLabel('Начало', { exact: true }).fill('15:00');
+    await expect(dialog.getByLabel('Окончание', { exact: true })).toHaveValue('15:30');
+    await checkAccessibility(page, 'offer editor');
+    await dialog.getByRole('button', { name: 'Сохранить талон' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: /Создать похожий талон/ }).click();
+    await dialog.getByLabel('Начало', { exact: true }).fill('16:00');
+    await dialog.getByLabel('Окончание', { exact: true }).fill('16:30');
+    await dialog.getByRole('button', { name: 'Сохранить талон' }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  await test.step('Сервер сохранил запись, ответ потерян, после reload восстанавливается тот же запрос', async () => {
+    const requests = [];
+    const observe = request => {
+      if (request.url().endsWith('/bookings/appointments/commands')) requests.push(request.postData());
+    };
+    page.on('request', observe);
+    await page.route('**/bookings/appointments/commands', async route => {
+      const response = await route.fetch();
+      expect(response.ok()).toBeTruthy();
+      await route.abort('failed');
+    }, { times: 1 });
+    await page.getByRole('button', { name: /Записать клиента:.*15:00/ }).click();
+    await dialog.getByLabel('Имя клиента').fill('Анна Тестовая');
+    await dialog.getByLabel('Телефон', { exact: false }).fill('+79000001122');
+    await dialog.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Повторить прежний запрос' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Повторить прежний запрос' })).toBeVisible();
+    expect(requests).toHaveLength(1);
+    await page.getByRole('button', { name: 'Повторить прежний запрос' }).click();
+    await expect(page.getByRole('button', { name: 'Повторить прежний запрос' })).toHaveCount(0);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+    await expect(page.getByRole('button', { name: /Открыть запись Анна Тестовая/ })).toHaveCount(1);
+    page.off('request', observe);
+  });
+
+  await test.step('Контакты, перенос, отмена и удаление данных на ширине 390 px', async () => {
+    await page.setViewportSize(mobile);
+    await checkWidth(page);
+    await page.getByRole('button', { name: /Открыть запись Анна Тестовая/ }).click();
+    await dialog.getByRole('button', { name: 'Изменить данные' }).click();
+    await dialog.getByLabel('Имя клиента').fill('Анна Обновлённая');
+    await checkAccessibility(page, 'client editor on mobile');
+    await dialog.getByRole('button', { name: 'Сохранить данные' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: /Открыть запись Анна Обновлённая/ }).click();
+    await dialog.getByRole('button', { name: 'Перенести', exact: true }).click();
+    await dialog.getByRole('group', { name: 'Новый талон' }).getByRole('button', { name: /16:00/ }).click();
+    await checkWidth(page);
+    await dialog.getByRole('button', { name: 'Подтвердить перенос' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: /Открыть запись Анна Обновлённая 16:00/ }).click();
+    await dialog.getByRole('button', { name: 'Отменить запись', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Да, отменить запись' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByLabel('Отменённые записи').check();
+    await page.getByRole('button', { name: /Открыть запись Анна Обновлённая/ }).click();
+    await dialog.getByRole('button', { name: 'Удалить данные клиента', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Назад', exact: true })).toBeFocused();
+    await dialog.getByRole('button', { name: 'Да, удалить данные' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Открыть запись Анна Обновлённая/ })).toHaveCount(0);
+    await expect(page.getByText('Данные клиента удалены.', { exact: true })).toBeVisible();
+    await checkWidth(page);
+  });
+  expect(errors).toEqual([]);
+});
