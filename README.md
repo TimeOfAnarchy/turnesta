@@ -46,7 +46,7 @@ git pull && ./scripts/update.sh ghcr.io/timeofanarchy/turnesta:latest
 ./scripts/restore.sh backups/turnesta-<date>.dump.age /path/to/age-identity.txt
 ```
 
-The database is backed up every day at 03:30 UTC and the last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an [rclone](https://rclone.org/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
+The installer schedules daily backups at 03:30 in the server's cron time zone. If it cannot write to `/etc/cron.d`, it prints a crontab entry for you to install. Verify the schedule and time zone on the server; use UTC if you want the backup to run at 03:30 UTC. The last 14 copies stay in `backups/`. An update makes a backup first; `update.sh <image>` installs a specific version and pins its digest. Running `update.sh` without an image keeps the pinned version. To keep copies off the server, configure an [rclone](https://rclone.org/) remote and set `TURNESTA_BACKUP_REMOTE` in `.env`.
 
 For encrypted backups, generate an [age](https://github.com/FiloSottile/age) identity on a trusted device and set its public recipient (`age1…`) as `TURNESTA_BACKUP_AGE_RECIPIENT` in the server's `.env`. Keep the private identity separately from the server and backups; provide its file to `restore.sh` only when needed. Losing this identity makes encrypted copies unrecoverable. Without a recipient, backups remain unencrypted and the script warns on every run; use an encrypted rclone remote if sending these copies offsite. Set `TURNESTA_BACKUP_PING_URL` to a private healthchecks-style URL to report successful and failed backup runs.
 

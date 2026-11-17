@@ -28,6 +28,14 @@ acquire_backup_lock() {
     flock -x -w 600 9 || fail 'Could not acquire the backup and restore lock within 10 minutes.'
 }
 
+acquire_maintenance_lock() {
+    command -v flock > /dev/null 2>&1 || fail 'flock is required for update and restore.'
+    umask 077
+    mkdir -p backups
+    exec 7>>backups/.turnesta-maintenance.lock
+    flock -x -w 600 7 || fail 'Could not acquire the maintenance lock within 10 minutes.'
+}
+
 compose() {
     if [ "$server" = true ]; then
         docker compose --env-file .env --file deploy/compose.prod.yaml "$@"

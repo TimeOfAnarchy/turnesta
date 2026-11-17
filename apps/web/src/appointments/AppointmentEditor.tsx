@@ -2,6 +2,7 @@ import { ApiError } from '../api';
 import { timeLabel } from '../bookings';
 import { ClientExportDialog } from '../ClientExportDialog';
 import { ErrorNotice, Loading, Modal } from '../components';
+import { ConfirmationNumber } from './ConfirmationNumber';
 import { ClientFields, Failure, ScheduleSummary, dateLabel } from './editorShared';
 import type { AppointmentEditorProps } from './useAppointmentCommand';
 import { useAppointmentCommand } from './useAppointmentCommand';
@@ -60,6 +61,7 @@ export function AppointmentEditor(props: AppointmentEditorProps) {
       close={close}
     >
       <ScheduleSummary item={item} name={item.specialist_name} />
+      {mode === 'view' && <ConfirmationNumber key={item.id} number={item.confirmation_number} />}
       <form
         className="booking-form"
         noValidate

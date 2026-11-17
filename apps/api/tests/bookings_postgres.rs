@@ -39,6 +39,104 @@ fn audit_query(actor: Option<UserId>) -> AuditQuery<'static> {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn appointment_numbers_serialize_first_inserts_and_span_points_without_exposing_counters() {
+    let mut f = Fixture::new("Europe/Moscow").await;
+    let timing = || Timing::ByAgreement {
+        date: None,
+        places: 10,
+    };
+    let first = saved_offer(&f, f.specialist().await.id, timing()).await;
+    let second = saved_offer(&f, f.specialist().await.id, timing()).await;
+    let (a, b) = tokio::join!(
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(first.specialist_id, first.id, 1, "First")
+        ),
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            record(second.specialist_id, second.id, 1, "Second")
+        )
+    );
+    let mut numbers = vec![
+        a.unwrap().confirmation_number,
+        b.unwrap().confirmation_number,
+    ];
+    numbers.sort();
+    assert_eq!(numbers, ["000001", "000002"]);
+
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    f.point = session
+        .create_location(&Name::parse("Second point").unwrap(), "Europe/Moscow")
+        .await
+        .unwrap()
+        .id;
+    session.commit().await.unwrap();
+    let third = saved_offer(&f, f.specialist().await.id, timing()).await;
+    let a = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(third.specialist_id, third.id, 1, "Third"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(a.confirmation_number, "000003");
+
+    let other = Fixture::new("Europe/Moscow").await;
+    let offer = saved_offer(&other, other.specialist().await.id, timing()).await;
+    let a = appointment_execute(
+        &other,
+        other.owner,
+        Uuid::new_v4(),
+        record(offer.specialist_id, offer.id, 1, "Other tenant"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(a.confirmation_number, "000001");
+
+    assert!(
+        sqlx::query("SELECT * FROM bookings.confirmation_counters")
+            .fetch_all(&f.runtime)
+            .await
+            .is_err()
+    );
+    let writable: bool = sqlx::query_scalar("SELECT has_column_privilege(current_user,'bookings.appointments','confirmation_number','UPDATE')").fetch_one(&f.runtime).await.unwrap();
+    assert!(!writable);
+    // A caller cannot choose or reuse a number, even through direct INSERT.
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let assigned: i64 = sqlx::query_scalar("INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status,confirmation_number) VALUES($1,$2,$3,$4,$5,'Direct','','','','confirmed',1) RETURNING confirmation_number")
+        .bind(f.tenant).bind(f.point).bind(third.specialist_id).bind(third.id).bind(Uuid::new_v4()).fetch_one(session.connection()).await.unwrap();
+    assert_eq!(assigned, 4);
+    session.commit().await.unwrap();
+
+    sqlx::query("UPDATE bookings.confirmation_counters SET last_number=999999 WHERE tenant_id=$1")
+        .bind(f.tenant)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let large = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(third.specialist_id, third.id, 1, "Large"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(large.confirmation_number, "1000000");
+    f.close().await;
+    other.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn client_export_includes_more_than_a_schedule_page() {
     let f = Fixture::new("Europe/Moscow").await;
     let specialist = f.specialist().await;
@@ -844,6 +942,7 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
         .await
         .unwrap();
     assert_eq!(item.client_name, "Client One");
+    assert_eq!(item.confirmation_number, "000001");
     assert_eq!(item.phone, "+7 (900) 000-00-00");
     assert_eq!(item.email, "client@example.test");
     assert_eq!(item.note, "Позвонить перед визитом\nПосле 10:00");
@@ -864,6 +963,7 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
     .await
     .unwrap();
     assert_eq!(updated.version, 2);
+    assert_eq!(updated.confirmation_number, item.confirmation_number);
     let replay = appointment_execute(&f, f.owner, key, command.clone())
         .await
         .unwrap();
@@ -898,6 +998,7 @@ async fn appointments_modes_contacts_snapshots_and_idempotent_history() {
         .unwrap();
     assert_eq!(replay.status, "cancelled");
     assert_eq!(replay.version, 3);
+    assert_eq!(replay.confirmation_number, item.confirmation_number);
     assert_eq!(replay.created_at, item.created_at);
     let mut different = command.clone();
     if let AppointmentCmd::RecordAppointment { client, .. } = &mut different {
@@ -1599,6 +1700,12 @@ async fn anonymization_of_public_booking_preserves_receipt_without_contacts() {
         .await
         .unwrap();
     assert_eq!(after.reference, receipt.reference);
+    assert_eq!(receipt.confirmation_number, "000001");
+    assert_eq!(items[0].confirmation_number, receipt.confirmation_number);
+    assert_eq!(item.confirmation_number, receipt.confirmation_number);
+    assert_eq!(erased.confirmation_number, receipt.confirmation_number);
+    assert_eq!(after.confirmation_number, receipt.confirmation_number);
+    assert_eq!(replay.confirmation_number, receipt.confirmation_number);
     assert_eq!(replay.reference, receipt.reference);
     let raw = serde_json::to_string(&after).unwrap();
     for private in [
@@ -3963,7 +4070,7 @@ async fn public_booking_location_cap_counts_only_active_visits() {
         .execute(&mut *tx)
         .await
         .unwrap();
-    sqlx::query("ALTER TABLE bookings.appointments DISABLE TRIGGER USER")
+    sqlx::query("ALTER TABLE bookings.appointments DISABLE TRIGGER appointment_guard")
         .execute(&mut *tx)
         .await
         .unwrap();
@@ -3971,7 +4078,7 @@ async fn public_booking_location_cap_counts_only_active_visits() {
         .bind(f.tenant).bind(seed.id).execute(&mut *tx).await.unwrap();
     sqlx::query("UPDATE bookings.public_claims SET created_at=clock_timestamp()-interval '2 minutes' WHERE tenant_id=$1")
         .bind(f.tenant).execute(&mut *tx).await.unwrap();
-    sqlx::query("ALTER TABLE bookings.appointments ENABLE TRIGGER USER")
+    sqlx::query("ALTER TABLE bookings.appointments ENABLE TRIGGER appointment_guard")
         .execute(&mut *tx)
         .await
         .unwrap();

@@ -36,12 +36,13 @@ jobs:
 
       - name: Deployment scripts
         run: |
-          for script in scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/purge.sh tests/deploy-update.test.sh tests/backup-restore.test.sh tests/purge.test.sh; do sh -n "$script"; done
+          for script in scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/purge.sh tests/deploy-update.test.sh tests/maintenance-lock.test.sh tests/backup-restore.test.sh tests/purge.test.sh; do sh -n "$script"; done
           sh tests/deploy-update.test.sh
+          sh tests/maintenance-lock.test.sh
           sh tests/backup-restore.test.sh
           sh tests/purge.test.sh
           if command -v shellcheck >/dev/null; then
-            shellcheck -s sh -x -P scripts scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/purge.sh tests/deploy-update.test.sh tests/backup-restore.test.sh tests/purge.test.sh
+            shellcheck -s sh -x -P scripts scripts/common.sh scripts/install.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/purge.sh tests/deploy-update.test.sh tests/maintenance-lock.test.sh tests/backup-restore.test.sh tests/purge.test.sh
           fi
 
       - name: Start the stack

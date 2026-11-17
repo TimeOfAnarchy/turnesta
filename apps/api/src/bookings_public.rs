@@ -307,6 +307,7 @@ pub struct BookingAvailability {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct PublicBookingReceipt {
     pub reference: Uuid,
+    pub confirmation_number: String,
     pub status: String,
     pub title: String,
     pub specialist_name: String,

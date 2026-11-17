@@ -417,11 +417,11 @@ select[aria-invalid='true'] {
   max-width: 38rem;
   margin: auto;
 }
-.receipt .reference {
-  font-size: 0.75rem;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
+.confirmation-number { margin-block: 1.25rem; }
+.confirmation-number label { display: block; margin-bottom: .5rem; font-weight: 600; }
+.confirmation-number-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.confirmation-number-actions input { flex: 1 1 8rem; min-width: 0; width: 8rem; font-size: 1.4rem; font-weight: 600; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+.confirmation-number .muted { font-size: .85rem; margin-block: .5rem 0; }
 .receipt h2 {
   font-size: 1.5rem;
 }

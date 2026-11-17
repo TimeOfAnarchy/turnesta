@@ -21,6 +21,9 @@ Current development version: **0.1.0**. This is the initial changelog baseline f
 
 ### Fixed
 
+- Updates and restores share a maintenance lock, including failed-update cleanup; backup locking remains independent.
+- Booking confirmations show a stable organization-scoped number in the public page and staff cabinet, with copy and manual-selection fallback.
+- Backup scheduling documentation reflects the server cron time zone and manual installation fallback.
 - Public booking limits count active appointments, and password failure budgets are scoped to avoid a global lockout.
 - Unexpected database failures return internal errors; API database operations have bounded statement, lock and idle-transaction times.
 - Client admission limits, production OpenAPI visibility, widget origin validation and deployment resource limits were tightened.

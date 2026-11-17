@@ -193,6 +193,7 @@ impl AppointmentCommand {
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct AppointmentSummary {
     pub id: Uuid,
+    pub confirmation_number: String,
     pub offer_id: Uuid,
     pub client_name: String,
     pub phone: String,
@@ -208,6 +209,7 @@ pub struct AppointmentSummary {
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct Appointment {
     pub id: Uuid,
+    pub confirmation_number: String,
     pub specialist_id: Uuid,
     pub offer_id: Uuid,
     pub client_name: String,
@@ -307,7 +309,7 @@ pub async fn list(
         .await?;
     let limit = page.limit.clamp(1, 100) as i32;
     let rows: Vec<AppointmentSummary> = sqlx::query_as(
-        "SELECT id, offer_id, client_name, phone, status, source, title, date, starts_local,
+        "SELECT id, confirmation_number, offer_id, client_name, phone, status, source, title, date, starts_local,
          ends_local, anonymized_at
          FROM bookings.appointment_details
          WHERE tenant_id = $1

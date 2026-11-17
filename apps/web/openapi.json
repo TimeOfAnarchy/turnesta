@@ -4164,6 +4164,7 @@
         "type": "object",
         "required": [
           "id",
+          "confirmation_number",
           "specialist_id",
           "offer_id",
           "client_name",
@@ -4197,6 +4198,9 @@
             ]
           },
           "client_name": {
+            "type": "string"
+          },
+          "confirmation_number": {
             "type": "string"
           },
           "created_at": {
@@ -4536,6 +4540,7 @@
         "type": "object",
         "required": [
           "id",
+          "confirmation_number",
           "offer_id",
           "client_name",
           "phone",
@@ -4551,6 +4556,9 @@
             ]
           },
           "client_name": {
+            "type": "string"
+          },
+          "confirmation_number": {
             "type": "string"
           },
           "date": {
@@ -6820,6 +6828,7 @@
         "type": "object",
         "required": [
           "reference",
+          "confirmation_number",
           "status",
           "title",
           "specialist_name",
@@ -6829,6 +6838,9 @@
           "version"
         ],
         "properties": {
+          "confirmation_number": {
+            "type": "string"
+          },
           "date": {
             "type": [
               "string",

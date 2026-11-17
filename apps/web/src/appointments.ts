@@ -11,6 +11,7 @@ export type ClientInput = {
 };
 export type Appointment = ClientInput & {
   id: string;
+  confirmation_number: string;
   specialist_id: string;
   offer_id: string;
   status: 'confirmed' | 'cancelled';
@@ -72,7 +73,7 @@ export type AppointmentCommand =
     };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type AppointmentSummary = Pick<Appointment,
-  'id' | 'offer_id' | 'client_name' | 'phone' | 'status' | 'source' |
+  'id' | 'confirmation_number' | 'offer_id' | 'client_name' | 'phone' | 'status' | 'source' |
   'title' | 'date' | 'starts_local' | 'ends_local' | 'anonymized_at'
 >;
 export function isAppointmentAction(value: { type?: unknown }): boolean {

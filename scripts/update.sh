@@ -4,6 +4,7 @@
 
 [ "$server" = true ] || fail 'update.sh works with a server setup.'
 [ "$#" -le 1 ] || fail 'Usage: ./scripts/update.sh [image]'
+acquire_maintenance_lock
 [ "$(grep -c '^TURNESTA_IMAGE=' .env || true)" -eq 1 ] || fail 'Expected exactly one TURNESTA_IMAGE in .env.'
 
 configured=$(setting TURNESTA_IMAGE)

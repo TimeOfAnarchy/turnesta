@@ -26,10 +26,11 @@ async function confirmVisit(view, name, phone) {
   await expect(view.getByRole('heading', { name: 'Вы записаны' })).toBeVisible();
 }
 
-test('Вход, расписание, онлайн-запись, отмена и виджет клиники', async ({ page, publicPage, clinicPage, owner, clinic }) => {
+test('Вход, расписание, онлайн-запись, отмена и виджет клиники', async ({ page, publicPage, clinicPage, owner, clinic, browserName }) => {
   const dialog = page.getByRole('dialog');
   let date;
   let publicUrl;
+  let confirmationNumber;
 
   await test.step('Первый вход и повторный вход с постоянным паролем', async () => {
     await page.goto('/login');
@@ -96,6 +97,21 @@ test('Вход, расписание, онлайн-запись, отмена и
     await checkWidth(publicPage);
     await checkAccessibility(publicPage, 'public booking form');
     await confirmVisit(publicPage, 'Анна Тестовая', '+79000001122');
+    confirmationNumber = await publicPage.getByLabel('Номер записи', { exact: true }).inputValue();
+    expect(confirmationNumber).toMatch(/^\d{6,}$/);
+    // Success feedback only after the browser accepts the clipboard write.
+    if (browserName === 'chromium') {
+      await publicPage.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    } else {
+      await publicPage.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { window.copiedNumber = value; } } }));
+    }
+    await publicPage.getByRole('button', { name: 'Копировать номер' }).click();
+    await expect(publicPage.getByRole('status')).toHaveText('Номер скопирован.');
+    const copied = browserName === 'chromium'
+      ? await publicPage.evaluate(() => navigator.clipboard.readText())
+      : await publicPage.evaluate(() => window.copiedNumber);
+    expect(copied).toBe(confirmationNumber);
+    await checkAccessibility(publicPage, 'public booking receipt');
     await checkWidth(publicPage);
   });
 
@@ -103,11 +119,17 @@ test('Вход, расписание, онлайн-запись, отмена и
     await tabs(page).getByRole('link', { name: /Расписание/ }).click();
     await page.getByLabel('Дата расписания').fill(date);
     await page.getByRole('button', { name: /Открыть запись Анна Тестовая/ }).click();
+    await expect(dialog.getByLabel('Номер записи', { exact: true })).toHaveValue(confirmationNumber);
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Clipboard denied'); } } }));
+    await dialog.getByRole('button', { name: 'Копировать номер' }).click();
+    await expect(dialog.getByRole('status')).toHaveText('Номер выделен. Скопируйте его через меню устройства.');
+    await expect(dialog.getByLabel('Номер записи', { exact: true })).toBeFocused();
     await dialog.getByRole('button', { name: 'Отменить запись' }).click();
     await dialog.getByRole('button', { name: 'Да, отменить запись' }).click();
     await expect(page.getByText('Запись отменена. Место освобождено.', { exact: true })).toBeVisible();
     await publicPage.getByRole('button', { name: 'Обновить запись' }).click();
     await expect(publicPage.getByRole('heading', { name: 'Запись отменена' })).toBeVisible();
+    await expect(publicPage.getByLabel('Номер записи', { exact: true })).toHaveValue(confirmationNumber);
     await page.setViewportSize(mobile);
     await checkWidth(page);
   });
@@ -125,6 +147,16 @@ test('Вход, расписание, онлайн-запись, отмена и
     await checkWidth(widget);
     await checkAccessibility(clinicPage, 'clinic and embedded booking form');
     await confirmVisit(widget, 'Мария Тестовая', '+79000003344');
+    const widgetNumber = widget.getByLabel('Номер записи', { exact: true });
+    await expect(widgetNumber).toHaveValue(/^[0-9]{6,}$/);
+    expect(await widgetNumber.inputValue()).not.toBe(confirmationNumber);
+    await widget.locator('html').evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Clipboard denied'); } } }));
+    await widget.getByRole('button', { name: 'Копировать номер' }).click();
+    await expect(widget.getByRole('status')).toHaveText('Номер выделен. Скопируйте его через меню устройства.');
+    await expect(widgetNumber).toBeFocused();
+    const selectedNumber = await widgetNumber.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd));
+    expect(selectedNumber).toBe(await widgetNumber.inputValue());
+    await checkWidth(widget);
     await page.reload();
     await page.getByLabel('Дата расписания').fill(date);
     await expect(page.getByRole('button', { name: /Открыть запись Мария Тестовая/ })).toBeVisible();

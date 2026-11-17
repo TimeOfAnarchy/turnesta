@@ -82,6 +82,7 @@ export function BookingOfferList({
                         <span className="booking-client-copy">
                           <strong>{a.client_name}</strong>
                           <small>
+                            № {a.confirmation_number} ·{' '}
                             {a.phone || 'Телефон не указан'}
                             {a.source === 'public' ? ' · онлайн-запись' : ''}
                           </small>

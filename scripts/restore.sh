@@ -4,6 +4,7 @@
 
 [ "$server" = true ] || fail 'restore.sh works with a server setup.'
 [ "$#" -ge 1 ] && [ "$#" -le 2 ] && [ -f "$1" ] || fail 'Usage: ./scripts/restore.sh backups/turnesta-<date>.dump[.age] [identity-file]'
+acquire_maintenance_lock
 archive=$1
 identity=${2:-${TURNESTA_BACKUP_AGE_IDENTITY:-$(setting TURNESTA_BACKUP_AGE_IDENTITY)}}
 encrypted=false

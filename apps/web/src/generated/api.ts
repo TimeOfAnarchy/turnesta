@@ -995,6 +995,7 @@ export interface components {
             answers?: Record<string, never>;
             cancelled_at?: string | null;
             client_name: string;
+            confirmation_number: string;
             created_at: string;
             created_by?: components["schemas"]["UserId"] | null;
             date?: string | null;
@@ -1093,6 +1094,7 @@ export interface components {
         AppointmentSummary: {
             anonymized_at?: string | null;
             client_name: string;
+            confirmation_number: string;
             date?: string | null;
             ends_local?: string | null;
             /** Format: uuid */
@@ -1685,6 +1687,7 @@ export interface components {
             version: number;
         };
         PublicBookingReceipt: {
+            confirmation_number: string;
             date?: string | null;
             ends_at?: string | null;
             ends_local?: string | null;

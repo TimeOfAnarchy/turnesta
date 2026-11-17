@@ -740,6 +740,18 @@ async function start(slug, root) {
   }
   function receipt() {
     const a = s.receipt;
+    const number = node('input', { id: 'confirmation-number', value: a.confirmation_number, readonly: '' });
+    const notice = node('p', { class: 'muted', role: 'status' }, 'Назовите этот номер при обращении в организацию.');
+    const copy = node('button', { class: 'secondary', onClick: async () => {
+      try {
+        await navigator.clipboard.writeText(a.confirmation_number);
+        notice.textContent = 'Номер скопирован.';
+      } catch {
+        number.focus();
+        number.select();
+        notice.textContent = 'Номер выделен. Скопируйте его через меню устройства.';
+      }
+    } }, 'Копировать номер');
     return node(
       'section',
       { class: 'panel receipt' },
@@ -761,7 +773,9 @@ async function start(slug, root) {
           ? `Для переноса или отмены обратитесь в организацию. ${app.dataset.parentOrigin ? 'Запись можно снова открыть в этом виджете.' : 'Запись можно снова открыть на этом устройстве.'}`
           : 'Это место освобождено. При необходимости выберите другой талон.',
       ),
-      node('p', { class: 'reference' }, `Номер подтверждения · ${a.reference}`),
+      node('div', { class: 'confirmation-number' },
+        node('label', { for: 'confirmation-number' }, 'Номер записи'),
+        node('div', { class: 'confirmation-number-actions' }, number, copy), notice),
       node(
         'div',
         { class: 'actions' },

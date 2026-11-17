@@ -841,4 +841,9 @@ body:has(dialog[open]) { overflow: hidden; }
   .appointment-row-client { grid-column:1/-1; }
   .appointment-controls .button { flex-grow:1; }
 }
+.confirmation-number { margin-block:1.25rem; }
+.confirmation-number label { display:block; margin-bottom:.5rem; font-weight:600; }
+.confirmation-number-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; }
+.confirmation-number-actions input { flex:1 1 8rem; min-width:0; width:8rem; padding:.7rem .8rem; border:1px solid var(--border); border-radius:.6rem; font:inherit; font-size:1.4rem; font-weight:600; letter-spacing:.12em; font-variant-numeric:tabular-nums; }
+.confirmation-number .field-hint { margin-block:.5rem 0; }
 @media(max-width:380px) { .booking-form-grid { grid-template-columns:1fr; } .booking-today { padding-inline:.6rem; } }
