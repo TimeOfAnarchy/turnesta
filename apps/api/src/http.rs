@@ -153,6 +153,7 @@ struct ErrorResponse {
         team_http::members,
         team_http::command,
         bookings_http::batch_preview,
+        bookings_http::anonymize_appointment,
         bookings_widget_http::settings,
         bookings_widget_http::configure,
         bookings_public_http::settings,

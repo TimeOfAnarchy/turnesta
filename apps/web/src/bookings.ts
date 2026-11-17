@@ -161,13 +161,20 @@ export const bookingApi = {
       { signal },
     ),
   command: async (scope: Scope, pending: BookingPending) => {
+    const command = pending.command;
+    const path = command.type === 'anonymize_appointment'
+      ? `appointments/${encodeURIComponent(command.id)}/anonymize`
+      : `${isAppointmentAction(command) ? 'appointments/' : ''}commands`;
+    const body = command.type === 'anonymize_appointment'
+      ? { specialist_id: command.specialist_id, expected_version: command.expected_version }
+      : command;
     const result = await request<BookingReceipt>(
-      `${base(scope.tenant, scope.location)}/${isAppointmentAction(pending.command) ? 'appointments/' : ''}commands`,
+      `${base(scope.tenant, scope.location)}/${path}`,
       {
         method: 'POST',
         signal: AbortSignal.timeout(10_000),
         headers: { 'Idempotency-Key': pending.key },
-        body: JSON.stringify(pending.command),
+        body: JSON.stringify(body),
       },
     );
     if (

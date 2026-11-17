@@ -466,10 +466,11 @@ function Schedule({
     !canBook ||
     Boolean(journal.pending);
   async function run(command?: BookingCommand): Promise<BookingReceipt> {
+    const intended = command ?? journal.pending?.command;
     if (
       !canBook ||
       (!canManage &&
-        !isAppointmentAction(command ?? journal.pending?.command ?? {}))
+        (!isAppointmentAction(intended ?? {}) || intended?.type === 'anonymize_appointment'))
     )
       throw new ApiError(403, 'forbidden');
     if (!navigator.onLine) throw new ApiError(0, 'offline');
@@ -504,6 +505,8 @@ function Schedule({
       setSuccess(
         receipt.resource.kind === 'batch'
           ? `Добавлено талонов: ${receipt.resource.item.offer_ids.length}. Клиентские записи не копировались.`
+          : intended?.type === 'anonymize_appointment'
+            ? 'Данные клиента удалены.'
           : receipt.resource.kind === 'appointment'
             ? receipt.resource.item.status === 'cancelled'
               ? 'Запись отменена. Место освобождено.'
@@ -853,7 +856,7 @@ function Schedule({
             Повтор восстановит тот же запрос. Новое сохранение доступно после
             получения результата.
           </p>
-          {canBook && (
+          {canBook && (canManage || journal.pending.command.type !== 'anonymize_appointment') ? (
             <button
               type="button"
               className="button secondary"
@@ -864,7 +867,9 @@ function Schedule({
             >
               Повторить прежний запрос
             </button>
-          )}
+          ) : journal.pending.command.type === 'anonymize_appointment' ? (
+            <p>Для восстановления этого запроса нужны права владельца или управляющего.</p>
+          ) : null}
         </div>
       )}
       {success && <SuccessNotice>{success}</SuccessNotice>}
@@ -1183,6 +1188,7 @@ function Schedule({
             tenant={tenant}
             location={location}
             initial={editor.item}
+            role={role}
             busy={busy}
             journal={journal}
             run={run}

@@ -65,6 +65,7 @@ impl From<sqlx::Error> for BookingError {
             Some("B2104") => Self::OfferFull,
             Some("B2105") => Self::SpecialistBusy,
             Some("B2106") => Self::OfferOccupied,
+            Some("B2107") => Self::Core(CoreError::VersionConflict),
             _ => Self::Database(error),
         }
     }

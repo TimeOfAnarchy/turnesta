@@ -423,6 +423,351 @@ async fn concurrent_appointment_replays_share_one_result() {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn anonymization_enforces_roles_and_prevents_restoration() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 10,
+        },
+    )
+    .await;
+    let original_command = record(spec.id, offer.id, offer.version, "Private Person");
+    let original_key = Uuid::new_v4();
+    let item = appointment_execute(&f, f.owner, original_key, original_command.clone())
+        .await
+        .unwrap();
+    let erase = AppointmentCmd::AnonymizeAppointment {
+        id: item.id,
+        specialist_id: spec.id,
+        expected_version: item.version,
+    };
+    let operator = f.member(Role::Operator).await;
+    let employee = f.member(Role::Employee).await;
+    let manager = f.member(Role::Manager).await;
+    let permissions: (bool, bool, bool) = sqlx::query_as("SELECT has_column_privilege('turnesta_api','bookings.appointments','anonymized_at','UPDATE'), has_function_privilege('turnesta_worker','bookings.anonymize_appointment(uuid,uuid,uuid,uuid,integer)','EXECUTE'), has_function_privilege('turnesta_api','bookings.anonymize_appointment(uuid,uuid,uuid,uuid,integer)','EXECUTE')")
+        .fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(permissions, (false, false, true));
+    for user in [operator, employee] {
+        assert!(matches!(
+            appointment_execute(&f, user, Uuid::new_v4(), erase.clone()).await,
+            Err(BookingError::Core(CoreError::Forbidden))
+        ));
+    }
+    let mut session = TenantSession::begin(&f.runtime, operator, f.tenant)
+        .await
+        .unwrap();
+    let direct = sqlx::query("SELECT bookings.anonymize_appointment($1,$2,$3,$4,$5)")
+        .bind(f.tenant)
+        .bind(f.point)
+        .bind(item.id)
+        .bind(f.owner)
+        .bind(item.version)
+        .execute(session.connection())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        direct.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    drop(session);
+    let other = Fixture::new("UTC").await;
+    assert!(
+        appointment_execute(&other, other.owner, Uuid::new_v4(), erase.clone())
+            .await
+            .is_err()
+    );
+    let key = Uuid::new_v4();
+    let erased = appointment_execute(&f, manager, key, erase.clone())
+        .await
+        .unwrap();
+    assert_eq!(erased.client_name, "Удалено");
+    assert!(erased.phone.is_empty() && erased.email.is_empty() && erased.note.is_empty());
+    assert_eq!(erased.answers.0, json!({}));
+    assert!(erased.anonymized_at.is_some());
+    assert_eq!(erased.version, item.version + 1);
+    assert_eq!(erased.status, item.status);
+    let mut journal = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let contains_private: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bookings.appointment_commands WHERE tenant_id=$1 AND location_id=$2 AND (result::text LIKE '%Private Person%' OR result::text LIKE '%client@example.test%' OR result::text LIKE '%phone%' OR result::text LIKE '%answers%'))")
+        .bind(f.tenant).bind(f.point).fetch_one(journal.connection()).await.unwrap();
+    assert!(!contains_private);
+    journal.commit().await.unwrap();
+    let replay = appointment_execute(&f, manager, key, erase.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.version, erased.version);
+    let prior = appointment_execute(&f, f.owner, original_key, original_command)
+        .await
+        .unwrap();
+    assert_eq!(prior.client_name, "Удалено");
+    assert!(matches!(
+        appointment_execute(&f, f.owner, Uuid::new_v4(), erase).await,
+        Err(BookingError::Core(CoreError::VersionConflict))
+    ));
+    let restore = AppointmentCmd::UpdateClient {
+        id: item.id,
+        specialist_id: spec.id,
+        expected_version: erased.version,
+        client: client("Restored"),
+    };
+    assert!(
+        appointment_execute(&f, f.owner, Uuid::new_v4(), restore)
+            .await
+            .is_err()
+    );
+
+    let second = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, offer.id, offer.version, "Cancelled Person"),
+    )
+    .await
+    .unwrap();
+    let cancelled = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: second.id,
+            specialist_id: spec.id,
+            expected_version: second.version,
+        },
+    )
+    .await
+    .unwrap();
+    let result = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::AnonymizeAppointment {
+            id: second.id,
+            specialist_id: spec.id,
+            expected_version: cancelled.version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, "cancelled");
+    assert_eq!(result.cancelled_at, cancelled.cancelled_at);
+    assert_eq!(result.client_name, "Удалено");
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn anonymization_and_contact_edit_serialize_without_restoring_data() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 2,
+        },
+    )
+    .await;
+    let item = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, offer.id, offer.version, "Race Client"),
+    )
+    .await
+    .unwrap();
+    let edit = AppointmentCmd::UpdateClient {
+        id: item.id,
+        specialist_id: spec.id,
+        expected_version: item.version,
+        client: client("Changed Client"),
+    };
+    let erase = AppointmentCmd::AnonymizeAppointment {
+        id: item.id,
+        specialist_id: spec.id,
+        expected_version: item.version,
+    };
+    let (edit_result, erase_result) = tokio::join!(
+        appointment_execute(&f, f.owner, Uuid::new_v4(), edit),
+        appointment_execute(&f, f.owner, Uuid::new_v4(), erase)
+    );
+    assert_eq!(
+        usize::from(edit_result.is_ok()) + usize::from(erase_result.is_ok()),
+        1
+    );
+    if let Ok(changed) = edit_result {
+        appointment_execute(
+            &f,
+            f.owner,
+            Uuid::new_v4(),
+            AppointmentCmd::AnonymizeAppointment {
+                id: item.id,
+                specialist_id: spec.id,
+                expected_version: changed.version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let latest = appointments::get(&f.runtime, f.owner, f.tenant, f.point, item.id)
+        .await
+        .unwrap();
+    assert_eq!(latest.client_name, "Удалено");
+    assert!(latest.phone.is_empty() && latest.email.is_empty() && latest.note.is_empty());
+    assert!(latest.anonymized_at.is_some());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn anonymization_of_public_booking_preserves_receipt_without_contacts() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 2,
+        },
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let input = public_input(&offer);
+    let receipt = public_bookings::book(&f.runtime, slug, &[77; 32], input.clone())
+        .await
+        .unwrap();
+    let items = appointments::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: spec.id,
+            date: &future_day("Europe/Moscow", 1),
+            after: None,
+            limit: 50,
+            include_cancelled: true,
+        },
+    )
+    .await
+    .unwrap();
+    let item = &items[0];
+    assert!(!item.answers.0.as_object().unwrap().is_empty());
+    let erased = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::AnonymizeAppointment {
+            id: item.id,
+            specialist_id: spec.id,
+            expected_version: item.version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(erased.answers.0, json!({}));
+    let after = public_bookings::receipt(&f.runtime, slug, &[77; 32])
+        .await
+        .unwrap();
+    let fingerprint: Vec<u8> = sqlx::query_scalar("SELECT request_fingerprint FROM bookings.public_claims WHERE tenant_id=$1 AND location_id=$2 AND appointment_id=$3")
+        .bind(f.tenant).bind(f.point).bind(item.id).fetch_one(&f.migrator).await.unwrap();
+    assert_eq!(fingerprint, vec![0_u8; 32]);
+    let mut changed_input = input.clone();
+    changed_input
+        .answers
+        .insert("note".into(), "Different answer".into());
+    let replay = public_bookings::book(&f.runtime, slug, &[77; 32], changed_input)
+        .await
+        .unwrap();
+    assert_eq!(after.reference, receipt.reference);
+    assert_eq!(replay.reference, receipt.reference);
+    let raw = serde_json::to_string(&after).unwrap();
+    for private in [
+        "Private Customer",
+        "private@example.test",
+        "Private note",
+        "answers",
+        "phone",
+    ] {
+        assert!(!raw.contains(private));
+    }
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn anonymization_http_requires_csrf_manager_and_replays_idempotently() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    )
+    .await;
+    let item = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, offer.id, offer.version, "HTTP Client"),
+    )
+    .await
+    .unwrap();
+    let owner = f.login(f.owner).await;
+    let operator_id = f.member(Role::Operator).await;
+    let operator = f.login(operator_id).await;
+    let path = f.url(&format!("appointments/{}/anonymize", item.id));
+    let key = Uuid::new_v4();
+    let request = |credentials: &(String, String), csrf: bool, expected: i32| {
+        let mut builder = Request::post(&path)
+            .header("cookie", &credentials.0)
+            .header("origin", "http://127.0.0.1:8080")
+            .header("idempotency-key", key.to_string())
+            .header("content-type", "application/json");
+        if csrf {
+            builder = builder.header("x-csrf-token", &credentials.1);
+        }
+        builder
+            .body(Body::from(
+                json!({"specialist_id":spec.id,"expected_version":expected}).to_string(),
+            ))
+            .unwrap()
+    };
+    assert_eq!(
+        f.json(request(&owner, false, item.version)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        f.json(request(&operator, true, item.version)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, first) = f.json(request(&owner, true, item.version)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["resource"]["item"]["client_name"], "Удалено");
+    let (status, replay) = f.json(request(&owner, true, item.version)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        replay["resource"]["item"]["version"],
+        first["resource"]["item"]["version"]
+    );
+    let (status, body) = f.json(request(&owner, true, item.version + 1)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "idempotency_conflict");
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn appointments_last_place_and_overlapping_alternatives_serialize() {
     let f = Fixture::new("Europe/Moscow").await;
     let spec = f.specialist().await;

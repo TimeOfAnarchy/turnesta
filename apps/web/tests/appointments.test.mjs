@@ -5,6 +5,7 @@ import { BookingCommands, bookingApi } from '../src/bookings.ts';
 import {
   appointmentApi,
   canRecord,
+  canAnonymizeAppointment,
   occupancyLabel,
 } from '../src/appointments.ts';
 
@@ -65,6 +66,7 @@ test('record, contact edit, move and cancellation survive reload with the origin
       specialist_id: spec,
       expected_version: 1,
     },
+    { type: 'anonymize_appointment', id, specialist_id: spec, expected_version: 1 },
   ]) {
     const saved = storage();
     let original;
@@ -84,6 +86,24 @@ test('record, contact edit, move and cancellation survive reload with the origin
     assert.equal(calls, 1);
     assert.equal(saved.getItem(restored.storageKey), null);
   }
+});
+test('only owner and manager can erase data that has not been erased', () => {
+  for (const role of ['owner', 'manager']) assert.equal(canAnonymizeAppointment(role, { anonymized_at: null }), true);
+  for (const role of ['operator', 'employee']) assert.equal(canAnonymizeAppointment(role, { anonymized_at: null }), false);
+  assert.equal(canAnonymizeAppointment('owner', { anonymized_at: '2026-11-12T10:00:00Z' }), false);
+});
+test('anonymization uses its own endpoint and preserves the idempotency key', async () => {
+  globalThis.document = { cookie: 'turnesta_csrf=csrf' };
+  let sent;
+  mock.method(globalThis, 'fetch', async (url, options) => {
+    sent = { url, options };
+    return new Response(JSON.stringify(receipt), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  });
+  await bookingApi.command(scope, { key: id, command: { type: 'anonymize_appointment', id, specialist_id: spec, expected_version: 1 }, created_at: new Date().toISOString() });
+  assert.ok(sent.url.endsWith(`/appointments/${id}/anonymize`));
+  assert.equal(sent.options.headers.get('Idempotency-Key'), id);
+  assert.equal(sent.options.headers.get('X-CSRF-Token'), 'csrf');
+  assert.deepEqual(JSON.parse(sent.options.body), { specialist_id: spec, expected_version: 1 });
 });
 test('definitive occupancy rejection releases the command while unknown outcomes keep it', async () => {
   for (const code of [

@@ -16,7 +16,7 @@ import type {
   Offer,
   Specialist,
 } from './bookings';
-import { appointmentApi } from './appointments';
+import { appointmentApi, canAnonymizeAppointment } from './appointments';
 import type { Appointment, ClientInput } from './appointments';
 
 type Controls = {
@@ -330,14 +330,15 @@ export function AppointmentEditor({
   tenant,
   location,
   initial,
+  role,
   busy,
   journal,
   run,
   close,
-}: Controls & { tenant: string; location: string; initial: Appointment }) {
+}: Controls & { tenant: string; location: string; initial: Appointment; role: string }) {
   const [item, setItem] = useState(initial);
   const [client, setClient] = useState(() => clientOf(initial));
-  const [mode, setMode] = useState<'view' | 'edit' | 'move' | 'cancel'>('view');
+  const [mode, setMode] = useState<'view' | 'edit' | 'move' | 'cancel' | 'anonymize'>('view');
   const [date, setDate] = useState(initial.date ?? todayAt(initial.time_zone));
   const [target, setTarget] = useState<Offer | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -387,6 +388,7 @@ export function AppointmentEditor({
     target && (!freshTarget || freshTarget.version !== target.version),
   );
   const blocked = busy || Boolean(journal.pending) || loading;
+  const canErase = canAnonymizeAppointment(role, item);
   function changeMode(value: typeof mode) {
     setMode(value);
     setError(null);
@@ -422,7 +424,11 @@ export function AppointmentEditor({
   }
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (blocked || item.status !== 'confirmed') return;
+    if (blocked || (item.status !== 'confirmed' && mode !== 'anonymize')) return;
+    if (mode === 'anonymize' && canErase) {
+      void save({ type: 'anonymize_appointment', id: item.id, specialist_id: item.specialist_id, expected_version: item.version });
+      return;
+    }
     if (mode === 'edit') {
       const err = clientError(client);
       setInvalid(err);
@@ -456,7 +462,9 @@ export function AppointmentEditor({
     <Modal
       icon="users"
       title={
-        mode === 'cancel'
+        mode === 'anonymize'
+          ? 'Удалить данные клиента?'
+          : mode === 'cancel'
           ? 'Отменить запись?'
           : mode === 'move'
             ? 'Перенести запись'
@@ -523,13 +531,13 @@ export function AppointmentEditor({
               )}
               {item.status === 'confirmed' && (
                 <div className="appointment-controls">
-                  <button
+                  {!item.anonymized_at && <button
                     type="button"
                     className="button secondary"
                     onClick={() => changeMode('edit')}
                   >
                     Изменить данные
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     className="button secondary"
@@ -546,7 +554,18 @@ export function AppointmentEditor({
                   </button>
                 </div>
               )}
+              {canErase && (
+                <button type="button" className="text-button danger" onClick={() => changeMode('anonymize')}>
+                  Удалить данные клиента
+                </button>
+              )}
             </>
+          )}
+          {mode === 'anonymize' && (
+            <div className="conflict-notice">
+              <p>Имя, контакты и ответы анкеты будут удалены без возможности восстановления. Факт и время записи сохранятся.</p>
+              <p>В резервных копиях и незавершённых запросах на устройствах прежние данные могут сохраняться.</p>
+            </div>
           )}
           {mode === 'edit' && (
             <ClientFields
@@ -699,12 +718,15 @@ export function AppointmentEditor({
               className={`button ${mode === 'cancel' ? 'appointment-cancel' : 'primary'}`}
               disabled={
                 blocked ||
-                item.status !== 'confirmed' ||
+                (item.status !== 'confirmed' && mode !== 'anonymize') ||
+                (mode === 'anonymize' && !canErase) ||
                 (mode === 'move' && (!target || staleTarget))
               }
             >
               {busy
                 ? 'Сохраняем…'
+                : mode === 'anonymize'
+                  ? 'Да, удалить данные'
                 : mode === 'cancel'
                   ? 'Да, отменить запись'
                   : mode === 'move'

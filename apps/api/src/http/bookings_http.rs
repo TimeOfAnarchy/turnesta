@@ -35,6 +35,10 @@ pub(super) fn routes() -> Router<AppState> {
             get(appointment),
         )
         .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/anonymize",
+            post(anonymize_appointment),
+        )
+        .route(
             "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments",
             get(appointments),
         )
@@ -320,6 +324,44 @@ pub(super) async fn appointment_command(
             location,
             key,
             command,
+        ))
+        .await?,
+    ))
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AnonymizeRequest {
+    specialist_id: Uuid,
+    expected_version: i32,
+}
+
+#[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/anonymize",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("appointment_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=AnonymizeRequest,responses((status=200,body=AppointmentReceipt),(status=403,description="Owner or manager required"),(status=409,description="Version or idempotency conflict")))]
+pub(super) async fn anonymize_appointment(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    headers: HeaderMap,
+    path: Result<Path<(TenantId, LocationId, Uuid)>, PathRejection>,
+    body: Result<Json<AnonymizeRequest>, JsonRejection>,
+) -> Result<Json<AppointmentReceipt>, BookingHttpError> {
+    check_mutation(&headers, &state.auth, &signed)?;
+    let Path((tenant, location, id)) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(input) = body.map_err(|_| ApiError::bad_request())?;
+    let key = single_header(&headers, "idempotency-key")?
+        .parse()
+        .map_err(|_| ApiError::bad_request())?;
+    Ok(Json(
+        bounded(appointments::execute(
+            &state.pool,
+            signed.user_id,
+            tenant,
+            location,
+            key,
+            AppointmentCommand::AnonymizeAppointment {
+                id,
+                specialist_id: input.specialist_id,
+                expected_version: input.expected_version,
+            },
         ))
         .await?,
     ))

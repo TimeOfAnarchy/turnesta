@@ -117,6 +117,11 @@ pub enum AppointmentCommand {
         specialist_id: Uuid,
         expected_version: i32,
     },
+    AnonymizeAppointment {
+        id: Uuid,
+        specialist_id: Uuid,
+        expected_version: i32,
+    },
 }
 impl AppointmentCommand {
     fn normalize(&mut self) -> Result<(), BookingError> {
@@ -152,6 +157,9 @@ impl AppointmentCommand {
             }
             Self::CancelAppointment {
                 expected_version, ..
+            }
+            | Self::AnonymizeAppointment {
+                expected_version, ..
             } => {
                 if *expected_version < 1 {
                     return Err(BookingError::Invalid);
@@ -172,6 +180,9 @@ impl AppointmentCommand {
                 id, specialist_id, ..
             }
             | Self::CancelAppointment {
+                id, specialist_id, ..
+            }
+            | Self::AnonymizeAppointment {
                 id, specialist_id, ..
             } => (*id, *specialist_id),
         }
@@ -202,6 +213,7 @@ pub struct Appointment {
     pub created_at: String,
     pub updated_at: String,
     pub cancelled_at: Option<String>,
+    pub anonymized_at: Option<String>,
     pub version: i32,
     #[serde(default)]
     #[schema(value_type=Option<Object>)]
@@ -283,6 +295,11 @@ pub async fn execute(
     if s.role() == Role::Employee {
         return Err(CoreError::Forbidden.into());
     }
+    if matches!(&command, AppointmentCommand::AnonymizeAppointment { .. })
+        && !s.role().can_manage_locations()
+    {
+        return Err(CoreError::Forbidden.into());
+    }
     sqlx::query("SET LOCAL lock_timeout='2s'")
         .execute(s.connection())
         .await?;
@@ -342,6 +359,14 @@ pub async fn execute(
             .bind(tenant).bind(location).bind(specialist).bind(id).bind(offer_id).bind(expected_version).execute(s.connection()).await?.rows_affected(),
         AppointmentCommand::CancelAppointment { expected_version,.. } => sqlx::query("UPDATE bookings.appointments SET status='cancelled',version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4 AND version=$5 AND status='confirmed'")
             .bind(tenant).bind(location).bind(specialist).bind(id).bind(expected_version).execute(s.connection()).await?.rows_affected(),
+        AppointmentCommand::AnonymizeAppointment { expected_version,.. } => {
+            let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bookings.appointments WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4)")
+                .bind(tenant).bind(location).bind(specialist).bind(id).fetch_one(s.connection()).await?;
+            if !exists { return Err(BookingError::NotFound); }
+            sqlx::query("SELECT bookings.anonymize_appointment($1,$2,$3,$4,$5)")
+                .bind(tenant).bind(location).bind(id).bind(user).bind(expected_version).execute(s.connection()).await?;
+            1
+        }
     };
     if changed != 1 {
         return Err(CoreError::VersionConflict.into());

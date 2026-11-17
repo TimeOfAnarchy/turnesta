@@ -29,6 +29,7 @@ export type Appointment = ClientInput & {
   created_at: string;
   updated_at: string;
   cancelled_at: string | null;
+  anonymized_at: string | null;
   version: number;
   form_snapshot?: BookingForm | null;
   answers?: Record<string, string> | null;
@@ -62,6 +63,12 @@ export type AppointmentCommand =
       id: string;
       specialist_id: string;
       expected_version: number;
+    }
+  | {
+      type: 'anonymize_appointment';
+      id: string;
+      specialist_id: string;
+      expected_version: number;
     };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function isAppointmentAction(value: { type?: unknown }): boolean {
@@ -70,6 +77,7 @@ export function isAppointmentAction(value: { type?: unknown }): boolean {
     'update_client',
     'move_appointment',
     'cancel_appointment',
+    'anonymize_appointment',
   ].includes(value.type as string);
 }
 export function validAppointmentCommand(
@@ -121,6 +129,7 @@ export function validAppointmentCommand(
         positive(value.expected_version)
       );
     case 'cancel_appointment':
+    case 'anonymize_appointment':
       return (
         keys === 'expected_version,id,specialist_id,type' &&
         positive(value.expected_version)
@@ -128,6 +137,9 @@ export function validAppointmentCommand(
     default:
       return false;
   }
+}
+export function canAnonymizeAppointment(role: string, item: Pick<Appointment, 'anonymized_at'>): boolean {
+  return (role === 'owner' || role === 'manager') && !item.anonymized_at;
 }
 const base = (tenant: string, location: string) =>
   `/api/organizations/${encodeURIComponent(tenant)}/locations/${encodeURIComponent(location)}/bookings/appointments`;
