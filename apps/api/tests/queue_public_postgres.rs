@@ -39,6 +39,100 @@ async fn service(f: &Fixture, name: &str) -> turnesta_api::catalog::Service {
     .await
     .unwrap()
 }
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn purge_preserves_queue_keys_and_live_guest_access() {
+    let f = Fixture::new().await;
+    let slug = f.publish().await;
+    let key = Uuid::new_v4();
+    let private: bool = sqlx::query_scalar(
+        "SELECT has_table_privilege('turnesta_api','retention.used_keys','SELECT')",
+    )
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert!(!private);
+    let employee = f.member(Role::Employee).await;
+    let mut denied = TenantSession::begin(&f.runtime, employee, f.tenant)
+        .await
+        .unwrap();
+    let error = sqlx::query("SELECT retention.queue_key_expired($1,$2,$3,$4)")
+        .bind(f.tenant)
+        .bind(f.queue)
+        .bind(employee)
+        .bind(key)
+        .execute(denied.connection())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    drop(denied);
+    let issued = queue::execute(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.queue,
+        key,
+        Command::Issue { service_id: None },
+    )
+    .await
+    .unwrap();
+    let id = issued.ticket.unwrap().id;
+    assert_eq!(sqlx::query("UPDATE queue.commands SET created_at=now()-interval '181 days' WHERE tenant_id=$1 AND queue_id=$2 AND idempotency_key=$3").bind(f.tenant).bind(f.queue).bind(key).execute(&f.migrator).await.unwrap().rows_affected(), 1);
+    sqlx::query("SELECT retention.purge_batch('queue_commands',false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        queue::execute(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            f.queue,
+            key,
+            Command::Issue { service_id: None }
+        )
+        .await,
+        Err(queue::QueueError::IdempotencyConflict)
+    ));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM queue.tickets WHERE tenant_id=$1 AND queue_id=$2 AND id=$3",
+    )
+    .bind(f.tenant)
+    .bind(f.queue)
+    .bind(id)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    let old = [82_u8; 32];
+    let live = [83_u8; 32];
+    public::issue(&f.runtime, slug, &old).await.unwrap();
+    public::issue(&f.runtime, slug, &live).await.unwrap();
+    let guest_id: Uuid = sqlx::query_scalar("SELECT ticket_id FROM queue.guest_claims WHERE tenant_id=$1 AND queue_id=$2 AND token_hash=$3").bind(f.tenant).bind(f.queue).bind(&old[..]).fetch_one(&f.migrator).await.unwrap();
+    f.staff(Command::Cancel {
+        ticket_id: guest_id,
+    })
+    .await;
+    sqlx::query("UPDATE queue.tickets SET closed_at=clock_timestamp()-interval '25 hours' WHERE tenant_id=$1 AND queue_id=$2 AND id=$3").bind(f.tenant).bind(f.queue).bind(guest_id).execute(&f.migrator).await.unwrap();
+    sqlx::query("SELECT retention.purge_batch('guest_claims',false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        public::ticket(&f.runtime, slug, &old).await,
+        Err(PublicQueueError::Expired)
+    ));
+    assert!(matches!(
+        public::issue(&f.runtime, slug, &old).await,
+        Err(PublicQueueError::Expired)
+    ));
+    assert!(public::ticket(&f.runtime, slug, &live).await.is_ok());
+    f.close().await;
+}
 fn service_write(
     f: &Fixture,
     login: &(String, String),

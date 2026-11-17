@@ -57,7 +57,7 @@ impl TenantSession {
 
     pub async fn organization(&mut self) -> Result<Organization, CoreError> {
         sqlx::query_as(
-            "SELECT id, name, version, visible_services FROM core.organizations WHERE id = $1",
+            "SELECT id, name, version, visible_services, booking_retention_months FROM core.organizations WHERE id = $1",
         )
         .bind(self.tenant_id)
         .fetch_optional(&mut *self.tx)
@@ -132,7 +132,7 @@ impl TenantSession {
         self.check_edit(expected_version)?;
         let result = sqlx::query_as(
             "UPDATE core.organizations SET name = $1, version = version + 1 \
-             WHERE id = $2 AND version = $3 RETURNING id, name, version, visible_services",
+             WHERE id = $2 AND version = $3 RETURNING id, name, version, visible_services, booking_retention_months",
         )
         .bind(name.as_str())
         .bind(self.tenant_id)
@@ -158,9 +158,30 @@ impl TenantSession {
         }
         let result = sqlx::query_as(
             "UPDATE core.organizations SET visible_services=$1, version=version+1 \
-             WHERE id=$2 AND version=$3 RETURNING id,name,version,visible_services",
+             WHERE id=$2 AND version=$3 RETURNING id,name,version,visible_services,booking_retention_months",
         )
         .bind(visible_services)
+        .bind(self.tenant_id)
+        .bind(expected_version)
+        .fetch_optional(&mut *self.tx)
+        .await?;
+        result.ok_or(CoreError::VersionConflict)
+    }
+
+    pub async fn set_booking_retention(
+        &mut self,
+        months: Option<i32>,
+        expected_version: i32,
+    ) -> Result<Organization, CoreError> {
+        self.check_edit(expected_version)?;
+        if months.is_some_and(|value| !(1..=1200).contains(&value)) {
+            return Err(CoreError::InvalidRetention);
+        }
+        let result = sqlx::query_as(
+            "UPDATE core.organizations SET booking_retention_months=$1, version=version+1 \
+             WHERE id=$2 AND version=$3 RETURNING id,name,version,visible_services,booking_retention_months",
+        )
+        .bind(months)
         .bind(self.tenant_id)
         .bind(expected_version)
         .fetch_optional(&mut *self.tx)

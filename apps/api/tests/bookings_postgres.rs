@@ -562,6 +562,304 @@ async fn anonymization_enforces_roles_and_prevents_restoration() {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn automatic_retention_is_opt_in_and_skips_unknown_end_and_fresh_cancellation() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let spec = f.specialist().await;
+    let old_offer = saved_offer(
+        &f,
+        spec.id,
+        interval("2020-01-01T10:00", "2020-01-01T11:00"),
+    )
+    .await;
+    let old = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(spec.id, old_offer.id, old_offer.version, "Old Client"),
+    )
+    .await
+    .unwrap();
+    let undated_offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    )
+    .await;
+    let undated = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(
+            spec.id,
+            undated_offer.id,
+            undated_offer.version,
+            "Undated Client",
+        ),
+    )
+    .await
+    .unwrap();
+    let to_cancel = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        record(
+            spec.id,
+            undated_offer.id,
+            undated_offer.version,
+            "Cancelled Client",
+        ),
+    )
+    .await
+    .unwrap();
+    let cancelled = appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: to_cancel.id,
+            specialist_id: spec.id,
+            expected_version: to_cancel.version,
+        },
+    )
+    .await
+    .unwrap();
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let org = session.organization().await.unwrap();
+    assert!(org.booking_retention_months.is_none());
+    session
+        .set_booking_retention(Some(6), org.version)
+        .await
+        .unwrap();
+    session.commit().await.unwrap();
+    let dry: i64 = sqlx::query_scalar("SELECT bookings.retention_batch(true)")
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert!(dry >= 1);
+    let unchanged = appointments::get(&f.runtime, f.owner, f.tenant, f.point, old.id)
+        .await
+        .unwrap();
+    assert_eq!(unchanged.client_name, "Old Client");
+    let applied: i64 = sqlx::query_scalar("SELECT bookings.retention_batch(false)")
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert!(applied >= 1);
+    let erased = appointments::get(&f.runtime, f.owner, f.tenant, f.point, old.id)
+        .await
+        .unwrap();
+    assert_eq!(erased.client_name, "Удалено");
+    assert!(erased.anonymized_at.is_some());
+    assert_eq!(
+        appointments::get(&f.runtime, f.owner, f.tenant, f.point, undated.id)
+            .await
+            .unwrap()
+            .client_name,
+        "Undated Client"
+    );
+    assert_eq!(
+        appointments::get(&f.runtime, f.owner, f.tenant, f.point, cancelled.id)
+            .await
+            .unwrap()
+            .client_name,
+        "Cancelled Client"
+    );
+    let allowed: bool = sqlx::query_scalar("SELECT has_function_privilege('turnesta_api','bookings.retention_batch(boolean)','EXECUTE')").fetch_one(&f.migrator).await.unwrap();
+    assert!(!allowed);
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn purged_journal_keys_cannot_repeat_booking_mutations() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let mut serial = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(140014)")
+        .execute(&mut *serial)
+        .await
+        .unwrap();
+    let spec = f.specialist().await;
+    let saved = offer(
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    );
+    let saved_key = Uuid::new_v4();
+    let receipt = bookings::execute(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        saved_key,
+        saved.clone(),
+    )
+    .await
+    .unwrap();
+    let BookingResource::Offer(offer) = receipt.resource else {
+        panic!("offer expected")
+    };
+    let command = record(spec.id, offer.id, offer.version, "Recovery QA");
+    let key = Uuid::new_v4();
+    let item = appointment_execute(&f, f.owner, key, command.clone())
+        .await
+        .unwrap();
+    assert_eq!(sqlx::query("UPDATE bookings.commands SET created_at=now()-interval '181 days' WHERE tenant_id=$1 AND idempotency_key=$2").bind(f.tenant).bind(saved_key).execute(&f.migrator).await.unwrap().rows_affected(), 1);
+    assert_eq!(sqlx::query("UPDATE bookings.appointment_commands SET created_at=now()-interval '181 days' WHERE tenant_id=$1 AND idempotency_key=$2").bind(f.tenant).bind(key).execute(&f.migrator).await.unwrap().rows_affected(), 1);
+    for kind in ["booking_commands", "appointment_commands"] {
+        assert!(
+            sqlx::query_scalar::<_, i64>("SELECT retention.purge_batch($1,true)")
+                .bind(kind)
+                .fetch_one(&f.migrator)
+                .await
+                .unwrap()
+                >= 1
+        );
+        assert!(
+            sqlx::query_scalar::<_, i64>("SELECT retention.purge_batch($1,false)")
+                .bind(kind)
+                .fetch_one(&f.migrator)
+                .await
+                .unwrap()
+                >= 1
+        );
+    }
+    assert!(matches!(
+        bookings::execute(&f.runtime, f.owner, f.tenant, f.point, saved_key, saved).await,
+        Err(BookingError::IdempotencyConflict)
+    ));
+    assert!(matches!(
+        appointment_execute(&f, f.owner, key, command).await,
+        Err(BookingError::IdempotencyConflict)
+    ));
+    assert_eq!(
+        appointments::get(&f.runtime, f.owner, f.tenant, f.point, item.id)
+            .await
+            .unwrap()
+            .client_name,
+        "Recovery QA"
+    );
+    serial.rollback().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn purged_public_claim_stays_expired_and_does_not_rebook() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let mut serial = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(140015)")
+        .execute(&mut *serial)
+        .await
+        .unwrap();
+    let spec = f.specialist().await;
+    let day = future_day("Europe/Moscow", 3);
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        interval(&format!("{day}T10:00"), &format!("{day}T11:00")),
+    )
+    .await;
+    let slug = publish(&f, BookingForm::default()).await;
+    let input = public_input(&offer);
+    public_bookings::book(&f.runtime, slug, &[93; 32], input.clone())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bookings.public_claims SET created_at=now()-interval '402 days',expires_at=now()-interval '1 day' WHERE tenant_id=$1 AND token_hash=$2")
+        .bind(f.tenant).bind(&[93_u8;32][..]).execute(&f.migrator).await.unwrap();
+    let dry: i64 = sqlx::query_scalar("SELECT retention.purge_batch('public_claims',true)")
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert!(dry >= 1);
+    sqlx::query("SELECT retention.purge_batch('public_claims',false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        public_bookings::receipt(&f.runtime, slug, &[93; 32]).await,
+        Err(PubError::Expired)
+    ));
+    assert!(matches!(
+        public_bookings::book(&f.runtime, slug, &[93; 32], input).await,
+        Err(PubError::Expired)
+    ));
+    serial.rollback().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn replay_waiting_on_purge_cannot_create_a_second_appointment() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let mut serial = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(140014)")
+        .execute(&mut *serial)
+        .await
+        .unwrap();
+    let spec = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        spec.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 3,
+        },
+    )
+    .await;
+    let command = record(spec.id, offer.id, offer.version, "Concurrent Recovery");
+    let key = Uuid::new_v4();
+    appointment_execute(&f, f.owner, key, command.clone())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bookings.appointment_commands SET created_at=now()-interval '181 days' WHERE tenant_id=$1 AND idempotency_key=$2").bind(f.tenant).bind(key).execute(&f.migrator).await.unwrap();
+    let mut purge = f.migrator.begin().await.unwrap();
+    let deleted: i64 =
+        sqlx::query_scalar("SELECT retention.purge_batch('appointment_commands',false)")
+            .fetch_one(&mut *purge)
+            .await
+            .unwrap();
+    assert!(deleted >= 1);
+    let pool = f.runtime.clone();
+    let (owner, tenant, point) = (f.owner, f.tenant, f.point);
+    let mut replay = tokio::spawn(async move {
+        appointments::execute(&pool, owner, tenant, point, key, command).await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), &mut replay)
+            .await
+            .is_err()
+    );
+    purge.commit().await.unwrap();
+    assert!(matches!(
+        replay.await.unwrap(),
+        Err(BookingError::IdempotencyConflict)
+    ));
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM bookings.appointments WHERE tenant_id=$1 AND offer_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(offer.id)
+    .fetch_one(session.connection())
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    session.commit().await.unwrap();
+    serial.rollback().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn anonymization_and_contact_edit_serialize_without_restoring_data() {
     let f = Fixture::new("Europe/Moscow").await;
     let spec = f.specialist().await;
@@ -1331,7 +1629,7 @@ impl Fixture {
     async fn new(zone: &str) -> Self {
         let runtime = pool("TEST_DATABASE_URL", 5).await;
         let admin = pool("TEST_ADMIN_DATABASE_URL", 2).await;
-        let migrator = pool("TEST_MIGRATION_DATABASE_URL", 1).await;
+        let migrator = pool("TEST_MIGRATION_DATABASE_URL", 2).await;
         let org = Provisioner::new(admin.clone())
             .create_organization(
                 &Name::parse("Booking test").unwrap(),
@@ -2929,6 +3227,11 @@ async fn public_phone_limit_counts_active_bookings_and_allows_replay() {
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn public_booking_location_cap_counts_only_active_visits() {
     let f = Fixture::new("Europe/Moscow").await;
+    let mut serial = f.migrator.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(140015)")
+        .execute(&mut *serial)
+        .await
+        .unwrap();
     let spec = f.specialist().await;
     let seed = saved_offer(
         &f,
@@ -2973,6 +3276,14 @@ async fn public_booking_location_cap_counts_only_active_visits() {
         .await
         .unwrap();
     tx.commit().await.unwrap();
+
+    // The location cap must still count an active visit after its claim expires.
+    sqlx::query("UPDATE bookings.public_claims SET created_at=now()-interval '402 days',expires_at=now()-interval '1 day' WHERE tenant_id=$1 AND token_hash=$2")
+        .bind(f.tenant).bind(&[1_u8;32][..]).execute(&f.migrator).await.unwrap();
+    sqlx::query("SELECT retention.purge_batch('public_claims',false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
 
     for (case, starts, date, cancelled, limited) in [
         ("future time", Some(86400_i64), Some(-1_i32), false, true),
@@ -3028,6 +3339,7 @@ async fn public_booking_location_cap_counts_only_active_visits() {
             assert_eq!(status, StatusCode::OK, "{case}: {body}");
         }
     }
+    serial.rollback().await.unwrap();
     f.close().await;
 }
 

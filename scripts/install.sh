@@ -74,7 +74,9 @@ EOF
 
 schedule_backups() {
     if [ -w /etc/cron.d ]; then
-        printf '30 3 * * * root %s/scripts/backup.sh >> /var/log/turnesta-backup.log 2>&1\n' "$PWD" > /etc/cron.d/turnesta
+        case "$PWD" in *'%'*|*'"'*|*'$'*|*'`'*|*'\'*|*'
+'*) fail 'The installation path cannot contain percent signs, quotes or newlines for cron.' ;; esac
+        printf '30 3 * * * root /bin/sh "%s/scripts/backup.sh" >> /var/log/turnesta-backup.log 2>&1 && /bin/sh "%s/scripts/purge.sh" >> /var/log/turnesta-backup.log 2>&1\n' "$PWD" "$PWD" > /etc/cron.d/turnesta
     else
         echo 'Add ./scripts/backup.sh to cron to back up the database every day.'
     fi

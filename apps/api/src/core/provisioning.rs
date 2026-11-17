@@ -93,7 +93,7 @@ async fn insert_organization(
     owner_name: &Name,
 ) -> Result<ProvisionedOrganization, CoreError> {
     let organization = sqlx::query_as::<_, Organization>(
-        "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version, visible_services",
+        "INSERT INTO core.organizations (id, name) VALUES ($1, $2) RETURNING id, name, version, visible_services, booking_retention_months",
     )
     .bind(TenantId::new())
     .bind(name.as_str())

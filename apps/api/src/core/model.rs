@@ -111,6 +111,7 @@ pub struct Organization {
     pub name: String,
     pub version: i32,
     pub visible_services: Vec<String>,
+    pub booking_retention_months: Option<i32>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -143,6 +144,8 @@ pub struct Location {
 
 #[derive(Debug, Error)]
 pub enum CoreError {
+    #[error("retention must be disabled or between 1 and 1200 months")]
+    InvalidRetention,
     #[error("visible services must be distinct known services")]
     InvalidNavigation,
     #[error("name must contain 1..120 characters and no control characters")]

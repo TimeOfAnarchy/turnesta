@@ -61,6 +61,10 @@ pub(super) fn routes() -> Router<AppState> {
             axum::routing::put(update_navigation),
         )
         .route(
+            "/api/organizations/{tenant_id}/booking-retention",
+            axum::routing::put(update_booking_retention),
+        )
+        .route(
             "/api/organizations/{tenant_id}/locations",
             get(locations).post(create_location),
         )
@@ -200,7 +204,7 @@ impl From<CoreError> for ApiError {
                 "version_conflict",
                 "Record has changed; reload before saving again",
             ),
-            CoreError::InvalidVersion => Self::bad_request(),
+            CoreError::InvalidVersion | CoreError::InvalidRetention => Self::bad_request(),
             CoreError::InvalidNavigation => Self(
                 StatusCode::BAD_REQUEST,
                 "invalid_navigation",
@@ -591,6 +595,39 @@ pub(super) struct NavigationRequest {
     expected_version: i32,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct BookingRetentionRequest {
+    #[serde(deserialize_with = "required_optional_i32")]
+    months: Option<i32>,
+    expected_version: i32,
+}
+
+fn required_optional_i32<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<i32>, D::Error> {
+    Option::<i32>::deserialize(deserializer)
+}
+
+#[utoipa::path(put,path="/api/organizations/{tenant_id}/booking-retention",tag="core",security(("sessionCookie"=[])),params(("tenant_id"=String,Path)),request_body=BookingRetentionRequest,responses((status=200,body=Organization),(status=400,description="Invalid retention"),(status=403,description="Owner or manager required"),(status=409,description="Version conflict")))]
+pub(super) async fn update_booking_retention(
+    signed_in: SignedIn,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    path: Result<Path<TenantId>, PathRejection>,
+    body: Result<Json<BookingRetentionRequest>, JsonRejection>,
+) -> Result<Json<Organization>, ApiError> {
+    check_mutation(&headers, &state.auth, &signed_in)?;
+    let Path(tenant) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(body) = body.map_err(|_| ApiError::bad_request())?;
+    let mut session = TenantSession::begin(&state.pool, signed_in.user_id, tenant).await?;
+    let organization = session
+        .set_booking_retention(body.months, body.expected_version)
+        .await?;
+    session.commit().await?;
+    Ok(Json(organization))
+}
+
 #[utoipa::path(put,path="/api/organizations/{tenant_id}/navigation",tag="core",security(("sessionCookie"=[])),params(("tenant_id"=String,Path)),request_body=NavigationRequest,responses((status=200,body=Organization),(status=400,description="Invalid selection"),(status=403,description="Owner or manager required"),(status=409,description="Version conflict")))]
 pub(super) async fn update_navigation(
     signed_in: SignedIn,
@@ -748,6 +785,24 @@ mod tests {
 
     fn db_error(code: &'static str, message: &'static str) -> sqlx::Error {
         sqlx::Error::Database(Box::new(DatabaseFailure { code, message }))
+    }
+
+    #[test]
+    fn retention_request_requires_an_explicit_nullable_month_value() {
+        assert!(
+            serde_json::from_str::<BookingRetentionRequest>(r#"{"expected_version":1}"#).is_err()
+        );
+        let disabled = serde_json::from_str::<BookingRetentionRequest>(
+            r#"{"expected_version":1,"months":null}"#,
+        )
+        .unwrap();
+        assert_eq!(disabled.months, None);
+        assert!(
+            serde_json::from_str::<BookingRetentionRequest>(
+                r#"{"expected_version":1,"months":3,"extra":true}"#
+            )
+            .is_err()
+        );
     }
     #[test]
     fn unexpected_database_errors_are_internal() {

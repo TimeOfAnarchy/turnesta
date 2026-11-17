@@ -143,6 +143,7 @@ h1 { font-size: clamp(26px, 2.2vw, 34px); font-weight: 650; line-height: 1.2; le
 .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 40px; align-items: start; }
 .settings-panel { min-width: 0; }
 .settings-panels { display: grid; gap: 24px; min-width: 0; }
+.retention-description { padding: 20px clamp(20px, 3vw, 28px) 0; margin: 0; }
 .navigation-form { padding: clamp(20px, 3vw, 28px); }
 .navigation-form > .success-notice { margin: 20px 0 0; }
 .service-options { display: grid; gap: 12px; border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }

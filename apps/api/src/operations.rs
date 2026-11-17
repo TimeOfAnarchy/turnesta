@@ -1,4 +1,4 @@
-//! Trusted, read-only operational inspection. Never mounted in the HTTP router.
+//! Trusted operational commands. Never mounted in the HTTP router.
 use crate::{
     core::{TenantId, TenantSession, UserId},
     database,
@@ -26,6 +26,12 @@ pub enum OperationsCommand {
         check_delivery_key: bool,
         #[arg(long,default_value_t=300,value_parser=clap::value_parser!(u32).range(1..=86400))]
         max_due_age_seconds: u32,
+    },
+    /// Remove expired operational data in bounded transactions.
+    Purge {
+        /// Count eligible rows without modifying them.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 #[derive(Serialize)]
@@ -68,22 +74,111 @@ pub struct Inspection {
 }
 
 pub async fn run(command: OperationsCommand, pool: &PgPool) -> Result<()> {
-    let OperationsCommand::Inspect {
-        fingerprints,
-        verify_runtime,
-        check_delivery_key,
-        max_due_age_seconds,
-    } = command;
-    let inspection = inspect(
-        pool,
-        fingerprints,
-        verify_runtime,
-        check_delivery_key,
-        max_due_age_seconds,
-    )
-    .await?;
-    println!("{}", serde_json::to_string(&inspection)?);
+    match command {
+        OperationsCommand::Inspect {
+            fingerprints,
+            verify_runtime,
+            check_delivery_key,
+            max_due_age_seconds,
+        } => {
+            let inspection = inspect(
+                pool,
+                fingerprints,
+                verify_runtime,
+                check_delivery_key,
+                max_due_age_seconds,
+            )
+            .await?;
+            println!("{}", serde_json::to_string(&inspection)?);
+        }
+        OperationsCommand::Purge { dry_run } => {
+            println!("{}", serde_json::to_string(&purge(pool, dry_run).await?)?);
+        }
+    }
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct PurgeReport {
+    dry_run: bool,
+    counts: Vec<PurgeCount>,
+}
+
+#[derive(Serialize)]
+struct PurgeCount {
+    kind: &'static str,
+    count: i64,
+}
+
+pub async fn purge(pool: &PgPool, dry_run: bool) -> Result<PurgeReport> {
+    // Check the exact embedded migration set and trusted login before mutations.
+    inspect(pool, false, false, false, 300).await?;
+    let mut counts = Vec::new();
+    for kind in [
+        "sessions",
+        "password_setup_grants",
+        "invitation_deliveries",
+        "login_codes",
+    ] {
+        let mut total = 0;
+        loop {
+            // Each statement is its own transaction. A failed later batch does not
+            // roll back earlier batches and a subsequent run can safely resume.
+            let count: i64 = sqlx::query_scalar("SELECT auth.purge_batch($1,$2)")
+                .bind(kind)
+                .bind(dry_run)
+                .fetch_one(pool)
+                .await?;
+            total += count;
+            if dry_run || count < 1000 {
+                break;
+            }
+        }
+        counts.push(PurgeCount { kind, count: total });
+    }
+    for kind in [
+        "queue_commands",
+        "booking_commands",
+        "appointment_commands",
+        "team_commands",
+        "public_claims",
+        "guest_claims",
+    ] {
+        let mut total = 0;
+        loop {
+            let count: i64 = sqlx::query_scalar("SELECT retention.purge_batch($1,$2)")
+                .bind(kind)
+                .bind(dry_run)
+                .fetch_one(pool)
+                .await?;
+            total += count;
+            if dry_run || count < 1000 {
+                break;
+            }
+        }
+        counts.push(PurgeCount { kind, count: total });
+    }
+    let mut total = 0;
+    loop {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SET LOCAL timezone='UTC'")
+            .execute(&mut *tx)
+            .await?;
+        let count: i64 = sqlx::query_scalar("SELECT bookings.retention_batch($1)")
+            .bind(dry_run)
+            .fetch_one(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        total += count;
+        if dry_run || count < 1000 {
+            break;
+        }
+    }
+    counts.push(PurgeCount {
+        kind: "bookings_anonymized",
+        count: total,
+    });
+    Ok(PurgeReport { dry_run, counts })
 }
 
 pub async fn inspect(
@@ -136,14 +231,14 @@ pub async fn inspect(
         .collect();
     let ownership_valid:bool=sqlx::query_scalar(r#"
         SELECT NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE (n.nspname IN('core','auth','catalog','queue','bookings','tips') OR (n.nspname='public' AND c.relname='_sqlx_migrations'))
+            WHERE (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') OR (n.nspname='public' AND c.relname='_sqlx_migrations'))
             AND c.relkind IN('r','p','v','m','S') AND pg_get_userbyid(c.relowner)<>'turnesta_migrator')
         AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips') AND pg_get_userbyid(p.proowner)<>'turnesta_migrator')
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND pg_get_userbyid(p.proowner)<>'turnesta_migrator')
         AND NOT EXISTS(SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips') AND NOT k.convalidated)
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND NOT k.convalidated)
         AND NOT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips') AND (NOT i.indisvalid OR NOT i.indisready))
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND (NOT i.indisvalid OR NOT i.indisready))
         AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r'
             AND n.nspname IN('core','auth','catalog','queue','bookings','tips')
             AND (EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id' AND NOT a.attisdropped)
@@ -154,7 +249,7 @@ pub async fn inspect(
         ownership_valid,
         "object ownership, constraints or indexes are invalid"
     );
-    let relations:Vec<(String,String)>=sqlx::query_as("SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND (n.nspname IN('core','auth','catalog','queue','bookings','tips') OR (n.nspname='public' AND c.relname='_sqlx_migrations')) ORDER BY n.nspname,c.relname").fetch_all(&mut *tx).await?;
+    let relations:Vec<(String,String)>=sqlx::query_as("SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') OR (n.nspname='public' AND c.relname='_sqlx_migrations')) ORDER BY n.nspname,c.relname").fetch_all(&mut *tx).await?;
     let mut tables = Vec::new();
     for (schema, name) in relations {
         // Catalog identifiers are quoted, never accepted as SQL from a request.

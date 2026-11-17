@@ -136,6 +136,34 @@ fn invite() -> TeamCommand {
         role: Role::Operator,
     }
 }
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated *_test database"]
+async fn purged_team_command_cannot_repeat_invitation() {
+    let f = Fixture::new().await;
+    let key = Uuid::new_v4();
+    let command = invite();
+    let first = f.execute(key, command.clone()).await.unwrap();
+    assert_eq!(sqlx::query("UPDATE core.team_commands SET created_at=now()-interval '181 days' WHERE tenant_id=$1 AND key=$2").bind(f.tenant).bind(key).execute(&f.migrator).await.unwrap().rows_affected(), 1);
+    sqlx::query("SELECT retention.purge_batch('team_commands',false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.execute(key, command).await,
+        Err(TeamError::Idempotency)
+    ));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM core.memberships WHERE tenant_id=$1 AND user_id=$2",
+    )
+    .bind(f.tenant)
+    .bind(first.user_id)
+    .fetch_one(&f.migrator)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    f.close().await;
+}
 fn change(user: UserId, role: Role, active: bool, version: i32) -> TeamCommand {
     TeamCommand::SetMember {
         user_id: user,

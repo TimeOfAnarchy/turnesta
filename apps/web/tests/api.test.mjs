@@ -23,6 +23,18 @@ test('navigation save sends tenant choice and version once with CSRF and a deadl
   assert.equal(calls, 1);
 });
 
+test('retention setting sends explicit disabled value with version and CSRF', async () => {
+  globalThis.document = { cookie: 'turnesta_csrf=token' };
+  mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, '/api/organizations/tenant-id/booking-retention');
+    assert.equal(options.method, 'PUT');
+    assert.equal(options.headers.get('X-CSRF-Token'), 'token');
+    assert.deepEqual(JSON.parse(options.body), { months: null, expected_version: 7 });
+    return Response.json({ id: 'tenant-id', version: 8, booking_retention_months: null });
+  });
+  assert.equal((await api.setBookingRetention('tenant-id', null, 7)).booking_retention_months, null);
+});
+
 test('read recovery retries transient failures and stops for access and validation errors', () => {
   assert.equal(readRecoveryInterval(null), false);
   assert.equal(readRecoveryInterval(new TypeError('network')), 5_000);

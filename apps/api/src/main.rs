@@ -42,7 +42,7 @@ enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
-    /// Trusted read-only diagnostics (migration database login required).
+    /// Trusted maintenance commands (migration database login required).
     Ops {
         #[command(subcommand)]
         command: OperationsCommand,

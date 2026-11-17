@@ -85,6 +85,49 @@ fn sqlstate(error: &sqlx::Error) -> String {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database and runtime/admin URLs"]
+async fn booking_retention_setting_checks_role_bounds_and_version() {
+    let f = Fixture::new().await;
+    let org = f.organization().await;
+    let user = Provisioner::new(f.admin.clone())
+        .create_user(&name("Operator"))
+        .await
+        .unwrap();
+    Provisioner::new(f.admin.clone())
+        .add_membership(org.organization.id, user.id, Role::Operator)
+        .await
+        .unwrap();
+    let mut operator = TenantSession::begin(&f.runtime, user.id, org.organization.id)
+        .await
+        .unwrap();
+    assert!(matches!(
+        operator.set_booking_retention(Some(3), 1).await,
+        Err(CoreError::Forbidden)
+    ));
+    operator.commit().await.unwrap();
+    let mut owner = TenantSession::begin(&f.runtime, org.owner.id, org.organization.id)
+        .await
+        .unwrap();
+    assert!(matches!(
+        owner.set_booking_retention(Some(0), 1).await,
+        Err(CoreError::InvalidRetention)
+    ));
+    let updated = owner.set_booking_retention(Some(12), 1).await.unwrap();
+    assert_eq!(updated.booking_retention_months, Some(12));
+    assert!(matches!(
+        owner.set_booking_retention(None, 1).await,
+        Err(CoreError::VersionConflict)
+    ));
+    let disabled = owner
+        .set_booking_retention(None, updated.version)
+        .await
+        .unwrap();
+    assert_eq!(disabled.booking_retention_months, None);
+    owner.commit().await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database and runtime/admin URLs"]
 async fn provisioning_creates_owner_and_rejects_wrong_database_capability() {
     let fixture = Fixture::new().await;
     let org = fixture.organization().await;

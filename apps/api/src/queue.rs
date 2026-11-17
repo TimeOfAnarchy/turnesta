@@ -266,6 +266,16 @@ pub async fn execute(
         session.commit().await?;
         return Ok(result);
     }
+    let expired: bool = sqlx::query_scalar("SELECT retention.queue_key_expired($1,$2,$3,$4)")
+        .bind(tenant)
+        .bind(queue)
+        .bind(user)
+        .bind(key)
+        .fetch_one(session.connection())
+        .await?;
+    if expired {
+        return Err(QueueError::IdempotencyConflict);
+    }
 
     let ticket_id = match command {
         Command::Issue { service_id } => {
@@ -308,7 +318,11 @@ pub async fn execute(
     .bind(Json(&command))
     .bind(Json(&result))
     .execute(session.connection())
-    .await?;
+    .await
+    .map_err(|error| match error.as_database_error().and_then(|value| value.code()).as_deref() {
+        Some("R1401") => QueueError::IdempotencyConflict,
+        _ => QueueError::Database(error),
+    })?;
     session.commit().await?;
     Ok(result)
 }
