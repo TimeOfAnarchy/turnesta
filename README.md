@@ -7,7 +7,7 @@ Appointments, electronic queues and tips for service businesses.
 - **Online booking** — specialist schedules, a public booking page and an embeddable widget for your website.
 - **Appointments** — book, reschedule and cancel clients from the staff cabinet.
 - **Electronic queue** — tickets via link or QR code, an operator workspace and a live display board.
-- **Tips** — voluntary tips via link or QR code after a visit.
+- **Mock Tips** — a test checkout via link or QR code after a visit; real payments and payouts are not implemented.
 - **Team** — organizations, locations and roles for owners, managers, operators and employees.
 
 ## Getting started
@@ -82,6 +82,11 @@ The linter has its own dependency lockfile because its parser requires TypeScrip
 From `apps/web`, run `npm ci` and `npm run api:types` to generate TypeScript types from the committed OpenAPI snapshot. After changing the API contract, start the updated local HTTP stack and run `npm run api:snapshot` before generating the types. For a custom port, pass the schema URL, for example `npm run api:snapshot -- http://127.0.0.1:8086/openapi.json`.
 
 CI runs `npm run api:snapshot -- --check` against the local API, then `npm run api:types -- --check` to detect stale generated types.
+
+## Project information
+
+- [Security policy and reporting a vulnerability](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
