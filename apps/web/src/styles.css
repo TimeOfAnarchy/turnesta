@@ -624,6 +624,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .booking-widget-code > button { justify-self:start; }
 .appointment-controls { display:flex; flex-wrap:wrap; gap:.6rem; margin:1.25rem 0; align-items:center; }
 .appointment-controls .button { font-size:.8125rem; padding:.65rem .8rem; }
+.booking-form fieldset > .text-button { margin-inline:0; }
 .appointment-cancel { background:#8e443a; color:#fff; border-color:#8e443a; }
 .appointment-targets { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; margin-block:.8rem; }
 .appointment-target { display:grid; gap:.4rem; border:1px solid var(--border); border-radius:.7rem; background:#fff; text-align:left; padding:.9rem; min-width:0; }
