@@ -1,0 +1,8126 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Turnesta API",
+    "description": "Turnesta operational endpoints",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/mock-payments/{token}/complete": {
+      "post": {
+        "tags": [
+          "tips-public"
+        ],
+        "operationId": "complete_checkout",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteCheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusLink"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider already finalized"
+          }
+        }
+      }
+    },
+    "/api/organizations": {
+      "get": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "organizations",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationList"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}": {
+      "get": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "organization",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "rename_organization",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/audit/access": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "operationId": "access",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "before_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/audit/settings": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "operationId": "audit_settings",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "audit"
+        ],
+        "operationId": "configure_audit",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditSettingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner required"
+          },
+          "409": {
+            "description": "Version conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/booking-retention": {
+      "put": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "update_booking_retention",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingRetentionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid retention"
+          },
+          "403": {
+            "description": "Owner or manager required"
+          },
+          "409": {
+            "description": "Version conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations": {
+      "get": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "locations",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationList"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "create_location",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}": {
+      "patch": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "update_location",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "appointments",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "specialist_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "include_cancelled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role cannot access client contacts"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/commands": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "appointment_command",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Occupancy, version or idempotency conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "appointment",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role cannot access client contacts"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/anonymize": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "anonymize_appointment",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnonymizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentReceipt"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner or manager required"
+          },
+          "409": {
+            "description": "Version or idempotency conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/export": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "export_client",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Matching visits across the organization, ordered by creation time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner required"
+          },
+          "409": {
+            "description": "Appointment has changed"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/batch-preview": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "batch_preview",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPreview"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/commands": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "booking_command",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Overlap acknowledgement or version/idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverlapResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/offers": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "offers",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "specialist_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "include_withdrawn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingOfferPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/presets": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "presets",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingPresetPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/public-access": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "booking_public_settings",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingAccessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "configure_booking_public_access",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingPublicConfigureInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingAccessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/specialists": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "specialists",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingSpecialistPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/suggest-time": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "suggest_time",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "starts_local",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minutes",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "time_zone",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeSuggestion"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/bookings/widget": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "booking_widget_settings",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "bookings"
+        ],
+        "operationId": "configure_booking_widget",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetConfigure"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/locations/{location_id}/queues": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "queues",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueuePage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Location not found"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "create_queue",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "location_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateQueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queue"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner/manager and CSRF required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/navigation": {
+      "put": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "update_navigation",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NavigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid selection"
+          },
+          "403": {
+            "description": "Owner or manager required"
+          },
+          "409": {
+            "description": "Version conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "get_queue",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queue"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Queue not found"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/commands": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "queue_command",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Required; reuse for retries of the same command",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Command"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid command or key"
+          },
+          "403": {
+            "description": "Operator role and CSRF required"
+          },
+          "409": {
+            "description": "Key mismatch, active ticket or invalid state"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/events": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "staff",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE refresh/heartbeat; snapshots remain authoritative",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "429": {
+            "description": "Live connection capacity reached"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/public-access": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "queue_public_settings",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "configure_queue_public_access",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Settings changed; reload current version"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/public-access/display": {
+      "put": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "configure_display",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureDisplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Settings changed; reload current version"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/public-access/qr.svg": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "qr",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SVG QR for the public queue URL",
+            "content": {
+              "image/svg+xml": {}
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/services": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "services",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "create_service",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/services/{service_id}": {
+      "patch": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "update_service",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "service_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/stations": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "stations",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "create_station",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Station"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/stations/{station_id}": {
+      "patch": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "update_station",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Station"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version conflict"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/tickets": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "tickets",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TicketStatus"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "description": "Only tickets assigned to the authenticated user",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or status"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/queues/{queue_id}/tips": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "queue_tips_settings",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TipSettings"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "queue"
+        ],
+        "operationId": "configure_queue_tips",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "queue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureTipsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TipSettings"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Settings changed; reload current version"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/team": {
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "members",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/team/commands": {
+      "post": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "team_command",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Membership or idempotency conflict"
+          },
+          "429": {
+            "description": "Invitation cooldown or hourly limit"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/team/password-accounts": {
+      "post": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "create_account",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordAccountResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Existing global account; password untouched"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/tips/attempts": {
+      "get": {
+        "tags": [
+          "tips"
+        ],
+        "operationId": "attempts",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner/manager required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/tips/attempts/{attempt_id}/reconcile": {
+      "post": {
+        "tags": [
+          "tips"
+        ],
+        "operationId": "reconcile",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attempt"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner/manager and CSRF required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/organizations/{tenant_id}/tips/recipients": {
+      "get": {
+        "tags": [
+          "tips"
+        ],
+        "operationId": "recipients",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner/manager required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tips"
+        ],
+        "operationId": "create_recipient",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recipient"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Owner/manager and CSRF required"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/public/bookings/{slug}": {
+      "get": {
+        "tags": [
+          "bookings-public"
+        ],
+        "operationId": "public_booking_profile",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBookingProfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/bookings/{slug}/availability": {
+      "get": {
+        "tags": [
+          "bookings-public"
+        ],
+        "operationId": "availability",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "specialist_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingAvailability"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/bookings/{slug}/receipt": {
+      "get": {
+        "tags": [
+          "bookings-public"
+        ],
+        "operationId": "receipt",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Booking-Access",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBookingReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Capability required"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bookings-public"
+        ],
+        "operationId": "book",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Booking-Access",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicBookingInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBookingReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Availability or form changed"
+          }
+        }
+      }
+    },
+    "/api/public/queues/{slug}": {
+      "get": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "public_queue_profile",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProfile"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Queue not published"
+          }
+        }
+      }
+    },
+    "/api/public/queues/{slug}/display": {
+      "get": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "display",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Zero-based page, 100 active calls per page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicDisplay"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Display not published"
+          }
+        }
+      }
+    },
+    "/api/public/queues/{slug}/events": {
+      "get": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "public",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "audience",
+            "in": "query",
+            "description": "guest (default) or display",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE generic refresh hints, no ticket data",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "404": {
+            "description": "Requested public audience is not published"
+          },
+          "429": {
+            "description": "Live connection capacity reached"
+          }
+        }
+      }
+    },
+    "/api/public/queues/{slug}/services": {
+      "get": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "public_services",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServicePage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Queue not published"
+          }
+        }
+      }
+    },
+    "/api/public/queues/{slug}/ticket": {
+      "get": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "ticket",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicTicket"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found"
+          },
+          "410": {
+            "description": "Ticket access expired"
+          }
+        },
+        "security": [
+          {
+            "queueTicket": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "queue-public"
+        ],
+        "operationId": "issue",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicTicket"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Issuance paused"
+          },
+          "429": {
+            "description": "Queue budget or waiting capacity exceeded"
+          }
+        },
+        "security": [
+          {
+            "queueTicket": []
+          }
+        ]
+      }
+    },
+    "/api/public/tips/status/{token}": {
+      "get": {
+        "tags": [
+          "tips-public"
+        ],
+        "operationId": "public_status",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAttempt"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/public/tips/{slug}/attempts": {
+      "post": {
+        "tags": [
+          "tips-public"
+        ],
+        "operationId": "create_attempt",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutLinks"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/time-zones": {
+      "get": {
+        "tags": [
+          "core"
+        ],
+        "operationId": "time_zones",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeZoneList"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "login",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Configured public origin",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "logout",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/auth/password": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "own",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "change",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed; sign in again"
+          },
+          "401": {
+            "description": "Session or current password invalid"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/auth/password/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "password_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordLoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "429": {
+            "description": "Try later"
+          }
+        }
+      }
+    },
+    "/auth/password/setup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordLoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Setup expired or consumed"
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "HTTP process is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "description": "Database is reachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable or server draining",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hooks/tips/mock": {
+      "post": {
+        "tags": [
+          "tips-webhooks"
+        ],
+        "operationId": "webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookReceipt"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid signature"
+          },
+          "409": {
+            "description": "Correlation mismatch"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnonymizeRequest": {
+        "type": "object",
+        "required": [
+          "specialist_id",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Appointment": {
+        "type": "object",
+        "required": [
+          "id",
+          "specialist_id",
+          "offer_id",
+          "client_name",
+          "phone",
+          "email",
+          "note",
+          "status",
+          "source",
+          "title",
+          "specialist_name",
+          "mode",
+          "time_zone",
+          "created_at",
+          "updated_at",
+          "version"
+        ],
+        "properties": {
+          "anonymized_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answers": {
+            "type": "object"
+          },
+          "cancelled_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "form_snapshot": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "offer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "specialist_name": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AppointmentCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "offer_id",
+              "expected_offer_version",
+              "client",
+              "type"
+            ],
+            "properties": {
+              "client": {
+                "$ref": "#/components/schemas/ClientInput"
+              },
+              "expected_offer_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "offer_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "record_appointment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "expected_version",
+              "client",
+              "type"
+            ],
+            "properties": {
+              "client": {
+                "$ref": "#/components/schemas/ClientInput"
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "update_client"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "offer_id",
+              "expected_offer_version",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "expected_offer_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "offer_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "move_appointment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "cancel_appointment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "anonymize_appointment"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AppointmentPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppointmentSummary"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AppointmentReceipt": {
+        "type": "object",
+        "required": [
+          "resource"
+        ],
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/AppointmentResource"
+          }
+        }
+      },
+      "AppointmentResource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "kind"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/Appointment"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "appointment"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AppointmentSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "offer_id",
+          "client_name",
+          "phone",
+          "status",
+          "source",
+          "title"
+        ],
+        "properties": {
+          "anonymized_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "Attempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipient_id",
+          "recipient_name",
+          "amount_minor",
+          "currency",
+          "status",
+          "environment",
+          "created_at"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipient_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AttemptPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attempt"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "AuditCursor": {
+        "type": "object",
+        "required": [
+          "before_at",
+          "before_id"
+        ],
+        "properties": {
+          "before_at": {
+            "type": "string"
+          },
+          "before_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "actor_id",
+          "actor_name",
+          "location_id",
+          "location_name",
+          "action",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_id": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "actor_name": {
+            "type": "string"
+          },
+          "after_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "appointment_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "include_cancelled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "location_id": {
+            "$ref": "#/components/schemas/LocationId"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "page_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "result_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "specialist_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "specialist_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visit_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuditPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditCursor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AuditSettings": {
+        "type": "object",
+        "required": [
+          "retention_days",
+          "version"
+        ],
+        "properties": {
+          "retention_days": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AuditSettingsInput": {
+        "type": "object",
+        "required": [
+          "retention_days",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retention_days": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchConflict": {
+        "type": "object",
+        "required": [
+          "row",
+          "kind",
+          "title"
+        ],
+        "properties": {
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "other_row": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "row": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchPreview": {
+        "type": "object",
+        "required": [
+          "token",
+          "rows",
+          "conflicts",
+          "conflicts_truncated",
+          "has_duplicates"
+        ],
+        "properties": {
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchConflict"
+            }
+          },
+          "conflicts_truncated": {
+            "type": "boolean"
+          },
+          "has_duplicates": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchRow"
+            }
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "specialist_id",
+          "dates",
+          "offer_ids"
+        ],
+        "properties": {
+          "dates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "BatchRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "specialist_id",
+          "time_zone",
+          "state",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BatchSource"
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OfferState"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchRow": {
+        "type": "object",
+        "required": [
+          "index",
+          "title",
+          "mode",
+          "date",
+          "time_zone",
+          "places",
+          "state"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "places": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/OfferState"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchSource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "source_date",
+              "target_dates",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "copy_day"
+                ]
+              },
+              "source_date": {
+                "type": "string"
+              },
+              "target_dates": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "preset_id",
+              "dates",
+              "start_time",
+              "end_time",
+              "gap_minutes",
+              "kind"
+            ],
+            "properties": {
+              "dates": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "end_time": {
+                "type": "string"
+              },
+              "gap_minutes": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "preset_series"
+                ]
+              },
+              "preset_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "start_time": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "BatchTimeIssue": {
+        "type": "object",
+        "required": [
+          "date",
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      },
+      "BookingAccessResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BookingPublicSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "public_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "BookingAvailability": {
+        "type": "object",
+        "required": [
+          "profile",
+          "month",
+          "date",
+          "version",
+          "days",
+          "items"
+        ],
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingCalendarDay"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicBookingOffer"
+            }
+          },
+          "month": {
+            "type": "string"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/PublicBookingProfile"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "BookingCalendarDay": {
+        "type": "object",
+        "required": [
+          "date",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      },
+      "BookingCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "request",
+              "preview_token",
+              "allow_alternatives",
+              "type"
+            ],
+            "properties": {
+              "allow_alternatives": {
+                "type": "boolean"
+              },
+              "preview_token": {
+                "type": "string"
+              },
+              "request": {
+                "$ref": "#/components/schemas/BatchRequest"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "save_batch"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "description",
+              "enabled",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "save_specialist"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "enabled",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "duration_minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "save_preset"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "specialist_id",
+              "time_zone",
+              "title",
+              "timing",
+              "state",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "conflict_token": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "specialist_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "$ref": "#/components/schemas/OfferState"
+              },
+              "time_zone": {
+                "type": "string"
+              },
+              "timing": {
+                "$ref": "#/components/schemas/Timing"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "save_offer"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "BookingFieldKind": {
+        "type": "string",
+        "enum": [
+          "client_name",
+          "phone",
+          "email",
+          "note",
+          "text",
+          "select"
+        ]
+      },
+      "BookingForm": {
+        "type": "object",
+        "required": [
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingFormField"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "BookingFormField": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "required",
+          "options"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BookingFieldKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BookingOfferPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "BookingPresetPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Preset"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "BookingPublicConfigureInput": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "form",
+          "expected_version"
+        ],
+        "properties": {
+          "consent_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "form": {
+            "$ref": "#/components/schemas/BookingForm"
+          },
+          "privacy_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BookingPublicSettings": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "consent_text",
+          "consent_version",
+          "form",
+          "version"
+        ],
+        "properties": {
+          "consent_text": {
+            "type": "string"
+          },
+          "consent_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "form": {
+            "$ref": "#/components/schemas/BookingForm"
+          },
+          "privacy_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "BookingReceipt": {
+        "type": "object",
+        "required": [
+          "resource"
+        ],
+        "properties": {
+          "resource": {
+            "$ref": "#/components/schemas/BookingResource"
+          }
+        }
+      },
+      "BookingResource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "kind"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/BatchReceipt"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "batch"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "kind"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/Specialist"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "specialist"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "kind"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/Preset"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "preset"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "kind"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/Offer"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "offer"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "BookingRetentionRequest": {
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BookingSpecialistPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Specialist"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CheckoutLinks": {
+        "type": "object",
+        "required": [
+          "checkout_url",
+          "status_url"
+        ],
+        "properties": {
+          "checkout_url": {
+            "type": "string"
+          },
+          "status_url": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientInput": {
+        "type": "object",
+        "required": [
+          "client_name",
+          "phone",
+          "email",
+          "note"
+        ],
+        "properties": {
+          "client_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Command": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "service_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "issue"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "station_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "call_next"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "ticket_id",
+              "type"
+            ],
+            "properties": {
+              "ticket_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "ticket_id",
+              "type"
+            ],
+            "properties": {
+              "ticket_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "cancel"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "CommandResult": {
+        "type": "object",
+        "required": [
+          "queue_id",
+          "version"
+        ],
+        "properties": {
+          "queue_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ticket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Ticket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CompleteCheckoutRequest": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigureDisplayRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "expected_version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigureRequest": {
+        "type": "object",
+        "required": [
+          "join_open",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "join_open": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigureTipsRequest": {
+        "type": "object",
+        "required": [
+          "recipient_id",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "recipient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Conflict": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "time_zone"
+        ],
+        "properties": {
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ConflictNotice": {
+        "type": "object",
+        "required": [
+          "token",
+          "total",
+          "conflicts"
+        ],
+        "properties": {
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            }
+          },
+          "token": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Contact": {
+        "type": "string",
+        "enum": [
+          "phone",
+          "email"
+        ]
+      },
+      "CreateAttemptRequest": {
+        "type": "object",
+        "required": [
+          "amount_minor",
+          "idempotency_key"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateLocationRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "time_zone"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateQueueRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateRecipientRequest": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "location_id"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "location_id": {
+            "$ref": "#/components/schemas/LocationId"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DisplayTicket": {
+        "type": "object",
+        "required": [
+          "number",
+          "service_date"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "service_date": {
+            "type": "string"
+          },
+          "station_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportFormat": {
+        "type": "string",
+        "enum": [
+          "json",
+          "csv"
+        ]
+      },
+      "ExportRequest": {
+        "type": "object",
+        "required": [
+          "contact",
+          "format",
+          "expected_version"
+        ],
+        "properties": {
+          "contact": {
+            "$ref": "#/components/schemas/Contact"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "format": {
+            "$ref": "#/components/schemas/ExportFormat"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version"
+        ],
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HealthStatus"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "string",
+        "enum": [
+          "alive",
+          "ready",
+          "not_ready"
+        ]
+      },
+      "IssueRequest": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Location": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "id",
+          "name",
+          "time_zone",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/LocationId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "LocationId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "LocationList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Location"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LocationId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "MockEvent": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "attempt_id",
+          "provider_payment_id",
+          "recipient_id",
+          "amount_minor",
+          "currency",
+          "status"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_payment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipient_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NavigationRequest": {
+        "type": "object",
+        "required": [
+          "visible_services",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "visible_services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Offer": {
+        "type": "object",
+        "required": [
+          "id",
+          "specialist_id",
+          "title",
+          "mode",
+          "time_zone",
+          "places",
+          "state",
+          "version"
+        ],
+        "properties": {
+          "blocked_by_booking": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "places": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reserved_places": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/OfferState"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "OfferState": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "ready",
+          "withdrawn"
+        ]
+      },
+      "Organization": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "visible_services"
+        ],
+        "properties": {
+          "booking_retention_months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "visible_services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OrganizationList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSummary"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TenantId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "OrganizationSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "OverlapResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "$ref": "#/components/schemas/ConflictNotice"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordAccountRequest": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "email",
+          "role",
+          "temporary_password"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "temporary_password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordAccountResponse": {
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        }
+      },
+      "PasswordChangeRequest": {
+        "type": "object",
+        "required": [
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password"
+          },
+          "new_password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordLoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordLoginResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "user_id",
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "authenticated"
+                ]
+              },
+              "user_id": {
+                "$ref": "#/components/schemas/UserId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "setup_token",
+              "status"
+            ],
+            "properties": {
+              "setup_token": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "password_change_required"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "PasswordSetupRequest": {
+        "type": "object",
+        "required": [
+          "setup_token",
+          "new_password"
+        ],
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "setup_token": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordStatus": {
+        "type": "object",
+        "required": [
+          "email",
+          "has_password",
+          "requires_current_password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "has_password": {
+            "type": "boolean"
+          },
+          "requires_current_password": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Preset": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "version"
+        ],
+        "properties": {
+          "duration_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicAttempt": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "amount_minor",
+          "currency",
+          "status",
+          "environment"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicBookingInput": {
+        "type": "object",
+        "required": [
+          "offer_id",
+          "offer_version",
+          "specialist_version",
+          "form_version",
+          "time_zone",
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "consent": {
+            "type": "boolean"
+          },
+          "consent_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "form_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "offer_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "specialist_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublicBookingOffer": {
+        "type": "object",
+        "required": [
+          "id",
+          "specialist_id",
+          "specialist_name",
+          "specialist_version",
+          "title",
+          "version",
+          "mode",
+          "time_zone",
+          "remaining"
+        ],
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "specialist_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "specialist_name": {
+            "type": "string"
+          },
+          "specialist_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicBookingProfile": {
+        "type": "object",
+        "required": [
+          "public_slug",
+          "organization_name",
+          "location_name",
+          "time_zone",
+          "today",
+          "enabled",
+          "version",
+          "specialists"
+        ],
+        "properties": {
+          "consent_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consent_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "form": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BookingForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "privacy_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_slug": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "specialists": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicBookingSpecialist"
+            }
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "today": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicBookingReceipt": {
+        "type": "object",
+        "required": [
+          "reference",
+          "status",
+          "title",
+          "specialist_name",
+          "time_zone",
+          "organization_name",
+          "location_name",
+          "version"
+        ],
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ends_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "specialist_name": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "starts_local": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicBookingSpecialist": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicDisplay": {
+        "type": "object",
+        "required": [
+          "queue_name",
+          "location_name",
+          "organization_name",
+          "time_zone",
+          "version",
+          "observed_at",
+          "join_open",
+          "waiting_count",
+          "called_count",
+          "page",
+          "called"
+        ],
+        "properties": {
+          "called": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DisplayTicket"
+            }
+          },
+          "called_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "join_open": {
+            "type": "boolean"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "next_page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "observed_at": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "queue_name": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "waiting_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PublicProfile": {
+        "type": "object",
+        "required": [
+          "public_slug",
+          "queue_name",
+          "location_name",
+          "organization_name",
+          "time_zone",
+          "join_open"
+        ],
+        "properties": {
+          "join_open": {
+            "type": "boolean"
+          },
+          "location_name": {
+            "type": "string"
+          },
+          "organization_name": {
+            "type": "string"
+          },
+          "public_slug": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "queue_name": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicService": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicServicePage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicService"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "PublicTicket": {
+        "type": "object",
+        "required": [
+          "number",
+          "service_date",
+          "status",
+          "issued_at"
+        ],
+        "properties": {
+          "issued_at": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "people_ahead": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "service_date": {
+            "type": "string"
+          },
+          "service_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "station_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TicketStatus"
+          },
+          "tips": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PublicTipLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PublicTipLink": {
+        "type": "object",
+        "required": [
+          "public_slug",
+          "display_name",
+          "environment"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "public_slug": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Queue": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "location_id",
+          "name",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_id": {
+            "$ref": "#/components/schemas/LocationId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "QueuePage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Queue"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "Recipient": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "location_id",
+          "display_name",
+          "public_slug",
+          "environment"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "location_id": {
+            "$ref": "#/components/schemas/LocationId"
+          },
+          "public_slug": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        }
+      },
+      "RecipientPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Recipient"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "RenameOrganizationRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "manager",
+          "operator",
+          "employee"
+        ]
+      },
+      "Service": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "enabled",
+          "version"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ServiceInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "enabled"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServicePage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Service"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "SessionResponse": {
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        }
+      },
+      "SettingsResponse": {
+        "type": "object",
+        "required": [
+          "join_open",
+          "display_enabled",
+          "version"
+        ],
+        "properties": {
+          "display_enabled": {
+            "type": "boolean"
+          },
+          "display_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "join_open": {
+            "type": "boolean"
+          },
+          "public_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "Specialist": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "enabled",
+          "version"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "Station": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "version",
+          "busy"
+        ],
+        "properties": {
+          "busy": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "StationInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StationPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Station"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "StatusLink": {
+        "type": "object",
+        "required": [
+          "status_url"
+        ],
+        "properties": {
+          "status_url": {
+            "type": "string"
+          }
+        }
+      },
+      "TeamCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "display_name",
+              "email",
+              "role",
+              "type"
+            ],
+            "properties": {
+              "display_name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "role": {
+                "$ref": "#/components/schemas/Role"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "invite"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "user_id",
+              "role",
+              "active",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "role": {
+                "$ref": "#/components/schemas/Role"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "set_member"
+                ]
+              },
+              "user_id": {
+                "$ref": "#/components/schemas/UserId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "user_id",
+              "expected_version",
+              "type"
+            ],
+            "properties": {
+              "expected_version": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "send_login"
+                ]
+              },
+              "user_id": {
+                "$ref": "#/components/schemas/UserId"
+              }
+            }
+          }
+        ]
+      },
+      "TeamDelivery": {
+        "type": "object",
+        "required": [
+          "state",
+          "retry_after"
+        ],
+        "properties": {
+          "retry_after": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TeamDeliveryState"
+          }
+        }
+      },
+      "TeamDeliveryState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "deferred"
+        ]
+      },
+      "TeamMember": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name",
+          "email",
+          "role",
+          "active",
+          "version",
+          "delivery_state",
+          "delivery_attempts",
+          "delivery_expires_at",
+          "resend_after"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "delivery_attempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "delivery_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resend_after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "TeamPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamMember"
+            }
+          },
+          "next_cursor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TeamReceipt": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "role",
+          "active",
+          "version",
+          "delivery"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TeamDelivery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "TenantId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "Ticket": {
+        "type": "object",
+        "required": [
+          "id",
+          "queue_id",
+          "position",
+          "service_date",
+          "number",
+          "status",
+          "issued_at"
+        ],
+        "properties": {
+          "called_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "called_by": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issued_at": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "queue_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service_date": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "service_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "station_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "station_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TicketStatus"
+          }
+        }
+      },
+      "TicketList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ticket"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "TicketStatus": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "called",
+          "completed",
+          "cancelled"
+        ]
+      },
+      "TimeSuggestion": {
+        "type": "object",
+        "required": [
+          "ends_local",
+          "time_zone"
+        ],
+        "properties": {
+          "ends_local": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        }
+      },
+      "TimeZoneList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Timing": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "starts_local",
+              "ends_local",
+              "mode"
+            ],
+            "properties": {
+              "ends_local": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "interval"
+                ]
+              },
+              "starts_local": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "starts_local",
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "start_only"
+                ]
+              },
+              "starts_local": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "places",
+              "mode"
+            ],
+            "properties": {
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "by_agreement"
+                ]
+              },
+              "places": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          }
+        ]
+      },
+      "TipSettings": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "public_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipient_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "recipient_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UpdateInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "enabled",
+          "expected_version"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateLocationRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "time_zone",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateStationInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "enabled",
+          "expected_version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "WebhookReceipt": {
+        "type": "object",
+        "required": [
+          "accepted",
+          "processed"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "processed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WidgetConfigure": {
+        "type": "object",
+        "required": [
+          "allowed_origins",
+          "expected_version"
+        ],
+        "properties": {
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WidgetResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WidgetSettings"
+          },
+          {
+            "type": "object",
+            "required": [
+              "script_url"
+            ],
+            "properties": {
+              "public_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "script_url": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "WidgetSettings": {
+        "type": "object",
+        "required": [
+          "allowed_origins",
+          "version"
+        ],
+        "properties": {
+          "allowed_origins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "queueTicket": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Queue-Ticket"
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "turnesta_session"
+      }
+    }
+  }
+}

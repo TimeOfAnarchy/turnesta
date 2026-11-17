@@ -1,4 +1,6 @@
-export type Role = 'owner' | 'manager' | 'operator' | 'employee';
+import type { components } from './generated/api.ts';
+
+export type Role = components['schemas']['Role'];
 export type OrganizationSummary = { id: string; name: string; role: Role };
 export type WorkspaceService = 'queues' | 'bookings' | 'tips';
 export type Organization = { id: string; name: string; version: number; visible_services: WorkspaceService[]; booking_retention_months: number | null };

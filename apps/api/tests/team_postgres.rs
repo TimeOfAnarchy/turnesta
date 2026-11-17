@@ -13,7 +13,7 @@ use turnesta_api::{
     auth::login::{self, Email},
     core::{Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
-    team::{self, TeamCommand, TeamError},
+    team::{self, TeamCommand, TeamDeliveryState, TeamError},
 };
 use uuid::Uuid;
 const ORIGIN: &str = "http://127.0.0.1:8080";
@@ -194,7 +194,10 @@ async fn team_invitation_replay_encryption_and_scoped_membership_are_atomic() {
     let key = Uuid::new_v4();
     let command = invite();
     let first = f.execute(key, command.clone()).await.unwrap();
-    assert_eq!(first.delivery.as_ref().unwrap().state, "queued");
+    assert_eq!(
+        first.delivery.as_ref().unwrap().state,
+        TeamDeliveryState::Queued
+    );
     let member = team::members(&f.runtime, f.owner, f.tenant, None, 50)
         .await
         .unwrap()
@@ -263,7 +266,7 @@ async fn team_reuses_global_identity_without_renaming_or_canceling_another_login
     }
     let second = b.execute(Uuid::new_v4(), other).await.unwrap();
     assert_eq!(second.user_id, first.user_id);
-    assert_eq!(second.delivery.unwrap().state, "deferred");
+    assert_eq!(second.delivery.unwrap().state, TeamDeliveryState::Deferred);
     let member = team::members(&b.runtime, b.owner, b.tenant, None, 50)
         .await
         .unwrap()
@@ -491,7 +494,7 @@ async fn team_does_not_invalidate_cli_code_and_pagination_has_no_duplicates() {
         .await
         .unwrap();
     assert_eq!(r.user_id, u.id);
-    assert_eq!(r.delivery.unwrap().state, "deferred");
+    assert_eq!(r.delivery.unwrap().state, TeamDeliveryState::Deferred);
     let used: bool =
         sqlx::query_scalar("SELECT used_at IS NOT NULL FROM auth.login_codes WHERE token_hash=$1")
             .bind(code_hash.as_slice())

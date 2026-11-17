@@ -109,9 +109,15 @@ impl TeamCommand {
         Ok(())
     }
 }
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamDeliveryState {
+    Queued,
+    Deferred,
+}
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TeamDelivery {
-    pub state: String,
+    pub state: TeamDeliveryState,
     pub retry_after: String,
 }
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -120,19 +126,25 @@ pub struct TeamReceipt {
     pub role: Role,
     pub active: bool,
     pub version: i32,
+    #[schema(required = true)]
     pub delivery: Option<TeamDelivery>,
 }
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct TeamMember {
     pub user_id: UserId,
     pub display_name: String,
+    #[schema(required = true)]
     pub email: Option<String>,
     pub role: Role,
     pub active: bool,
     pub version: i32,
+    #[schema(required = true)]
     pub delivery_state: Option<String>,
+    #[schema(required = true)]
     pub delivery_attempts: Option<i32>,
+    #[schema(required = true)]
     pub delivery_expires_at: Option<String>,
+    #[schema(required = true)]
     pub resend_after: Option<String>,
 }
 async fn owner(

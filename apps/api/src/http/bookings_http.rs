@@ -546,7 +546,7 @@ pub(super) async fn offers(
     let next_cursor = cursor(&mut items, limit, |s| s.id);
     Ok(Json(BookingOfferPage { items, next_cursor }))
 }
-#[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/commands",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=BookingCommand,responses((status=200,body=BookingReceipt),(status=409,body=OverlapResponse,description="Overlap acknowledgement or version/idempotency conflict")))]
+#[utoipa::path(post, operation_id="booking_command",path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/commands",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=BookingCommand,responses((status=200,body=BookingReceipt),(status=409,body=OverlapResponse,description="Overlap acknowledgement or version/idempotency conflict")))]
 pub(super) async fn command(
     State(state): State<AppState>,
     signed: SignedIn,

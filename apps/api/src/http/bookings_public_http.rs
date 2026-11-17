@@ -188,7 +188,7 @@ pub(super) struct BookingPublicConfigureInput {
     form: BookingForm,
     expected_version: i32,
 }
-#[utoipa::path(get,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/public-access",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),responses((status=200,body=BookingAccessResponse)))]
+#[utoipa::path(get, operation_id="booking_public_settings",path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/public-access",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),responses((status=200,body=BookingAccessResponse)))]
 pub(super) async fn settings(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -204,7 +204,7 @@ pub(super) async fn settings(
     .await?;
     Ok(Json(links(&state, settings)))
 }
-#[utoipa::path(put,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/public-access",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=BookingPublicConfigureInput,responses((status=200,body=BookingAccessResponse)))]
+#[utoipa::path(put, operation_id="configure_booking_public_access",path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/public-access",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=BookingPublicConfigureInput,responses((status=200,body=BookingAccessResponse)))]
 pub(super) async fn configure(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -241,7 +241,7 @@ pub(super) struct CalendarQuery {
     version: Option<String>,
     limit: Option<i32>,
 }
-#[utoipa::path(get,path="/api/public/bookings/{slug}",tag="bookings-public",params(("slug"=Uuid,Path)),responses((status=200,body=PublicBookingProfile)))]
+#[utoipa::path(get, operation_id="public_booking_profile",path="/api/public/bookings/{slug}",tag="bookings-public",params(("slug"=Uuid,Path)),responses((status=200,body=PublicBookingProfile)))]
 pub(super) async fn profile(
     State(state): State<AppState>,
     path: Result<Path<Uuid>, PathRejection>,

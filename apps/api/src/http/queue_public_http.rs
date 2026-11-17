@@ -252,7 +252,7 @@ pub(super) struct IssueRequest {
     service_id: Option<Uuid>,
 }
 
-#[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,body=SettingsResponse)))]
+#[utoipa::path(get, operation_id="queue_public_settings", path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,body=SettingsResponse)))]
 pub(super) async fn settings(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -273,7 +273,7 @@ pub(super) async fn settings(
     )))
 }
 
-#[utoipa::path(put, path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), request_body=ConfigureRequest, responses((status=200,body=SettingsResponse),(status=409,description="Settings changed; reload current version")))]
+#[utoipa::path(put, operation_id="configure_queue_public_access", path="/api/organizations/{tenant_id}/queues/{queue_id}/public-access", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), request_body=ConfigureRequest, responses((status=200,body=SettingsResponse),(status=409,description="Settings changed; reload current version")))]
 pub(super) async fn configure(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -407,7 +407,7 @@ pub(super) async fn qr(
     ))
 }
 
-#[utoipa::path(get, path="/api/public/queues/{slug}", tag="queue-public", params(("slug"=Uuid,Path)), responses((status=200,body=PublicProfile),(status=404,description="Queue not published")))]
+#[utoipa::path(get, operation_id="public_queue_profile", path="/api/public/queues/{slug}", tag="queue-public", params(("slug"=Uuid,Path)), responses((status=200,body=PublicProfile),(status=404,description="Queue not published")))]
 pub(super) async fn profile(
     State(state): State<AppState>,
     path: Result<Path<Uuid>, PathRejection>,

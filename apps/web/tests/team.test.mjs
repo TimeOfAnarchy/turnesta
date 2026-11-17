@@ -71,8 +71,11 @@ test('team command schemas disallow owner grants actor fields and invalid versio
   for (const r of [
     { ...receipt, version: 0 },
     { ...receipt, delivery: {} },
+    { ...receipt, delivery: undefined },
+    { ...receipt, delivery: { ...receipt.delivery, state: 'sent' } },
     { ...receipt, active: null },
     { ...receipt, user_id: 'other' },
+    { ...receipt, user_id: [id] },
   ])
     assert.equal(validTeamReceipt(r), false);
 });

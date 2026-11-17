@@ -110,7 +110,7 @@ async fn response(
         script_url: format!("{}/assets/booking-widget.js", state.auth.public_origin),
     }))
 }
-#[utoipa::path(get,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/widget",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),responses((status=200,body=WidgetResponse)))]
+#[utoipa::path(get, operation_id="booking_widget_settings",path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/widget",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),responses((status=200,body=WidgetResponse)))]
 pub(super) async fn settings(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -126,7 +126,7 @@ pub(super) async fn settings(
     .await?;
     response(&state, signed.user_id, tenant, point, settings).await
 }
-#[utoipa::path(put,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/widget",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=WidgetConfigure,responses((status=200,body=WidgetResponse)))]
+#[utoipa::path(put, operation_id="configure_booking_widget",path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/widget",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=WidgetConfigure,responses((status=200,body=WidgetResponse)))]
 pub(super) async fn configure(
     State(state): State<AppState>,
     signed: SignedIn,

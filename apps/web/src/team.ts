@@ -1,35 +1,16 @@
 import { ApiError, request } from './api.ts';
-import type { Role, Page } from './api.ts';
+import type { Role } from './api.ts';
+import type { operations } from './generated/api.ts';
+
+type TeamPage = operations['members']['responses'][200]['content']['application/json'];
+type CommandOperation = operations['team_command'];
+type WireCommand = CommandOperation['requestBody']['content']['application/json'];
+export type TeamMember = TeamPage['items'][number];
+export type TeamReceipt = CommandOperation['responses'][200]['content']['application/json'];
 export type TeamRole = Exclude<Role, 'owner'>;
-export type TeamMember = {
-  user_id: string;
-  display_name: string;
-  email: string | null;
-  role: Role;
-  active: boolean;
-  version: number;
-  delivery_state: string | null;
-  delivery_attempts: number | null;
-  delivery_expires_at: string | null;
-  resend_after: string | null;
-};
-export type TeamCommand =
-  | { type: 'invite'; display_name: string; email: string; role: TeamRole }
-  | {
-      type: 'set_member';
-      user_id: string;
-      role: TeamRole;
-      active: boolean;
-      expected_version: number;
-    }
-  | { type: 'send_login'; user_id: string; expected_version: number };
-export type TeamReceipt = {
-  user_id: string;
-  role: Role;
-  active: boolean;
-  version: number;
-  delivery: { state: 'queued' | 'deferred'; retry_after: string } | null;
-};
+// The API reports owner grants as a business error. The cabinet never sends them.
+type WithAssignableRole<T> = T extends { role: Role } ? T & { role: TeamRole } : T;
+export type TeamCommand = WithAssignableRole<WireCommand>;
 type Scope = { tenant: string; user: string };
 type Pending = { key: string; command: TeamCommand };
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -64,6 +45,7 @@ export function validTeamReceipt(value: unknown): value is TeamReceipt {
   if (!value || typeof value !== 'object') return false;
   const r = value as TeamReceipt;
   return (
+    typeof r.user_id === 'string' &&
     uuid.test(r.user_id) &&
     ['owner', ...roles].includes(r.role) &&
     typeof r.active === 'boolean' &&
@@ -82,7 +64,7 @@ const url = (tenant: string) =>
   `/api/organizations/${encodeURIComponent(tenant)}/team`;
 export const teamApi = {
   members: (tenant: string, after: string | null, signal: AbortSignal) =>
-    request<Page<TeamMember>>(
+    request<TeamPage>(
       `${url(tenant)}?${new URLSearchParams({ limit: '50', ...(after ? { after } : {}) })}`,
       { signal },
     ),

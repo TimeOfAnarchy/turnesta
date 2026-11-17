@@ -91,6 +91,7 @@ pub(super) struct TeamQuery {
 #[derive(Serialize, ToSchema)]
 pub(super) struct TeamPage {
     items: Vec<TeamMember>,
+    #[schema(required = true)]
     next_cursor: Option<UserId>,
 }
 #[utoipa::path(get,path="/api/organizations/{tenant_id}/team",tag="team",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("after"=Option<Uuid>,Query),("limit"=Option<i32>,Query)),responses((status=200,body=TeamPage),(status=403,description="Owner required")))]
@@ -122,7 +123,7 @@ pub(super) async fn members(
     };
     Ok(Json(TeamPage { items, next_cursor }))
 }
-#[utoipa::path(post,path="/api/organizations/{tenant_id}/team/commands",tag="team",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=TeamCommand,responses((status=200,body=TeamReceipt),(status=409,description="Membership or idempotency conflict"),(status=429,description="Invitation cooldown or hourly limit")))]
+#[utoipa::path(post, operation_id="team_command",path="/api/organizations/{tenant_id}/team/commands",tag="team",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header)),request_body=TeamCommand,responses((status=200,body=TeamReceipt),(status=409,description="Membership or idempotency conflict"),(status=429,description="Invitation cooldown or hourly limit")))]
 pub(super) async fn command(
     State(state): State<AppState>,
     signed: SignedIn,

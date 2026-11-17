@@ -181,7 +181,7 @@ pub(super) enum PasswordLoginResponse {
     PasswordChangeRequired { setup_token: String },
 }
 
-#[utoipa::path(post,path="/auth/password/login",tag="auth",request_body=PasswordLoginRequest,responses((status=200,body=PasswordLoginResponse),(status=401,description="Invalid credentials"),(status=429,description="Try later")))]
+#[utoipa::path(post, operation_id="password_login",path="/auth/password/login",tag="auth",request_body=PasswordLoginRequest,responses((status=200,body=PasswordLoginResponse),(status=401,description="Invalid credentials"),(status=429,description="Try later")))]
 pub(super) async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,

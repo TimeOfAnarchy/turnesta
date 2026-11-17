@@ -98,7 +98,7 @@ pub(super) async fn stations(
     };
     Ok(Json(StationPage { items, next_cursor }))
 }
-#[utoipa::path(post,path="/api/organizations/{tenant_id}/queues/{queue_id}/stations",tag="queue",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)),request_body=StationInput,responses((status=201,body=Station)))]
+#[utoipa::path(post, operation_id="create_station",path="/api/organizations/{tenant_id}/queues/{queue_id}/stations",tag="queue",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)),request_body=StationInput,responses((status=201,body=Station)))]
 pub(super) async fn create(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -124,7 +124,7 @@ pub(super) async fn create(
     .await?;
     Ok((StatusCode::CREATED, Json(result)))
 }
-#[utoipa::path(patch,path="/api/organizations/{tenant_id}/queues/{queue_id}/stations/{station_id}",tag="queue",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("station_id"=Uuid,Path)),request_body=UpdateStationInput,responses((status=200,body=Station),(status=409,description="Version conflict")))]
+#[utoipa::path(patch, operation_id="update_station",path="/api/organizations/{tenant_id}/queues/{queue_id}/stations/{station_id}",tag="queue",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("station_id"=Uuid,Path)),request_body=UpdateStationInput,responses((status=200,body=Station),(status=409,description="Version conflict")))]
 pub(super) async fn update(
     State(state): State<AppState>,
     signed: SignedIn,

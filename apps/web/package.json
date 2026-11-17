@@ -4,8 +4,11 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
+  "workspaces": ["tools/openapi"],
   "engines": { "node": ">=22.12.0" },
   "scripts": {
+    "api:snapshot": "node tools/openapi/snapshot.mjs",
+    "api:types": "npm run generate --workspace @turnesta/openapi --",
     "dev": "vite --host 127.0.0.1",
     "check": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",

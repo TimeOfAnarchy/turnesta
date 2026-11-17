@@ -46,6 +46,12 @@ jobs:
           ./scripts/init-env.sh
           docker compose --env-file .env up --build --wait
 
+      - name: Check OpenAPI snapshot and generated types
+        working-directory: apps/web
+        run: |
+          npm run api:snapshot -- --check
+          npm run api:types -- --check
+
       - name: Rust checks
         run: |
           docker build --target devtool --tag turnesta-devtool:local .

@@ -116,7 +116,7 @@ pub(super) struct AuditSettingsInput {
     expected_version: i32,
 }
 
-#[utoipa::path(get,path="/api/organizations/{tenant_id}/audit/settings",tag="audit",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path)),responses((status=200,body=AuditSettings),(status=403,description="Owner required")))]
+#[utoipa::path(get, operation_id="audit_settings",path="/api/organizations/{tenant_id}/audit/settings",tag="audit",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path)),responses((status=200,body=AuditSettings),(status=403,description="Owner required")))]
 pub(super) async fn settings(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -128,7 +128,7 @@ pub(super) async fn settings(
     ))
 }
 
-#[utoipa::path(put,path="/api/organizations/{tenant_id}/audit/settings",tag="audit",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path)),request_body=AuditSettingsInput,responses((status=200,body=AuditSettings),(status=403,description="Owner required"),(status=409,description="Version conflict")))]
+#[utoipa::path(put, operation_id="configure_audit",path="/api/organizations/{tenant_id}/audit/settings",tag="audit",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path)),request_body=AuditSettingsInput,responses((status=200,body=AuditSettings),(status=403,description="Owner required"),(status=409,description="Version conflict")))]
 pub(super) async fn configure(
     State(state): State<AppState>,
     signed: SignedIn,

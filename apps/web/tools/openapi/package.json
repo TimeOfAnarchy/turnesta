@@ -1,0 +1,11 @@
+{
+  "name": "@turnesta/openapi",
+  "private": true,
+  "scripts": {
+    "generate": "openapi-typescript ../../openapi.json -o ../../src/generated/api.ts --alphabetize"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

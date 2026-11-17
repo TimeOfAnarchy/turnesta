@@ -6,3 +6,4 @@
 Dockerfile text eol=lf
 *.sh text eol=lf
 .env.example text eol=lf
+apps/web/src/generated/api.ts text eol=lf

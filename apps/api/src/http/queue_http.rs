@@ -235,7 +235,7 @@ pub(super) async fn tickets(
     Ok(Json(TicketList { items, next_cursor }))
 }
 
-#[utoipa::path(post, path="/api/organizations/{tenant_id}/queues/{queue_id}/commands", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header,description="Required; reuse for retries of the same command")), request_body=Command, responses((status=200,body=CommandResult),(status=400,description="Invalid command or key"),(status=403,description="Operator role and CSRF required"),(status=409,description="Key mismatch, active ticket or invalid state")))]
+#[utoipa::path(post, operation_id="queue_command", path="/api/organizations/{tenant_id}/queues/{queue_id}/commands", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path),("Idempotency-Key"=Uuid,Header,description="Required; reuse for retries of the same command")), request_body=Command, responses((status=200,body=CommandResult),(status=400,description="Invalid command or key"),(status=403,description="Operator role and CSRF required"),(status=409,description="Key mismatch, active ticket or invalid state")))]
 pub(super) async fn command(
     State(state): State<AppState>,
     signed: SignedIn,

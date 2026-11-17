@@ -46,7 +46,7 @@ fn required_recipient<'de, D: serde::Deserializer<'de>>(
     Option::deserialize(deserializer)
 }
 
-#[utoipa::path(get, path="/api/organizations/{tenant_id}/queues/{queue_id}/tips", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,body=TipSettings)))]
+#[utoipa::path(get, operation_id="queue_tips_settings", path="/api/organizations/{tenant_id}/queues/{queue_id}/tips", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), responses((status=200,body=TipSettings)))]
 pub(super) async fn settings(
     State(state): State<AppState>,
     signed: SignedIn,
@@ -63,7 +63,7 @@ pub(super) async fn settings(
     Ok(Json(result))
 }
 
-#[utoipa::path(put, path="/api/organizations/{tenant_id}/queues/{queue_id}/tips", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), request_body=ConfigureTipsRequest, responses((status=200,body=TipSettings),(status=409,description="Settings changed; reload current version")))]
+#[utoipa::path(put, operation_id="configure_queue_tips", path="/api/organizations/{tenant_id}/queues/{queue_id}/tips", tag="queue", security(("sessionCookie"=[])), params(("tenant_id"=Uuid,Path),("queue_id"=Uuid,Path)), request_body=ConfigureTipsRequest, responses((status=200,body=TipSettings),(status=409,description="Settings changed; reload current version")))]
 pub(super) async fn configure(
     State(state): State<AppState>,
     signed: SignedIn,
