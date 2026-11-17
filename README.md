@@ -63,6 +63,20 @@ To move to a new server, copy `.env` and a backup into a fresh clone, then run `
 - React, TypeScript, Vite
 - Docker Compose
 
+## Checking the web client
+
+Use Node.js 22.13 or newer. From `apps/web`, run these checks.
+
+```sh
+npm ci
+npm --prefix tools/lint ci
+npm run lint
+npm test
+npm run build
+```
+
+The linter has its own dependency lockfile because its parser requires TypeScript 5. The web client uses TypeScript 7. ESLint checks the recommended TypeScript and React Hooks rules and fails on warnings.
+
 ## Updating the web API types
 
 From `apps/web`, run `npm ci` and `npm run api:types` to generate TypeScript types from the committed OpenAPI snapshot. After changing the API contract, start the updated local HTTP stack and run `npm run api:snapshot` before generating the types. For a custom port, pass the schema URL, for example `npm run api:snapshot -- http://127.0.0.1:8086/openapi.json`.

@@ -33,6 +33,11 @@ export function TeamPage() {
   );
 }
 function Team({ tenant, user }: { tenant: string; user: string }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const members = useInfiniteQuery({
     queryKey: ['organization', tenant, 'team'],
     initialPageParam: null as string | null,
@@ -193,7 +198,7 @@ function Team({ tenant, user }: { tenant: string; user: string }) {
                   {teamRoleDescriptions[member.role]}
                 </p>
                 {member.delivery_state && (
-                  <p className="team-delivery">{deliveryLabel(member)}</p>
+                  <p className="team-delivery">{deliveryLabel(member, now)}</p>
                 )}
               </div>
               <div className="team-member-actions">
@@ -223,7 +228,7 @@ function Team({ tenant, user }: { tenant: string; user: string }) {
                       locked ||
                       Boolean(
                         member.resend_after &&
-                          Date.parse(member.resend_after) > Date.now(),
+                          Date.parse(member.resend_after) > now,
                       )
                     }
                     onClick={() =>
@@ -288,13 +293,13 @@ function Team({ tenant, user }: { tenant: string; user: string }) {
     </>
   );
 }
-function deliveryLabel(m: TeamMember) {
+function deliveryLabel(m: TeamMember, now: number) {
   if (m.delivery_state === 'deferred')
-    return m.resend_after && Date.parse(m.resend_after) > Date.now()
+    return m.resend_after && Date.parse(m.resend_after) > now
       ? `Новое письмо можно запросить после ${new Date(m.resend_after).toLocaleString('ru-RU')}.`
       : 'Можно снова запросить письмо для входа.';
   const expired =
-    m.delivery_expires_at && Date.parse(m.delivery_expires_at) <= Date.now();
+    m.delivery_expires_at && Date.parse(m.delivery_expires_at) <= now;
   if (expired) return 'Срок ссылки для входа истёк.';
   return (
     (

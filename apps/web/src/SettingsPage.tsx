@@ -26,9 +26,9 @@ export function BookingRetentionSettings({ organization, canManage }: { organiza
   const [saved, setSaved] = useState(false);
   const dirty = months !== (basis.booking_retention_months?.toString() ?? '');
   const changedElsewhere = basis.version !== organization.version;
-  useEffect(() => {
-    if (!dirty && changedElsewhere) { setBasis(organization); setMonths(organization.booking_retention_months?.toString() ?? ''); }
-  }, [basis.version, changedElsewhere, dirty, organization]);
+  if (!dirty && changedElsewhere) {
+    setBasis(organization); setMonths(organization.booking_retention_months?.toString() ?? '');
+  }
   const mutation = useMutation({
     mutationFn: () => api.setBookingRetention(organization.id, months ? Number(months) : null, basis.version),
     onSuccess: value => { setBasis(value); setMonths(value.booking_retention_months?.toString() ?? ''); setSaved(true); client.setQueryData(keys.organization(organization.id), value); },
@@ -68,11 +68,9 @@ function OrganizationForm({ organization }: { organization: Organization }) {
   const changedElsewhere = organization.version !== basis.version;
   const dirty = name.trim() !== basis.name;
   const busy = mutation.isPending || reloading;
-  useEffect(() => {
-    if (!dirty && !mutation.isPending && organization.version !== basis.version) {
-      setBasis(organization); setName(organization.name); setSaved(false);
-    }
-  }, [organization, basis.version, dirty, mutation.isPending]);
+  if (!dirty && !mutation.isPending && organization.version !== basis.version) {
+    setBasis(organization); setName(organization.name); setSaved(false);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { ApiError, onSignedOut } from './api';
 import { App } from './App';
+import { ErrorBoundary } from './ErrorBoundary';
 import './styles.css';
 
 const queryClient = new QueryClient({
@@ -24,5 +25,5 @@ onSignedOut(() => {
 });
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><QueryClientProvider client={queryClient}><BrowserRouter basename="/app"><App/></BrowserRouter></QueryClientProvider></StrictMode>,
+  <StrictMode><ErrorBoundary><QueryClientProvider client={queryClient}><BrowserRouter basename="/app"><App/></BrowserRouter></QueryClientProvider></ErrorBoundary></StrictMode>,
 );

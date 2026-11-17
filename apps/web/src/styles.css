@@ -203,6 +203,9 @@ h1 { font-size: clamp(26px, 2.2vw, 34px); font-weight: 650; line-height: 1.2; le
 @keyframes spin { to { transform: rotate(360deg); } }
 .entry-state { max-width: 520px; margin: 15vh auto; padding: 24px; text-align: center; }
 .entry-state .error-notice { text-align: left; margin-top: 40px; }
+.error-fallback { margin-top: 40px; }
+.error-fallback h1 { font-size: clamp(25px, 5vw, 32px); }
+.error-fallback p { color: var(--muted); line-height: 1.7; margin: 20px 0 28px; }
 .skip-link { position: fixed; left: 20px; top: 12px; transform: translateY(-200%); background: #fff; border: 1px solid var(--green); border-radius: 6px; padding: 10px; z-index: 10; font-size: 14.5px; }
 .skip-link:focus { transform: none; }
 .dialog { width: min(500px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid #dae7df; border-radius: 17px; padding: 28px; color: var(--ink); box-shadow: 0 25px 100px #19362c30; overflow-y: auto; }

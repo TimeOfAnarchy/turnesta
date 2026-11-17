@@ -68,11 +68,21 @@ export function BookingBatchEditor({
     [end, setEnd] = useState(''),
     [gap, setGap] = useState('0');
   const [state, setState] = useState<'ready' | 'draft'>('ready');
-  const [preview, setPreview] = useState<BatchPreview | null>(null),
-    [request, setRequest] = useState<BatchRequest | null>(null);
-  const [checking, setChecking] = useState(false),
-    [allow, setAllow] = useState(false),
-    [error, setError] = useState<unknown>(null);
+  const context = JSON.stringify([zone, specialist.id, specialist.version]);
+  const [checkState, setCheckState] = useState<{
+    context: string;
+    pending: number | null;
+    preview: BatchPreview | null;
+    request: BatchRequest | null;
+    error: unknown;
+  }>({ context, pending: null, preview: null, request: null, error: null });
+  const [allow, setAllow] = useState(false);
+  if (checkState.context !== context) {
+    setCheckState({ context, pending: null, preview: null, request: null, error: null });
+    setAllow(false);
+  }
+  const { preview, request, error } = checkState;
+  const checking = checkState.pending !== null;
   const controller = useRef<AbortController | null>(null),
     generation = useRef(0);
   const previewHeading = useRef<HTMLHeadingElement | null>(null);
@@ -82,26 +92,15 @@ export function BookingBatchEditor({
   const locked = busy || checking || Boolean(journal.pending);
   useEffect(
     () => () => {
-      generation.current++;
       controller.current?.abort();
     },
-    [],
+    [context],
   );
-  useEffect(() => {
-    generation.current++;
-    controller.current?.abort();
-    setChecking(false);
-    setPreview(null);
-    setRequest(null);
-    setAllow(false);
-  }, [zone, specialist.id, specialist.version]);
   function change(action: () => void) {
     if (locked) return;
     action();
-    setPreview(null);
-    setRequest(null);
+    setCheckState({ context, pending: null, preview: null, request: null, error: null });
     setAllow(false);
-    setError(null);
   }
   function addDate() {
     if (!pick || dates.includes(pick) || dates.length >= 31) return;
@@ -129,11 +128,9 @@ export function BookingBatchEditor({
   }
   async function check() {
     if (locked || !dates.length) return;
-    setError(null);
-    setPreview(null);
     setAllow(false);
-    setChecking(true);
     const mine = ++generation.current;
+    setCheckState({ context, pending: mine, preview: null, request: null, error: null });
     controller.current?.abort();
     controller.current = new AbortController();
     const source: BatchSource =
@@ -161,14 +158,13 @@ export function BookingBatchEditor({
         body,
         controller.current.signal,
       );
-      if (mine === generation.current) {
-        setPreview(result);
-        setRequest(body);
-      }
+      setCheckState(old => old.pending === mine
+        ? { ...old, pending: null, preview: result, request: body }
+        : old);
     } catch (e) {
-      if (mine === generation.current) setError(e);
-    } finally {
-      if (mine === generation.current) setChecking(false);
+      setCheckState(old => old.pending === mine
+        ? { ...old, pending: null, error: e }
+        : old);
     }
   }
   async function save(recover = false) {
@@ -184,7 +180,7 @@ export function BookingBatchEditor({
       else return;
       close();
     } catch (e) {
-      setError(e);
+      setCheckState(old => ({ ...old, error: e }));
       if (
         e instanceof ApiError &&
         [
@@ -195,8 +191,7 @@ export function BookingBatchEditor({
           'specialist_disabled',
         ].includes(e.code)
       ) {
-        setPreview(null);
-        setRequest(null);
+        setCheckState(old => ({ ...old, preview: null, request: null }));
         setAllow(false);
       }
     }

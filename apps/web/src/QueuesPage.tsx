@@ -28,10 +28,11 @@ export function QueuesPage() {
   const [success, setSuccess] = useState('');
   useEffect(() => { document.title = `Очереди · ${organization.name} · Turnesta`; }, [organization.name]);
   // A deep link can point to a location beyond the first page.
-  useEffect(() => {
-    if (location && !locationItems.some((item) => item.id === location) && locations.hasNextPage && !locations.isFetching && !locations.isError) void locations.fetchNextPage();
-  }, [location, locationItems, locations.hasNextPage, locations.isFetching, locations.isError, locations.fetchNextPage]);
   const selected = locationItems.find((item) => item.id === location);
+  const { fetchNextPage } = locations;
+  useEffect(() => {
+    if (location && !selected && locations.hasNextPage && !locations.isFetching && !locations.isError) void fetchNextPage();
+  }, [location, selected, locations.hasNextPage, locations.isFetching, locations.isError, fetchNextPage]);
   return <>
     <div className="page-heading"><div><p className="eyebrow">ОРГАНИЗАЦИЯ / ОЧЕРЕДИ</p><h1>Всему своё время<span className="heading-dot">.</span></h1><p className="page-intro">Выберите точку и откройте рабочее место оператора.</p></div>{canManage && selected && <button type="button" className="button primary" onClick={() => { setSuccess(''); setAdding(true); }}><Icon name="plus"/>Создать очередь</button>}</div>
     {success && <SuccessNotice>{success}</SuccessNotice>}
@@ -144,9 +145,10 @@ function QueueWorkplace({ tenant, queueId }: { tenant: string; queueId: string }
     window.addEventListener('online', changed); window.addEventListener('offline', changed);
     return () => { window.removeEventListener('online', changed); window.removeEventListener('offline', changed); };
   }, []);
+  const { fetchNextPage } = locations;
   useEffect(() => {
-    if (queue.data && !point && locations.hasNextPage && !locations.isFetching && !locations.isError) void locations.fetchNextPage();
-  }, [queue.data, point, locations.hasNextPage, locations.isFetching, locations.isError, locations.fetchNextPage]);
+    if (queue.data && !point && locations.hasNextPage && !locations.isFetching && !locations.isError) void fetchNextPage();
+  }, [queue.data, point, locations.hasNextPage, locations.isFetching, locations.isError, fetchNextPage]);
 
   async function refresh() { await client.invalidateQueries({ queryKey: keys.queue(tenant, queueId) }); }
   const disabled = busy || Boolean(journal.pending) || Boolean(journal.storageError) || !online || queue.isError || (canOperate && (mine.isError || mine.isPending));

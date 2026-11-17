@@ -61,7 +61,11 @@ export function TimeInput({ value, onChange, ...field }: {
   id: string; value: string; onChange: (value: string) => void; disabled?: boolean; required?: boolean;
 }) {
   const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
+    setText(value);
+  }
   return <input {...field} type="text" inputMode="numeric" autoComplete="off" placeholder="ЧЧ:ММ" maxLength={5}
     pattern={time24Pattern} title="Время в формате ЧЧ:ММ, например 09:30" value={text}
     onChange={(e) => {

@@ -352,7 +352,6 @@ export function OfferEditor({
     : (current?.reserved_places ?? initial?.reserved_places ?? 0);
   const client = useQueryClient();
   const [calculatedFor, setCalculatedFor] = useState<string | null>(null);
-  const [calculationError, setCalculationError] = useState<unknown>(null);
   const calculationKey =
     autoDuration !== null && !draft.agreement && draft.date && draft.start
       ? JSON.stringify([
@@ -366,8 +365,12 @@ export function OfferEditor({
   const calculationPending = Boolean(
     calculationKey && calculatedFor !== calculationKey,
   );
+  const [calculation, setCalculation] = useState<{ key: string | null; error: unknown }>({
+    key: calculationKey, error: null,
+  });
+  if (calculation.key !== calculationKey) setCalculation({ key: calculationKey, error: null });
+  const calculationError = calculation.error;
   useEffect(() => {
-    setCalculationError(null);
     if (!calculationKey || autoDuration === null) return;
     const controller = new AbortController();
     let active = true;
@@ -391,10 +394,11 @@ export function OfferEditor({
           }));
           setNotice(null);
           setCalculatedFor(calculationKey);
+          setCalculation({ key: calculationKey, error: null });
         })
         .catch((error) => {
           if (!active) return;
-          setCalculationError(error);
+          setCalculation({ key: calculationKey, error });
           if (
             error instanceof ApiError &&
             error.code === 'booking_time_zone_changed'

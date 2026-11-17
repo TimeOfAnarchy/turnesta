@@ -66,6 +66,7 @@ function readView(value: string | null): View {
 export function BookingsPage() {
   const { organization, canManage } = useWorkspace();
   const locations = useLocations(organization.id);
+  const { fetchNextPage: fetchMoreLocations } = locations;
   const [params, setParams] = useSearchParams();
   const items = distinct(locations.data?.pages.flatMap((p) => p.items) ?? []);
   const location = params.get('location') ?? items[0]?.id ?? '';
@@ -90,14 +91,14 @@ export function BookingsPage() {
       !locations.isFetching &&
       !locations.isError
     )
-      void locations.fetchNextPage();
+      void fetchMoreLocations();
   }, [
     location,
     point,
     locations.hasNextPage,
     locations.isFetching,
     locations.isError,
-    locations.fetchNextPage,
+    fetchMoreLocations,
   ]);
   const singlePoint = point && items.length === 1 && !locations.hasNextPage;
   return (
@@ -306,10 +307,8 @@ function Schedule({
       i.id ===
       (chosen || specialists.find((s) => s.enabled)?.id || specialists[0]?.id),
   );
-  useEffect(() => {
-    if (!chosen && specialists.length)
-      setChosen(specialists.find((s) => s.enabled)?.id ?? specialists[0].id);
-  }, [chosen, specialists]);
+  if (!chosen && selected) setChosen(selected.id);
+  const { fetchNextPage: fetchMoreProfiles } = profiles;
   useEffect(() => {
     if (
       chosen &&
@@ -318,14 +317,14 @@ function Schedule({
       !profiles.isFetching &&
       !profiles.isError
     )
-      void profiles.fetchNextPage();
+      void fetchMoreProfiles();
   }, [
     chosen,
     specialists,
     profiles.hasNextPage,
     profiles.isFetching,
     profiles.isError,
-    profiles.fetchNextPage,
+    fetchMoreProfiles,
   ]);
   const today = todayAt(zone);
   const [date, setDate] = useState(today);
@@ -440,14 +439,12 @@ function Schedule({
       currentAppointment = historyRow ?? currentAppointment;
     }
   }
-  useEffect(() => {
-    if (
-      editor &&
-      ((['record', 'appointment'].includes(editor.kind) && !canBook) ||
-        (!['record', 'appointment'].includes(editor.kind) && !canManage))
-    )
-      setEditor(null);
-  }, [canBook, canManage, editor]);
+  if (
+    editor &&
+    ((['record', 'appointment'].includes(editor.kind) && !canBook) ||
+      (!['record', 'appointment'].includes(editor.kind) && !canManage))
+  )
+    setEditor(null);
   const [success, setSuccess] = useState('');
   const [pageError, setPageError] = useState<unknown>(null);
   const [, render] = useState(0);

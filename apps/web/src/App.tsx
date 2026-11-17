@@ -139,9 +139,10 @@ function OrganizationWorkspace({ tenantId, userId }: { tenantId: string; userId:
   useEffect(() => { if (section && sections.includes(section)) rememberSection(tenantId, section); }, [tenantId, section]);
   const organizations = useOrganizations();
   const membership = organizations.data?.pages.flatMap((page) => page.items).find((item) => item.id === tenantId);
+  const { fetchNextPage } = organizations;
   useEffect(() => {
-    if (organization.isSuccess && !membership && organizations.hasNextPage && !organizations.isFetching && !organizations.isError) void organizations.fetchNextPage();
-  }, [organization.isSuccess, membership, organizations.hasNextPage, organizations.isFetching, organizations.isError, organizations.fetchNextPage]);
+    if (organization.isSuccess && !membership && organizations.hasNextPage && !organizations.isFetching && !organizations.isError) void fetchNextPage();
+  }, [organization.isSuccess, membership, organizations.hasNextPage, organizations.isFetching, organizations.isError, fetchNextPage]);
   const pending = organization.isPending || organizations.isPending || (!membership && organizations.hasNextPage && !organizations.isError);
   // Keep settings drafts mounted through temporary background read failures.
   // Definitive access failures still remove the cached workspace immediately.

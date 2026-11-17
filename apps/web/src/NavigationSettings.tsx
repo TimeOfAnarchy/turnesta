@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './api';
@@ -26,11 +26,9 @@ export function NavigationSettings({ organization, canManage }: { organization: 
   const dirty = !sameServices(selected, basis.visible_services);
   const stale = organization.version !== basis.version || (mutation.error instanceof ApiError && mutation.error.status === 409);
   const busy = mutation.isPending || reloading;
-  useEffect(() => {
-    if (!dirty && !mutation.isPending && organization.version !== basis.version) {
-      setBasis(organization); setSelected(organization.visible_services); setSaved(false);
-    }
-  }, [organization, basis.version, dirty, mutation.isPending]);
+  if (!dirty && !mutation.isPending && organization.version !== basis.version) {
+    setBasis(organization); setSelected(organization.visible_services); setSaved(false);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();

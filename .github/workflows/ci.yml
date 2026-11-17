@@ -22,12 +22,15 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/web/package-lock.json
+            apps/web/tools/lint/package-lock.json
             e2e/package-lock.json
 
       - name: Frontend
         working-directory: apps/web
         run: |
           npm ci
+          npm --prefix tools/lint ci
+          npm run lint
           npm test
           npm run build
 
