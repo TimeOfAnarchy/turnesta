@@ -18,6 +18,7 @@ import type {
 } from './bookings';
 import { appointmentApi, canAnonymizeAppointment } from './appointments';
 import type { Appointment, AppointmentSummary, ClientInput } from './appointments';
+import { ClientExportDialog } from './ClientExportDialog';
 
 type Controls = {
   busy: boolean;
@@ -358,7 +359,7 @@ function AppointmentEditor({
 }: Controls & { tenant: string; location: string; initial: Appointment; role: string }) {
   const [item, setItem] = useState(initial);
   const [client, setClient] = useState(() => clientOf(initial));
-  const [mode, setMode] = useState<'view' | 'edit' | 'move' | 'cancel' | 'anonymize'>('view');
+  const [mode, setMode] = useState<'view' | 'edit' | 'move' | 'cancel' | 'anonymize' | 'export'>('view');
   const backButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (mode === 'anonymize') backButton.current?.focus();
@@ -413,6 +414,7 @@ function AppointmentEditor({
   );
   const blocked = busy || Boolean(journal.pending) || loading;
   const canErase = canAnonymizeAppointment(role, item);
+  const canExport = role === 'owner' && !item.anonymized_at;
   function changeMode(value: typeof mode) {
     setMode(value);
     setError(null);
@@ -481,6 +483,13 @@ function AppointmentEditor({
         specialist_id: item.specialist_id,
         expected_version: item.version,
       });
+  }
+  if (mode === 'export') {
+    if (!canExport) return <Modal title="Выгрузка недоступна" description="Проверьте права доступа и данные записи." close={close}>
+      <button type="button" className="button secondary" onClick={() => changeMode('view')}>Назад к записи</button>
+    </Modal>;
+    return <ClientExportDialog tenant={tenant} location={location} item={item}
+      back={() => changeMode('view')} close={close}/>;
   }
   return (
     <Modal
@@ -578,6 +587,9 @@ function AppointmentEditor({
                   </button>
                 </div>
               )}
+              {canExport && (item.phone || item.email
+                ? <button type="button" className="text-button" onClick={() => changeMode('export')}>Выгрузить записи клиента</button>
+                : <p className="field-hint">Для выгрузки записей нужен телефон или email клиента.</p>)}
               {canErase && (
                 <button type="button" className="text-button danger" onClick={() => changeMode('anonymize')}>
                   Удалить данные клиента

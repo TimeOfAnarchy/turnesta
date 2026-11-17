@@ -8,6 +8,7 @@ use crate::{
         self, BookingCommand, BookingError, BookingReceipt, ConflictNotice, Offer, Preset,
         Specialist,
     },
+    bookings_export::{self, ExportFormat, ExportRequest},
     core::{LocationId, TenantId},
 };
 use axum::{
@@ -16,7 +17,7 @@ use axum::{
         Path, Query, State,
         rejection::{JsonRejection, PathRejection, QueryRejection},
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -33,6 +34,10 @@ pub(super) fn routes() -> Router<AppState> {
         .route(
             "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}",
             get(appointment),
+        )
+        .route(
+            "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/export",
+            post(export_client),
         )
         .route(
             "/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/anonymize",
@@ -67,6 +72,47 @@ pub(super) fn routes() -> Router<AppState> {
             get(suggest_time),
         )
 }
+#[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/appointments/{appointment_id}/export",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path),("appointment_id"=Uuid,Path)),request_body=ExportRequest,responses((status=200,description="Matching visits across the organization, ordered by creation time",content((Vec<Object>="application/json"),(String="text/csv"))),(status=403,description="Owner required"),(status=409,description="Appointment has changed")))]
+pub(super) async fn export_client(
+    State(state): State<AppState>,
+    signed: SignedIn,
+    headers: HeaderMap,
+    path: Result<Path<(TenantId, LocationId, Uuid)>, PathRejection>,
+    body: Result<Json<ExportRequest>, JsonRejection>,
+) -> Result<Response, BookingHttpError> {
+    check_mutation(&headers, &state.auth, &signed)?;
+    let Path((tenant, location, id)) = path.map_err(|_| ApiError::bad_request())?;
+    let Json(request) = body.map_err(|_| ApiError::bad_request())?;
+    let (mime, attachment) = match request.format {
+        ExportFormat::Json => (
+            "application/json",
+            "attachment; filename=\"turnesta-client.json\"",
+        ),
+        ExportFormat::Csv => (
+            "text/csv; charset=utf-8",
+            "attachment; filename=\"turnesta-client.csv\"",
+        ),
+    };
+    let file = bounded(bookings_export::export(
+        &state.pool,
+        signed.user_id,
+        tenant,
+        location,
+        id,
+        request,
+    ))
+    .await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CONTENT_DISPOSITION, attachment),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        file,
+    )
+        .into_response())
+}
+
 pub(super) enum BookingHttpError {
     Api(ApiError),
     Overlap(ConflictNotice),

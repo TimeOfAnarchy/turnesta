@@ -19,5 +19,6 @@ pub mod tips;
 pub mod appointments;
 pub mod bookings;
 pub mod bookings_batch;
+pub mod bookings_export;
 pub mod bookings_public;
 pub mod bookings_widget;

@@ -61,7 +61,7 @@ function csrfToken(): string {
   return '';
 }
 
-export async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+export async function requestResponse(url: string, options: RequestInit = {}): Promise<Response> {
   const headers = new Headers(options.headers);
   if (options.method && options.method !== 'GET') {
     headers.set('X-CSRF-Token', csrfToken());
@@ -78,6 +78,11 @@ export async function request<T>(url: string, options: RequestInit = {}): Promis
       ? body.code : 'request_failed';
     throw new ApiError(response.status, code, body && typeof body === 'object' && 'details' in body ? body.details : undefined);
   }
+  return response;
+}
+
+export async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await requestResponse(url, options);
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
 

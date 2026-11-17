@@ -51,6 +51,11 @@ pub enum Access<'a> {
     },
     Detail(Uuid),
     Command(Uuid),
+    Export {
+        id: Uuid,
+        format: crate::bookings_export::ExportFormat,
+        count: i32,
+    },
 }
 
 pub async fn record(
@@ -78,6 +83,19 @@ pub async fn record(
         ),
         Access::Detail(id) => ("detail", Some(id), None, None, None, None, None, None),
         Access::Command(id) => ("command", Some(id), None, None, None, None, None, None),
+        Access::Export { id, format, count } => (
+            match format {
+                crate::bookings_export::ExportFormat::Json => "export_json",
+                crate::bookings_export::ExportFormat::Csv => "export_csv",
+            },
+            Some(id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(count),
+        ),
     };
     let tenant = session.tenant_id();
     sqlx::query("SELECT audit.record_access($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
@@ -96,10 +114,14 @@ pub async fn record(
     Ok(())
 }
 
-async fn owner(pool: &PgPool, user: UserId, tenant: TenantId) -> Result<TenantSession, AuditError> {
+pub(crate) async fn owner(
+    pool: &PgPool,
+    user: UserId,
+    tenant: TenantId,
+) -> Result<TenantSession, CoreError> {
     let mut session = TenantSession::begin(pool, user, tenant).await?;
     if session.role() != Role::Owner {
-        return Err(CoreError::Forbidden.into());
+        return Err(CoreError::Forbidden);
     }
     sqlx::query("SELECT audit.lock_owner($1)")
         .bind(tenant)

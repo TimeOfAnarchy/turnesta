@@ -6,7 +6,7 @@ export type AuditEntry = {
   actor_name: string;
   location_id: string;
   location_name: string;
-  action: 'list' | 'detail' | 'command';
+  action: 'list' | 'detail' | 'command' | 'export_json' | 'export_csv';
   appointment_id: string | null;
   specialist_id: string | null;
   specialist_name: string | null;

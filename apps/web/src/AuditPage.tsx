@@ -71,14 +71,18 @@ function Audit({ tenant }: { tenant: string }) {
 }
 
 function AuditRow({ item }: { item: AuditEntry }) {
-  const action = item.action === 'list' ? 'Список записей' : item.action === 'detail' ? 'Карточка клиента' : 'Результат команды';
+  const action = { list: 'Список записей', detail: 'Карточка клиента', command: 'Результат команды',
+    export_json: 'Выгрузка клиента · JSON', export_csv: 'Выгрузка клиента · CSV' }[item.action];
   return <article className="audit-entry">
     <div><strong>{item.actor_name}</strong><span>{item.location_name}</span></div>
     <div><strong>{action}</strong>
       {item.action === 'list' ? <>
         <span>{item.specialist_name ?? item.specialist_id}</span>
         <span>Дата: {item.visit_date} · возвращено: {item.result_count}{item.include_cancelled ? ' · с отменёнными' : ''}</span>
-      </> : <span>Запись: {item.appointment_id}</span>}
+      </> : <>
+        <span>Запись: {item.appointment_id}</span>
+        {item.action.startsWith('export_') && <span>По организации · записей в файле: {item.result_count}</span>}
+      </>}
     </div>
     <time dateTime={item.created_at}>{formatAuditTime(item.created_at)}</time>
   </article>;

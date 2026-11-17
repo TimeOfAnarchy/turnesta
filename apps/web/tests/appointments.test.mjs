@@ -17,6 +17,18 @@ const id = '1c5a7882-04fd-4fb8-a6f0-7ddfe9195b80',
   spec = '0b046df6-0554-4cce-890b-771597fc299a',
   offer = 'c718748e-4985-49ce-bb01-a4381b9ef222';
 const scope = { tenant: 'tenant', location: 'point', user: 'actor' };
+test('owner download uses the card version, CSRF and a contact selector without putting personal data in the URL', async () => {
+  globalThis.document = { cookie: 'turnesta_csrf=test-token' };
+  mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, `/api/organizations/tenant/locations/point/bookings/appointments/${id}/export`);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.get('X-CSRF-Token'), 'test-token');
+    assert.deepEqual(JSON.parse(options.body), { contact: 'email', format: 'csv', expected_version: 3 });
+    return new Response('client_name\r\nКлиент\r\n', { headers: { 'Content-Type': 'text/csv; charset=utf-8' } });
+  });
+  const blob = await appointmentApi.export('tenant', 'point', id, 'email', 'csv', 3, new AbortController().signal);
+  assert.match(await blob.text(), /Клиент/);
+});
 const client = {
   client_name: 'Client',
   phone: '+7 (900) 000-00-00',

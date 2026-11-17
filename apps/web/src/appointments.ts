@@ -1,4 +1,4 @@
-import { request } from './api.ts';
+import { request, requestResponse } from './api.ts';
 import type { Page } from './api.ts';
 import type { Offer } from './bookings.ts';
 import type { BookingForm } from './publicBookings.ts';
@@ -148,6 +148,13 @@ export function canAnonymizeAppointment(role: string, item: Pick<Appointment, 'a
 const base = (tenant: string, location: string) =>
   `/api/organizations/${encodeURIComponent(tenant)}/locations/${encodeURIComponent(location)}/bookings/appointments`;
 export const appointmentApi = {
+  export: async (tenant: string, location: string, id: string, contact: 'phone' | 'email',
+    format: 'json' | 'csv', expected_version: number, signal: AbortSignal) => {
+    const response = await requestResponse(`${base(tenant, location)}/${encodeURIComponent(id)}/export`, {
+      method: 'POST', body: JSON.stringify({ contact, format, expected_version }), signal,
+    });
+    return response.blob();
+  },
   list: (
     tenant: string,
     location: string,

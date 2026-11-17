@@ -38,6 +38,251 @@ fn audit_query(actor: Option<UserId>) -> AuditQuery<'static> {
 
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn client_export_includes_more_than_a_schedule_page() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let specialist = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        specialist.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 60,
+        },
+    )
+    .await;
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status)
+         SELECT $1,$2,$3,$4,gen_random_uuid(),'Посетитель','123456','','','confirmed' FROM generate_series(1,60) RETURNING id"
+    ).bind(f.tenant).bind(f.point).bind(specialist.id).bind(offer.id).fetch_all(session.connection()).await.unwrap();
+    session.commit().await.unwrap();
+    let login = f.login(f.owner).await;
+    let (status, file) = f
+        .json(export_request(&f, &login, ids[0], "phone", "json", 1))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let returned: std::collections::HashSet<Uuid> = file
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_str().unwrap().parse().unwrap())
+        .collect();
+    assert_eq!(returned, ids.into_iter().collect());
+    f.close().await;
+}
+
+async fn export_visit(
+    f: &Fixture,
+    offer: &bookings::Offer,
+    name: &str,
+    phone: &str,
+    email: &str,
+) -> Uuid {
+    let cmd = AppointmentCmd::RecordAppointment {
+        id: Uuid::new_v4(),
+        specialist_id: offer.specialist_id,
+        offer_id: offer.id,
+        expected_offer_version: offer.version,
+        client: ClientInput {
+            client_name: name.into(),
+            phone: phone.into(),
+            email: email.into(),
+            note: "Строка, \"цитата\"\nвторая".into(),
+        },
+    };
+    appointment_execute(f, f.owner, Uuid::new_v4(), cmd)
+        .await
+        .unwrap()
+        .id
+}
+
+fn export_request(
+    f: &Fixture,
+    login: &(String, String),
+    id: Uuid,
+    contact: &str,
+    format: &str,
+    version: i32,
+) -> Request<Body> {
+    Request::post(f.url(&format!("appointments/{id}/export")))
+        .header("cookie", &login.0)
+        .header("origin", "http://127.0.0.1:8080")
+        .header("x-csrf-token", &login.1)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"contact":contact,"format":format,"expected_version":version}).to_string(),
+        ))
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn client_export_uses_one_current_contact_across_points_and_audits_owner_only() {
+    let mut f = Fixture::new("Europe/Moscow").await;
+    let owner = f.login(f.owner).await;
+    let timing = || Timing::ByAgreement {
+        date: None,
+        places: 10,
+    };
+    let offer = saved_offer(&f, f.specialist().await.id, timing()).await;
+    let anchor = export_visit(
+        &f,
+        &offer,
+        "Первый",
+        "+7 (900) 111-22-33",
+        "Test@Example.Test",
+    )
+    .await;
+    let email_match = export_visit(&f, &offer, "=Test", "", "test@example.test").await;
+    export_visit(
+        &f,
+        &offer,
+        "Добавочный",
+        "+7 (900) 111-22-33 x42",
+        "another@example.test",
+    )
+    .await;
+    let empty = export_visit(&f, &offer, "Без контактов", "", "").await;
+    let erased = export_visit(&f, &offer, "Удаление", "79001112233", "").await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::AnonymizeAppointment {
+            id: erased,
+            specialist_id: offer.specialist_id,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let origin = f.point;
+    let mut session = TenantSession::begin(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    f.point = session
+        .create_location(&Name::parse("Другая точка").unwrap(), "Europe/Moscow")
+        .await
+        .unwrap()
+        .id;
+    session.commit().await.unwrap();
+    let second_offer = saved_offer(&f, f.specialist().await.id, timing()).await;
+    let cancelled = export_visit(
+        &f,
+        &second_offer,
+        "Второй",
+        "79001112233",
+        "another@example.test",
+    )
+    .await;
+    appointment_execute(
+        &f,
+        f.owner,
+        Uuid::new_v4(),
+        AppointmentCmd::CancelAppointment {
+            id: cancelled,
+            specialist_id: second_offer.specialist_id,
+            expected_version: 1,
+        },
+    )
+    .await
+    .unwrap();
+    f.point = origin;
+    let other = Fixture::new("Europe/Moscow").await;
+    let unrelated_offer = saved_offer(&other, other.specialist().await.id, timing()).await;
+    let foreign = export_visit(
+        &other,
+        &unrelated_offer,
+        "Другая организация",
+        "79001112233",
+        "TEST@example.test",
+    )
+    .await;
+
+    let (status, json_file) = f
+        .json(export_request(&f, &owner, anchor, "phone", "json", 1))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{json_file}");
+    let rows = json_file.as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["id"], json!(anchor));
+    assert_eq!(rows[1]["id"], json!(cancelled));
+    assert_eq!(rows[1]["location"], "Другая точка");
+    assert_eq!(rows[1]["status"], "cancelled");
+    assert_eq!(rows[0]["note"], "Строка, \"цитата\"\nвторая");
+    assert!(rows[0].get("created_by").is_none());
+    let result = f
+        .app
+        .clone()
+        .oneshot(export_request(&f, &owner, anchor, "email", "csv", 1))
+        .await
+        .unwrap();
+    assert_eq!(result.status(), StatusCode::OK);
+    assert_eq!(result.headers()["content-type"], "text/csv; charset=utf-8");
+    assert!(
+        result.headers()["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("turnesta-client.csv")
+    );
+    assert!(
+        result.headers()["cache-control"]
+            .to_str()
+            .unwrap()
+            .contains("no-store")
+    );
+    let bytes = to_bytes(result.into_body(), 1 << 20).await.unwrap();
+    let csv = std::str::from_utf8(&bytes).unwrap();
+    assert!(csv.starts_with('\u{feff}') && csv.ends_with("\r\n"));
+    assert!(csv.contains(&email_match.to_string()) && csv.contains("\"'=Test\""));
+    assert!(csv.contains("Строка, \"\"цитата\"\"\nвторая"));
+    assert!(!csv.contains(&cancelled.to_string()) && !csv.contains(&foreign.to_string()));
+    for (id, contact, version, status) in [
+        (foreign, "phone", 1, StatusCode::NOT_FOUND),
+        (empty, "email", 1, StatusCode::BAD_REQUEST),
+        (erased, "phone", 2, StatusCode::BAD_REQUEST),
+        (anchor, "phone", 9, StatusCode::CONFLICT),
+        (anchor, "all", 1, StatusCode::BAD_REQUEST),
+    ] {
+        assert_eq!(
+            f.json(export_request(&f, &owner, id, contact, "json", version))
+                .await
+                .0,
+            status
+        );
+    }
+    for role in [Role::Manager, Role::Operator, Role::Employee] {
+        let login = f.login(f.member(role).await).await;
+        assert_eq!(
+            f.json(export_request(&f, &login, anchor, "phone", "json", 1))
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    let mut missing_csrf = export_request(&f, &owner, anchor, "email", "json", 1);
+    missing_csrf.headers_mut().remove("x-csrf-token");
+    assert_eq!(f.json(missing_csrf).await.0, StatusCode::FORBIDDEN);
+    let events: Vec<_> = audit::list(&f.runtime, f.owner, f.tenant, audit_query(None))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.action.starts_with("export_"))
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].action, "export_csv");
+    assert_eq!(events[1].action, "export_json");
+    assert!(events.iter().all(|e| e.appointment_id == Some(anchor)
+        && e.result_count == Some(2)
+        && e.location_id == origin));
+    other.close().await;
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn audit_records_access_and_replays_without_contacts_and_is_owner_scoped() {
     let f = Fixture::new("Europe/Moscow").await;
     let other = Fixture::new("Europe/Moscow").await;
@@ -264,6 +509,18 @@ async fn audit_records_access_and_replays_without_contacts_and_is_owner_scoped()
 #[ignore = "requires migrated dedicated PostgreSQL *_test database"]
 async fn audit_failure_rolls_back_access_and_appointment_command() {
     let f = Fixture::new("Europe/Moscow").await;
+    let other_specialist = f.specialist().await;
+    let export_offer = saved_offer(
+        &f,
+        other_specialist.id,
+        Timing::ByAgreement {
+            date: None,
+            places: 1,
+        },
+    )
+    .await;
+    let anchor = export_visit(&f, &export_offer, "Export audit failure", "123456", "").await;
+    let owner = f.login(f.owner).await;
     let specialist = f.specialist().await;
     let offer = saved_offer(
         &f,
@@ -286,6 +543,11 @@ async fn audit_failure_rolls_back_access_and_appointment_command() {
         .unwrap();
     let failure = appointment_execute(&f, f.owner, key, command.clone()).await;
     assert!(failure.is_err());
+    let (status, body) = f
+        .json(export_request(&f, &owner, anchor, "phone", "json", 1))
+        .await;
+    assert!(status.is_server_error());
+    assert!(body.get("code").is_some() && !body.to_string().contains("123456"));
     let list = appointments::list(
         &f.runtime,
         f.owner,
@@ -329,7 +591,8 @@ async fn audit_failure_rolls_back_access_and_appointment_command() {
     let events = audit::list(&f.runtime, f.owner, f.tenant, audit_query(None))
         .await
         .unwrap();
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3);
+    assert!(events.iter().all(|e| !e.action.starts_with("export_")));
     f.close().await;
 }
 use uuid::Uuid;
@@ -3265,6 +3528,15 @@ async fn public_bookings_snapshot_answers_privacy_and_replay_after_pause() {
     assert_eq!(a.created_by, None);
     assert_eq!(a.answers.0["field_visit"], "Первый визит");
     assert!(a.form_snapshot.is_some());
+    let login = f.login(f.owner).await;
+    let (status, file) = f
+        .json(export_request(&f, &login, a.id, "email", "json", a.version))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(file[0]["answers"]["field_visit"], "Первый визит");
+    assert_eq!(file[0]["consent_version"], 1);
+    assert_eq!(file[0]["consent_text_sha256"].as_str().unwrap().len(), 64);
+    assert!(file[0]["form_snapshot"]["fields"].is_array());
     form.fields.push(BookingFormField {
         key: "field_new".into(),
         label: "Новое поле".into(),
