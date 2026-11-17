@@ -122,12 +122,25 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         "serve requires the restricted runtime database role"
     );
     let queue_live = LiveHub::new(pool.clone());
+    let log_ip_salt = match config.log_ip_salt {
+        Some(salt) => salt,
+        None => {
+            let mut salt = [0; 32];
+            getrandom::fill(&mut salt)
+                .map_err(|_| anyhow::anyhow!("could not generate request log salt"))?;
+            tracing::warn!(
+                "TURNESTA_LOG_IP_SALT is unset; client IP hashes will change on restart"
+            );
+            salt
+        }
+    };
     let state = AppState::new(pool.clone(), config.ready_timeout)
         .with_queue_live(queue_live.clone())
         .with_auth(config.auth.clone())
         .with_expose_openapi(config.expose_openapi)
         .with_payments(config.payments.clone())
         .with_client_ip_header(config.client_ip_header.clone())
+        .with_log_ip_salt(log_ip_salt)
         .with_web_dist(config.web_dist.clone());
     with_metrics(
         config,
@@ -185,11 +198,14 @@ async fn run_http(
     tracing::info!(%address, version = env!("CARGO_PKG_VERSION"), "HTTP server listening");
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    let server = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.changed().await;
-        })
-        .into_future();
+    let server = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        let _ = shutdown_rx.changed().await;
+    })
+    .into_future();
     tokio::pin!(server);
 
     let result = tokio::select! {

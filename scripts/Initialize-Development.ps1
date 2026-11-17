@@ -15,6 +15,7 @@ if (Test-Path -LiteralPath $destination) {
         throw 'Existing .env is preserved. Add TURNESTA_DELIVERY_KEY with 32 random bytes encoded as 64 hex characters.'
     }
     $additions = @()
+    if ($existing -notmatch '(?m)^TURNESTA_LOG_IP_SALT=') { $additions += 'TURNESTA_LOG_IP_SALT=' + (New-LocalKey) }
     if ($existing -match '(?m)^TURNESTA_MOCK_PAYMENT_KEY=') {
         if ($existing -notmatch '(?m)^TURNESTA_MOCK_PAYMENT_KEY=[0-9a-fA-F]{64}\r?$') {
             throw 'Existing .env is preserved. TURNESTA_MOCK_PAYMENT_KEY must contain 32 random bytes encoded as 64 hex characters.'
@@ -23,7 +24,7 @@ if (Test-Path -LiteralPath $destination) {
     if ($existing -notmatch '(?m)^TURNESTA_TIPS_MODE=') { $additions += 'TURNESTA_TIPS_MODE=mock' }
     if ($additions.Count) {
         [IO.File]::AppendAllText($destination, "`n" + ($additions -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
-        Write-Output 'Preserved existing environment values and appended missing local mock configuration.'
+        Write-Output 'Preserved existing environment values and appended missing local settings.'
     } else { Write-Output 'Existing local .env is valid and was left unchanged.' }
     return
 }
@@ -37,6 +38,7 @@ if ($template -notmatch '(?m)^TURNESTA_DELIVERY_KEY=\r?$') {
     throw 'Expected an empty delivery key placeholder in .env.example.'
 }
 $content = [regex]::Replace($template, '(?m)^TURNESTA_DELIVERY_KEY=\r?$', 'TURNESTA_DELIVERY_KEY=' + $key)
+$content = [regex]::Replace($content, '(?m)^TURNESTA_LOG_IP_SALT=\r?$', 'TURNESTA_LOG_IP_SALT=' + (New-LocalKey))
 if ($content -notmatch '(?m)^TURNESTA_MOCK_PAYMENT_KEY=\r?$') { throw 'Expected an empty mock payment key placeholder.' }
 $content = [regex]::Replace($content, '(?m)^TURNESTA_MOCK_PAYMENT_KEY=\r?$', 'TURNESTA_MOCK_PAYMENT_KEY=' + (New-LocalKey))
 $stream = [IO.File]::Open($destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -45,4 +47,4 @@ try {
     try { $writer.Write($content) } finally { $writer.Dispose() }
 } finally { $stream.Dispose() }
 [Array]::Clear($bytes, 0, $bytes.Length)
-Write-Output 'Created ignored local .env with independent delivery and mock payment keys. Keep secrets with database backups.'
+Write-Output 'Created ignored local .env with independent delivery, payment and request-log secrets. Keep secrets with database backups.'

@@ -51,6 +51,7 @@ TURNESTA_ADMIN_DB_PASSWORD=$(key)
 TURNESTA_MIGRATOR_DB_PASSWORD=$(key)
 TURNESTA_WORKER_DB_PASSWORD=$(key)
 TURNESTA_DELIVERY_KEY=$(key)
+TURNESTA_LOG_IP_SALT=$(key)
 
 # To send email, fill these in, uncomment COMPOSE_PROFILES and run install.sh again.
 #COMPOSE_PROFILES=mail

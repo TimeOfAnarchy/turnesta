@@ -60,10 +60,22 @@ impl ClientLimit {
         }
     }
 
-    pub(super) fn client(&self, headers: &HeaderMap) -> Option<IpAddr> {
+    fn header_ip(&self, headers: &HeaderMap) -> Option<IpAddr> {
         let value = headers.get(self.header.as_ref()?)?.to_str().ok()?;
         let ip: IpAddr = value.trim().parse().ok()?;
-        match ip.to_canonical() {
+        Some(ip.to_canonical())
+    }
+
+    pub(super) fn log_ip(&self, headers: &HeaderMap, peer: Option<IpAddr>) -> Option<IpAddr> {
+        match &self.header {
+            Some(name) if headers.get_all(name).iter().nth(1).is_none() => self.header_ip(headers),
+            Some(_) => None,
+            None => peer.map(|ip| ip.to_canonical()),
+        }
+    }
+
+    pub(super) fn client(&self, headers: &HeaderMap) -> Option<IpAddr> {
+        match self.header_ip(headers)? {
             IpAddr::V6(ip) => Some(IpAddr::V6((u128::from(ip) >> 64 << 64).into())),
             ip => Some(ip),
         }
@@ -127,6 +139,22 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-real-ip", ip.parse().unwrap());
         headers
+    }
+
+    #[test]
+    fn log_ip_uses_one_trusted_address_and_preserves_the_full_ipv6_address() {
+        let peer = Some("192.0.2.19".parse().unwrap());
+        let mut proxy = from("2001:db8::17");
+        assert_eq!(ClientLimit::default().log_ip(&proxy, peer), peer);
+        assert_eq!(
+            limit().log_ip(&proxy, peer),
+            Some("2001:db8::17".parse().unwrap())
+        );
+        proxy.append("x-real-ip", "2001:db8::18".parse().unwrap());
+        assert_eq!(limit().log_ip(&proxy, peer), None);
+        assert_eq!(limit().log_ip(&HeaderMap::new(), peer), None);
+        assert_eq!(limit().log_ip(&from("not-an-address"), peer), None);
+        assert_eq!(limit().log_ip(&from("::ffff:192.0.2.19"), None), peer);
     }
 
     #[test]

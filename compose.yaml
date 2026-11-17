@@ -96,6 +96,7 @@ services:
     command: ["serve"]
     environment:
       <<: *turnesta-environment
+      TURNESTA_LOG_IP_SALT: ${TURNESTA_LOG_IP_SALT:-}
       TURNESTA_TIPS_MODE: ${TURNESTA_TIPS_MODE:-disabled}
       TURNESTA_MOCK_PAYMENT_KEY: ${TURNESTA_MOCK_PAYMENT_KEY:-}
       TURNESTA_DELIVERY_KEY: ${TURNESTA_DELIVERY_KEY:-}

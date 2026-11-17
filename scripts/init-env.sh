@@ -2,7 +2,7 @@
 # Linux/macOS counterpart of Initialize-Development.ps1: creates the ignored
 # local .env with independent random keys, or completes an existing one.
 set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 destination="$root/.env"
 key() { od -An -tx1 -N32 /dev/urandom | tr -d ' \n'; }
 hex64='[0-9a-fA-F]\{64\}'
@@ -13,6 +13,10 @@ if [ -e "$destination" ]; then
         exit 1
     fi
     additions=''
+    if ! grep -q '^TURNESTA_LOG_IP_SALT=' "$destination"; then
+        additions="TURNESTA_LOG_IP_SALT=$(key)
+"
+    fi
     if grep -q '^TURNESTA_MOCK_PAYMENT_KEY=' "$destination"; then
         if ! grep -q "^TURNESTA_MOCK_PAYMENT_KEY=$hex64\$" "$destination"; then
             echo 'Existing .env is preserved. TURNESTA_MOCK_PAYMENT_KEY must contain 32 random bytes encoded as 64 hex characters.' >&2
@@ -26,7 +30,7 @@ if [ -e "$destination" ]; then
 "
     if [ -n "$additions" ]; then
         printf '\n%s' "$additions" >> "$destination"
-        echo 'Preserved existing environment values and appended missing local mock configuration.'
+        echo 'Preserved existing environment values and appended missing local settings.'
     else
         echo 'Existing local .env is valid and was left unchanged.'
     fi
@@ -39,5 +43,6 @@ grep -q '^TURNESTA_MOCK_PAYMENT_KEY=$' "$template" || { echo 'Expected an empty 
 umask 077
 set -C
 sed -e "s/^TURNESTA_DELIVERY_KEY=\$/TURNESTA_DELIVERY_KEY=$(key)/" \
+    -e "s/^TURNESTA_LOG_IP_SALT=\$/TURNESTA_LOG_IP_SALT=$(key)/" \
     -e "s/^TURNESTA_MOCK_PAYMENT_KEY=\$/TURNESTA_MOCK_PAYMENT_KEY=$(key)/" "$template" > "$destination"
-echo 'Created ignored local .env with independent delivery and mock payment keys. Keep secrets with database backups.'
+echo 'Created ignored local .env with independent delivery, payment and request-log secrets. Keep secrets with database backups.'

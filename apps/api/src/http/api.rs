@@ -276,12 +276,17 @@ impl FromRequestParts<AppState> for SignedIn {
         let record = store::find_scoped_session(&state.pool, &token_hash, tenant)
             .await?
             .ok_or_else(ApiError::unauthorized)?;
+        let span = tracing::Span::current();
+        span.record("user_id", tracing::field::display(record.user_id));
         if !record.tenant_member {
             return Err(ApiError::new(
                 StatusCode::NOT_FOUND,
                 "not_found",
                 "Organization not found",
             ));
+        }
+        if let Some(tenant) = tenant {
+            span.record("tenant_id", tracing::field::display(tenant));
         }
         Ok(Self {
             user_id: record.user_id,
@@ -417,6 +422,7 @@ pub(super) async fn login(
     .await?
     .ok_or_else(ApiError::unauthorized)?;
     let mut response = Json(SessionResponse { user_id }).into_response();
+    tracing::Span::current().record("user_id", tracing::field::display(user_id));
     append_cookie(
         &mut response,
         state.auth.session_cookie_name(),

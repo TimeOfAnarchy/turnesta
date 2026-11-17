@@ -100,7 +100,9 @@ services:
     mem_limit: 512m
     cpus: 1.00
     command: [serve]
-    environment: *runtime
+    environment:
+      <<: *runtime
+      TURNESTA_LOG_IP_SALT: ${TURNESTA_LOG_IP_SALT:-}
     depends_on:
       migrator:
         condition: service_completed_successfully

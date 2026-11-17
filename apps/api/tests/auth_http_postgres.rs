@@ -167,6 +167,97 @@ fn credentials(response: &Response) -> Credentials {
     }
 }
 
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn request_logs_identify_only_the_authenticated_actor_and_authorized_tenant() {
+    use std::sync::{Arc, Mutex};
+    use tracing::instrument::WithSubscriber;
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let f = Fixture::new().await;
+    let owner = f.identity(Role::Owner).await;
+    let credentials = f.login(&owner).await;
+    let foreign = TenantId::new();
+    let app = router(
+        AppState::new(f.runtime.clone(), Duration::from_secs(1))
+            .with_client_ip_header(Some("x-real-ip".parse().unwrap()))
+            .with_log_ip_salt([29; 32]),
+    );
+    let capture = Capture::default();
+    let writer = capture.clone();
+    let dispatch = tracing::Dispatch::new(
+        tracing_subscriber::fmt()
+            .json()
+            .with_span_list(false)
+            .with_writer(move || writer.clone())
+            .finish(),
+    );
+    for (target, signed, status) in [
+        (owner.tenant, true, StatusCode::OK),
+        (foreign, true, StatusCode::NOT_FOUND),
+        (owner.tenant, false, StatusCode::UNAUTHORIZED),
+    ] {
+        let url = format!("/api/organizations/{target}?contact=patient@example.test");
+        let mut req = Request::get(url)
+            .header("x-real-ip", "192.0.2.19")
+            .header("x-user-id", "private-name");
+        if signed {
+            req = req.header("cookie", &credentials.cookie);
+        }
+        let response = app
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .with_subscriber(dispatch.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        let log = String::from_utf8(std::mem::take(&mut *capture.0.lock().unwrap())).unwrap();
+        for private in [
+            "patient@example.test",
+            "private-name",
+            "192.0.2.19",
+            &foreign.to_string(),
+            &credentials.csrf,
+        ] {
+            assert!(!log.contains(private), "private marker in request log");
+        }
+        let entry = log
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find(|v| v["fields"]["message"] == "request completed")
+            .unwrap();
+        let span = &entry["span"];
+        assert_eq!(
+            span["request_id"],
+            response.headers()["x-request-id"].to_str().unwrap()
+        );
+        assert_eq!(span["route"], "/api/organizations/{tenant_id}");
+        assert_eq!(span["client_ip_hash"], "1bedb6f8ef23932a");
+        assert_eq!(
+            span.get("user_id"),
+            signed.then(|| json!(owner.user)).as_ref()
+        );
+        assert_eq!(
+            span.get("tenant_id"),
+            (status == StatusCode::OK)
+                .then(|| json!(owner.tenant))
+                .as_ref()
+        );
+    }
+    f.close().await;
+}
+
 async fn body(response: Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), 64 * 1024).await.unwrap()).unwrap()
 }

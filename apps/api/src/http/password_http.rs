@@ -129,6 +129,7 @@ fn signed_response(
     csrf: &SecretToken,
 ) -> Response {
     let mut response = Json(PasswordLoginResponse::Authenticated { user_id: user }).into_response();
+    tracing::Span::current().record("user_id", tracing::field::display(user));
     append_cookie(
         &mut response,
         state.auth.session_cookie_name(),
@@ -225,6 +226,7 @@ pub(super) async fn login(
         })
         .into_response();
         clear_cookies(&state, &mut response);
+        tracing::Span::current().record("user_id", tracing::field::display(credential.user_id));
         return Ok(response);
     }
     let session = SecretToken::generate().map_err(|_| ApiError::unavailable())?;

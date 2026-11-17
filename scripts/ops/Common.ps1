@@ -134,6 +134,7 @@ function New-OpsStand {
         TURNESTA_IMAGE=$Image;TURNESTA_DB_IMAGE=$DatabaseImage;TURNESTA_DATABASE=$database;TURNESTA_INITIAL_DATABASE=$initial;TURNESTA_BOOTSTRAP_DATABASE=$initial;
         POSTGRES_USER='turnesta';POSTGRES_PASSWORD=(New-OpsSecret);TURNESTA_MIGRATOR_DB_PASSWORD=(New-OpsSecret);TURNESTA_API_DB_PASSWORD=(New-OpsSecret);TURNESTA_ADMIN_DB_PASSWORD=(New-OpsSecret);TURNESTA_WORKER_DB_PASSWORD=(New-OpsSecret);
         TURNESTA_DELIVERY_KEY=$DeliveryKey;TURNESTA_PUBLIC_ORIGIN=$origin;TURNESTA_BIND_ADDR=$(if($Kind -eq 'pilot'){'0.0.0.0:8080'}else{'127.0.0.1:8080'});
+        TURNESTA_LOG_IP_SALT=(New-OpsSecret);
         TURNESTA_PILOT_API_PORT=$ApiPort;TURNESTA_PILOT_MAIL_PORT=$MailPort;TURNESTA_MAILHOG_IMAGE=$MailhogImage
     }
     foreach($value in $settings.Values){if([string]$value -match '[\r\n]'){throw 'Invalid environment value.'}}

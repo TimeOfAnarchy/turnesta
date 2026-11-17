@@ -13,6 +13,7 @@ pub struct Config {
     pub auth: AuthConfig,
     pub web_dist: PathBuf,
     pub client_ip_header: Option<axum::http::HeaderName>,
+    pub log_ip_salt: Option<[u8; 32]>,
     pub payments: crate::payments::PaymentConfig,
     pub expose_openapi: bool,
 }
@@ -65,6 +66,19 @@ impl Config {
                 Some(_) => return Err(invalid("TURNESTA_EXPOSE_OPENAPI", "must be true or false")),
             },
             client_ip_header,
+            log_ip_salt: lookup("TURNESTA_LOG_IP_SALT")
+                .filter(|value| !value.is_empty())
+                .map(|value| {
+                    let mut salt = [0; 32];
+                    hex::decode_to_slice(value, &mut salt).map_err(|_| {
+                        invalid(
+                            "TURNESTA_LOG_IP_SALT",
+                            "must contain 64 hexadecimal characters",
+                        )
+                    })?;
+                    Ok(salt)
+                })
+                .transpose()?,
             payments: crate::payments::PaymentConfig::from_lookup(&lookup).map_err(|_| {
                 invalid(
                     "TURNESTA_TIPS_MODE / TURNESTA_MOCK_PAYMENT_KEY / TURNESTA_MOCK_CALLBACK_URL",
@@ -165,6 +179,29 @@ mod tests {
         assert_eq!(settings.database.max_connections, 10);
         assert_eq!(settings.ready_timeout, Duration::from_secs(1));
         assert!(!settings.expose_openapi);
+    }
+
+    #[test]
+    fn log_salt_is_optional_and_invalid_values_are_redacted() {
+        let db = ("DATABASE_URL", "postgres://localhost/turnesta");
+        assert!(config(&[db]).unwrap().log_ip_salt.is_none());
+        assert!(
+            config(&[db, ("TURNESTA_LOG_IP_SALT", "")])
+                .unwrap()
+                .log_ip_salt
+                .is_none()
+        );
+        assert_eq!(
+            config(&[db, ("TURNESTA_LOG_IP_SALT", &"a5".repeat(32))])
+                .unwrap()
+                .log_ip_salt,
+            Some([0xa5; 32])
+        );
+        let error = config(&[db, ("TURNESTA_LOG_IP_SALT", "secret-sentinel")])
+            .err()
+            .unwrap();
+        assert_eq!(error.name, "TURNESTA_LOG_IP_SALT");
+        assert!(!error.to_string().contains("secret-sentinel"));
     }
 
     #[test]

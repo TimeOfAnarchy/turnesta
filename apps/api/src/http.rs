@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     path::PathBuf,
     sync::{
         Arc,
@@ -10,7 +11,7 @@ use std::{
 use crate::auth::AuthConfig;
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, MatchedPath, Request, State},
+    extract::{ConnectInfo, DefaultBodyLimit, MatchedPath, Request, State},
     http::{HeaderName, HeaderValue, StatusCode, header::CACHE_CONTROL},
     middleware::{self, Next},
     response::Response,
@@ -18,6 +19,7 @@ use axum::{
     routing::get,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tracing::Instrument;
 use utoipa::{OpenApi, ToSchema};
@@ -52,6 +54,7 @@ pub struct AppState {
     payments: crate::payments::PaymentConfig,
     public_gate: Arc<tokio::sync::Semaphore>,
     client_limit: client_limit::ClientLimit,
+    log_ip_salt: Option<Arc<[u8; 32]>>,
     expose_openapi: bool,
     queue_live: Option<Arc<crate::queue_live::LiveHub>>,
 }
@@ -70,6 +73,7 @@ impl AppState {
             payments: crate::payments::PaymentConfig::default(),
             public_gate: Arc::new(tokio::sync::Semaphore::new(32)),
             client_limit: client_limit::ClientLimit::default(),
+            log_ip_salt: None,
             expose_openapi: false,
             queue_live: None,
         }
@@ -98,6 +102,11 @@ impl AppState {
 
     pub fn with_client_ip_header(mut self, header: Option<HeaderName>) -> Self {
         self.client_limit = client_limit::ClientLimit::new(header);
+        self
+    }
+
+    pub fn with_log_ip_salt(mut self, salt: [u8; 32]) -> Self {
+        self.log_ip_salt = Some(Arc::new(salt));
         self
     }
 
@@ -396,7 +405,7 @@ pub fn router(state: AppState) -> Router {
             public_admission,
         ))
         .layer(middleware::from_fn_with_state(
-            state.metrics.clone(),
+            Arc::new(state.clone()),
             request_context,
         ))
         .with_state(state)
@@ -529,7 +538,7 @@ async fn method_not_allowed() -> (StatusCode, Json<ErrorResponse>) {
 }
 
 async fn request_context(
-    State(metrics): State<Arc<crate::metrics::ApiMetrics>>,
+    State(state): State<Arc<AppState>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -541,17 +550,39 @@ async fn request_context(
         .map(MatchedPath::as_str)
         .unwrap_or("<unmatched>")
         .to_owned();
+    let method = match request.method().as_str() {
+        standard @ ("GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"
+        | "CONNECT" | "TRACE") => standard,
+        _ => "OTHER",
+    };
     let span = tracing::info_span!(
         "http_request",
         request_id = %request_id,
-        method = %request.method(),
+        method,
         route = %route,
+        user_id = tracing::field::Empty,
+        tenant_id = tracing::field::Empty,
+        client_ip_hash = tracing::field::Empty,
     );
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|addr| addr.0.ip());
+    if let (Some(salt), Some(ip)) = (
+        &state.log_ip_salt,
+        state.client_limit.log_ip(request.headers(), peer),
+    ) {
+        let hash = Sha256::new()
+            .chain_update(salt.as_slice())
+            .chain_update(ip.to_string())
+            .finalize();
+        span.record("client_ip_hash", hex::encode(&hash[..8]));
+    }
 
     async move {
         let started = Instant::now();
         let mut response = next.run(request).await;
-        metrics.record(&route, &response, started.elapsed());
+        state.metrics.record(&route, &response, started.elapsed());
         response.headers_mut().insert(
             "x-request-id",
             HeaderValue::from_str(&request_id).expect("UUID is a valid header value"),
