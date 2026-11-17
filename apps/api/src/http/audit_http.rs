@@ -1,3 +1,4 @@
+use super::bounded;
 use super::{
     AppState,
     api::{ApiError, SignedIn, check_mutation},
@@ -16,7 +17,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 
 pub(super) fn routes() -> Router<AppState> {
@@ -33,22 +33,17 @@ impl From<AuditError> for ApiError {
         match error {
             AuditError::Core(error) => error.into(),
             AuditError::Invalid => Self::bad_request(),
-            AuditError::Database(error) => {
-                match error.as_database_error().and_then(|e| e.code()).as_deref() {
-                    Some("42501") => Self::forbidden(),
-                    Some("B2001") => Self::bad_request(),
-                    _ => error.into(),
-                }
-            }
+            AuditError::Database(error) => crate::database::map_sqlstate(
+                error,
+                |code| match code {
+                    "42501" => Some(Self::forbidden()),
+                    "B2001" => Some(Self::bad_request()),
+                    _ => None,
+                },
+                Self::from,
+            ),
         }
     }
-}
-
-async fn bounded<T>(future: impl Future<Output = Result<T, AuditError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 
 #[derive(Deserialize)]

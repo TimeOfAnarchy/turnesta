@@ -1,3 +1,4 @@
+use super::bounded;
 use super::{
     AppState, WidgetFrameAncestor,
     api::{ApiError, SignedIn, check_mutation},
@@ -19,7 +20,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -76,12 +76,6 @@ impl From<WidgetError> for ApiError {
         }
     }
 }
-async fn bounded<T>(future: impl Future<Output = Result<T, WidgetError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
-}
 #[derive(Serialize, ToSchema)]
 pub(super) struct WidgetResponse {
     #[serde(flatten)]
@@ -96,12 +90,7 @@ async fn response(
     point: LocationId,
     settings: WidgetSettings,
 ) -> Result<Json<WidgetResponse>, ApiError> {
-    let public = tokio::time::timeout(
-        Duration::from_secs(5),
-        bookings_public::settings(&state.pool, user, tenant, point),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable())??;
+    let public = bounded(bookings_public::settings(&state.pool, user, tenant, point)).await?;
     Ok(Json(WidgetResponse {
         settings,
         public_url: public
@@ -172,12 +161,7 @@ async fn page(
     {
         return Err(ApiError::forbidden());
     }
-    let profile = tokio::time::timeout(
-        Duration::from_secs(5),
-        bookings_public::profile(&state.pool, slug),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable())??;
+    let profile = bounded(bookings_public::profile(&state.pool, slug)).await?;
     let policy=HeaderValue::from_str(&format!("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors {}; form-action 'self'",q.parent_origin)).map_err(|_|ApiError::unavailable())?;
     let html = super::bookings_public_http::render_page(
         slug,

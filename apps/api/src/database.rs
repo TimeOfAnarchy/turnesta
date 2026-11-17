@@ -8,6 +8,19 @@ use crate::config::DatabaseConfig;
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
+pub(crate) fn map_sqlstate<E>(
+    error: sqlx::Error,
+    map: impl FnOnce(&str) -> Option<E>,
+    fallback: impl FnOnce(sqlx::Error) -> E,
+) -> E {
+    let mapped = error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .as_deref()
+        .and_then(map);
+    mapped.unwrap_or_else(|| fallback(error))
+}
+
 pub async fn connect(config: &DatabaseConfig) -> Result<PgPool, sqlx::Error> {
     connect_with(config, config.options.clone()).await
 }

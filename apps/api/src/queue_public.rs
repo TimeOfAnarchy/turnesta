@@ -32,16 +32,22 @@ pub enum PublicQueueError {
 
 impl From<sqlx::Error> for PublicQueueError {
     fn from(error: sqlx::Error) -> Self {
-        match error.as_database_error().and_then(|e| e.code()).as_deref() {
-            Some("Q2001") => Self::NotFound,
-            Some("Q2002") => Self::InvalidToken,
-            Some("Q2003") => Self::Expired,
-            Some("Q2004") => Self::Closed,
-            Some("Q2005") => Self::RateLimit,
-            Some("Q2006") => Self::Capacity,
-            Some("Q2010") => Self::ServiceUnavailable,
-            _ => Self::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| {
+                Some(match code {
+                    "Q2001" => Self::NotFound,
+                    "Q2002" => Self::InvalidToken,
+                    "Q2003" => Self::Expired,
+                    "Q2004" => Self::Closed,
+                    "Q2005" => Self::RateLimit,
+                    "Q2006" => Self::Capacity,
+                    "Q2010" => Self::ServiceUnavailable,
+                    _ => return None,
+                })
+            },
+            Self::Database,
+        )
     }
 }
 

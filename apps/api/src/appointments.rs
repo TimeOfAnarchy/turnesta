@@ -273,7 +273,19 @@ pub async fn get(
     if s.role() == Role::Employee {
         return Err(CoreError::Forbidden.into());
     }
-    let row=sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND id=$3").bind(tenant).bind(location).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+    let row = sqlx::query_as(
+        "SELECT *
+         FROM bookings.appointment_details
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND id = $3",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(id)
+    .fetch_optional(s.connection())
+    .await?
+    .ok_or(BookingError::NotFound)?;
     audit::record(&mut s, location, Access::Detail(id)).await?;
     s.commit().await?;
     Ok(row)
@@ -295,10 +307,17 @@ pub async fn list(
         .await?;
     let limit = page.limit.clamp(1, 100) as i32;
     let rows: Vec<AppointmentSummary> = sqlx::query_as(
-        "SELECT id,offer_id,client_name,phone,status,source,title,date,starts_local,ends_local,anonymized_at
-         FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3
-           AND (date=$4 OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR status='confirmed')
-         ORDER BY id LIMIT $7",
+        "SELECT id, offer_id, client_name, phone, status, source, title, date, starts_local,
+         ends_local, anonymized_at
+         FROM bookings.appointment_details
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND specialist_id = $3
+           AND (date = $4 OR date IS NULL)
+           AND ($5::uuid IS NULL OR id > $5)
+           AND ($6 OR status = 'confirmed')
+         ORDER BY id
+         LIMIT $7",
     )
     .bind(tenant)
     .bind(location)
@@ -348,27 +367,53 @@ pub async fn execute(
     sqlx::query("SET LOCAL lock_timeout='2s'")
         .execute(s.connection())
         .await?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.locations WHERE tenant_id=$1 AND id=$2)",
+    crate::core::check_location(&mut s, location, BookingError::NotFound).await?;
+    let claimed = sqlx::query(
+        "INSERT INTO bookings.appointment_commands(tenant_id, location_id, actor_id, idempotency_key,
+             fingerprint)
+         VALUES($1, $2, $3, $4, $5)
+         ON CONFLICT DO NOTHING",
     )
     .bind(tenant)
     .bind(location)
-    .fetch_one(s.connection())
-    .await?;
-    if !exists {
-        return Err(BookingError::NotFound);
-    }
-    let claimed=sqlx::query("INSERT INTO bookings.appointment_commands(tenant_id,location_id,actor_id,idempotency_key,fingerprint) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
-        .bind(tenant).bind(location).bind(user).bind(key).bind(fingerprint.as_slice()).execute(s.connection()).await?.rows_affected();
+    .bind(user)
+    .bind(key)
+    .bind(fingerprint.as_slice())
+    .execute(s.connection())
+    .await?
+    .rows_affected();
     if claimed == 0 {
-        let (previous,Json(result)):(Vec<u8>,Json<StoredAppointmentResult>)=sqlx::query_as("SELECT fingerprint,result FROM bookings.appointment_commands WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
-            .bind(tenant).bind(location).bind(user).bind(key).fetch_one(s.connection()).await?;
+        let (previous, Json(result)): (Vec<u8>, Json<StoredAppointmentResult>) = sqlx::query_as(
+            "SELECT fingerprint, result
+             FROM bookings.appointment_commands
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND actor_id = $3
+               AND idempotency_key = $4",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(user)
+        .bind(key)
+        .fetch_one(s.connection())
+        .await?;
         if previous.as_slice() != fingerprint.as_slice() {
             return Err(BookingError::IdempotencyConflict);
         }
         let StoredAppointmentResult::Appointment { id, .. } = result;
-        let appointment = sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND id=$3")
-            .bind(tenant).bind(location).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+        let appointment = sqlx::query_as(
+            "SELECT *
+             FROM bookings.appointment_details
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND id = $3",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(id)
+        .fetch_optional(s.connection())
+        .await?
+        .ok_or(BookingError::NotFound)?;
         audit::record(&mut s, location, Access::Command(id)).await?;
         s.commit().await?;
         return Ok(AppointmentReceipt {
@@ -390,27 +435,144 @@ pub async fn execute(
         ..
     } = &command
     {
-        let version:i32=sqlx::query_scalar("SELECT version FROM bookings.offers WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4")
-            .bind(tenant).bind(location).bind(specialist).bind(offer_id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+        let version: i32 = sqlx::query_scalar(
+            "SELECT version
+             FROM bookings.offers
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist)
+        .bind(offer_id)
+        .fetch_optional(s.connection())
+        .await?
+        .ok_or(BookingError::NotFound)?;
         if version != *expected_offer_version {
             return Err(CoreError::VersionConflict.into());
         }
     }
-    let changed=match command {
-        AppointmentCommand::RecordAppointment { offer_id,client,.. } => sqlx::query("INSERT INTO bookings.appointments(tenant_id,location_id,specialist_id,offer_id,id,client_name,phone,email,note,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed') ON CONFLICT DO NOTHING")
-            .bind(tenant).bind(location).bind(specialist).bind(offer_id).bind(id).bind(client.client_name).bind(client.phone).bind(client.email).bind(client.note).execute(s.connection()).await?.rows_affected(),
-        AppointmentCommand::UpdateClient { expected_version,client,.. } => sqlx::query("UPDATE bookings.appointments SET client_name=$5,phone=$6,email=$7,note=$8,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4 AND version=$9 AND status='confirmed'")
-            .bind(tenant).bind(location).bind(specialist).bind(id).bind(client.client_name).bind(client.phone).bind(client.email).bind(client.note).bind(expected_version).execute(s.connection()).await?.rows_affected(),
-        AppointmentCommand::MoveAppointment { offer_id,expected_version,.. } => sqlx::query("UPDATE bookings.appointments SET offer_id=$5,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4 AND version=$6 AND status='confirmed' AND offer_id<>$5")
-            .bind(tenant).bind(location).bind(specialist).bind(id).bind(offer_id).bind(expected_version).execute(s.connection()).await?.rows_affected(),
-        AppointmentCommand::CancelAppointment { expected_version,.. } => sqlx::query("UPDATE bookings.appointments SET status='cancelled',version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4 AND version=$5 AND status='confirmed'")
-            .bind(tenant).bind(location).bind(specialist).bind(id).bind(expected_version).execute(s.connection()).await?.rows_affected(),
-        AppointmentCommand::AnonymizeAppointment { expected_version,.. } => {
-            let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bookings.appointments WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4)")
-                .bind(tenant).bind(location).bind(specialist).bind(id).fetch_one(s.connection()).await?;
-            if !exists { return Err(BookingError::NotFound); }
+    let changed = match command {
+        AppointmentCommand::RecordAppointment {
+            offer_id, client, ..
+        } => sqlx::query(
+            "INSERT INTO bookings.appointments(tenant_id, location_id, specialist_id, offer_id,
+                 id, client_name, phone, email, note, status)
+             VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed')
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist)
+        .bind(offer_id)
+        .bind(id)
+        .bind(client.client_name)
+        .bind(client.phone)
+        .bind(client.email)
+        .bind(client.note)
+        .execute(s.connection())
+        .await?
+        .rows_affected(),
+        AppointmentCommand::UpdateClient {
+            expected_version,
+            client,
+            ..
+        } => sqlx::query(
+            "UPDATE bookings.appointments
+             SET client_name = $5, phone = $6, email = $7, note = $8, version = version+1
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4
+               AND version = $9
+               AND status = 'confirmed'",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist)
+        .bind(id)
+        .bind(client.client_name)
+        .bind(client.phone)
+        .bind(client.email)
+        .bind(client.note)
+        .bind(expected_version)
+        .execute(s.connection())
+        .await?
+        .rows_affected(),
+        AppointmentCommand::MoveAppointment {
+            offer_id,
+            expected_version,
+            ..
+        } => sqlx::query(
+            "UPDATE bookings.appointments
+             SET offer_id = $5, version = version+1
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4
+               AND version = $6
+               AND status = 'confirmed'
+               AND offer_id <> $5",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist)
+        .bind(id)
+        .bind(offer_id)
+        .bind(expected_version)
+        .execute(s.connection())
+        .await?
+        .rows_affected(),
+        AppointmentCommand::CancelAppointment {
+            expected_version, ..
+        } => sqlx::query(
+            "UPDATE bookings.appointments
+             SET status = 'cancelled', version = version+1
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4
+               AND version = $5
+               AND status = 'confirmed'",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist)
+        .bind(id)
+        .bind(expected_version)
+        .execute(s.connection())
+        .await?
+        .rows_affected(),
+        AppointmentCommand::AnonymizeAppointment {
+            expected_version, ..
+        } => {
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1
+                     FROM bookings.appointments
+                     WHERE tenant_id = $1
+                       AND location_id = $2
+                       AND specialist_id = $3
+                       AND id = $4)",
+            )
+            .bind(tenant)
+            .bind(location)
+            .bind(specialist)
+            .bind(id)
+            .fetch_one(s.connection())
+            .await?;
+            if !exists {
+                return Err(BookingError::NotFound);
+            }
             sqlx::query("SELECT bookings.anonymize_appointment($1,$2,$3,$4,$5)")
-                .bind(tenant).bind(location).bind(id).bind(user).bind(expected_version).execute(s.connection()).await?;
+                .bind(tenant)
+                .bind(location)
+                .bind(id)
+                .bind(user)
+                .bind(expected_version)
+                .execute(s.connection())
+                .await?;
             1
         }
     };
@@ -431,8 +593,21 @@ pub async fn execute(
         resource: AppointmentResource::Appointment(appointment),
     };
     audit::record(&mut s, location, Access::Command(id)).await?;
-    sqlx::query("UPDATE bookings.appointment_commands SET result=$5 WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
-        .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&stored)).execute(s.connection()).await?;
+    sqlx::query(
+        "UPDATE bookings.appointment_commands
+         SET result = $5
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND actor_id = $3
+           AND idempotency_key = $4",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(user)
+    .bind(key)
+    .bind(Json(&stored))
+    .execute(s.connection())
+    .await?;
     s.commit().await?;
     Ok(receipt)
 }

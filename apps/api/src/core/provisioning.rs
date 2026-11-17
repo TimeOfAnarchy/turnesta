@@ -133,14 +133,14 @@ async fn insert_membership(
     .fetch_one(&mut **tx)
     .await
     .map_err(|error| {
-        match error
-            .as_database_error()
-            .and_then(|db| db.code())
-            .as_deref()
-        {
-            Some("23505") => CoreError::MembershipExists,
-            Some("23503") => CoreError::ReferenceNotFound,
-            _ => CoreError::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| match code {
+                "23505" => Some(CoreError::MembershipExists),
+                "23503" => Some(CoreError::ReferenceNotFound),
+                _ => None,
+            },
+            CoreError::Database,
+        )
     })
 }

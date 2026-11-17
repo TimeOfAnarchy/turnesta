@@ -1,3 +1,4 @@
+use super::bounded;
 use super::{
     AppState,
     api::{ApiError, SignedIn, check_mutation},
@@ -18,7 +19,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -51,12 +51,6 @@ impl From<CatalogError> for ApiError {
             ),
         }
     }
-}
-async fn bounded<T>(future: impl Future<Output = Result<T, CatalogError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,12 +185,13 @@ pub(super) async fn public_services(
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Query(query) = query.map_err(|_| ApiError::bad_request())?;
     let limit = query.limit()? as usize;
-    let mut items = tokio::time::timeout(
-        Duration::from_secs(5),
-        queue_public::services(&state.pool, slug, query.after, limit as i32),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable())??;
+    let mut items = bounded(queue_public::services(
+        &state.pool,
+        slug,
+        query.after,
+        limit as i32,
+    ))
+    .await?;
     let next_cursor = if items.len() > limit {
         items.truncate(limit);
         items.last().map(|s| s.id)

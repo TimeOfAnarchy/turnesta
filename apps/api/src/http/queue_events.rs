@@ -65,12 +65,11 @@ fn hub(state: &AppState) -> Result<Arc<LiveHub>, ApiError> {
 }
 fn slot(hub: &LiveHub, public: bool) -> Result<OwnedSemaphorePermit, ApiError> {
     hub.acquire(public).ok_or_else(|| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
+        ApiError::rate_limited(
             "too_many_streams",
             "Live connection capacity reached",
+            "sse_capacity",
         )
-        .with_limit_reason("sse_capacity")
     })
 }
 fn origin(headers: &HeaderMap, state: &AppState) -> Result<(), ApiError> {
@@ -139,12 +138,11 @@ pub(super) async fn public(
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
     let Query(query) = query.map_err(|_| ApiError::bad_request())?;
     let client_permit = state.client_limit.acquire(&headers).map_err(|()| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
+        ApiError::rate_limited(
             "too_many_streams",
             "Live connection capacity reached",
+            "public_client_admission",
         )
-        .with_limit_reason("public_client_admission")
     })?;
     let hub = hub(&state)?;
     let permit = slot(&hub, true)?;

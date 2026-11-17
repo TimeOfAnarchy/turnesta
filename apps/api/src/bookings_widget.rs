@@ -107,20 +107,6 @@ pub struct WidgetConfigure {
     pub expected_version: i32,
 }
 
-async fn check_location(s: &mut TenantSession, point: LocationId) -> Result<(), WidgetError> {
-    let tenant = s.tenant_id();
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.locations WHERE tenant_id=$1 AND id=$2)",
-    )
-    .bind(tenant)
-    .bind(point)
-    .fetch_one(s.connection())
-    .await?;
-    if !exists {
-        return Err(WidgetError::NotFound);
-    }
-    Ok(())
-}
 pub async fn settings(
     pool: &impl TenantPool,
     user: UserId,
@@ -128,7 +114,7 @@ pub async fn settings(
     point: LocationId,
 ) -> Result<WidgetSettings, WidgetError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
-    check_location(&mut s, point).await?;
+    crate::core::check_location(&mut s, point, WidgetError::NotFound).await?;
     let row:Option<(Vec<String>,i32)>=sqlx::query_as(
         "SELECT allowed_origins,version FROM bookings.widget_settings WHERE tenant_id=$1 AND location_id=$2"
     ).bind(tenant).bind(point).fetch_optional(s.connection()).await?;
@@ -156,7 +142,7 @@ pub async fn configure(
     if !s.role().can_manage_locations() {
         return Err(CoreError::Forbidden.into());
     }
-    check_location(&mut s, point).await?;
+    crate::core::check_location(&mut s, point, WidgetError::NotFound).await?;
     if input.expected_version < 0 {
         return Err(CoreError::InvalidVersion.into());
     }

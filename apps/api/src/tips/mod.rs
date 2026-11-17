@@ -29,19 +29,21 @@ pub enum TipsError {
 
 impl From<sqlx::Error> for TipsError {
     fn from(error: sqlx::Error) -> Self {
-        match error
-            .as_database_error()
-            .and_then(|error| error.code())
-            .as_deref()
-        {
-            Some("T1001") => Self::InvalidAmount,
-            Some("T1002" | "23503") => Self::NotFound,
-            Some("T1003" | "42501") => Self::Forbidden,
-            Some("T1004") => Self::IdempotencyConflict,
-            Some("T1005") => Self::StateConflict,
-            Some("T1006") => Self::EventMismatch,
-            _ => Self::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| {
+                Some(match code {
+                    "T1001" => Self::InvalidAmount,
+                    "T1002" | "23503" => Self::NotFound,
+                    "T1003" | "42501" => Self::Forbidden,
+                    "T1004" => Self::IdempotencyConflict,
+                    "T1005" => Self::StateConflict,
+                    "T1006" => Self::EventMismatch,
+                    _ => return None,
+                })
+            },
+            Self::Database,
+        )
     }
 }
 

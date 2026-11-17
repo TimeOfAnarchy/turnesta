@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     net::SocketAddr,
     path::PathBuf,
     sync::{
@@ -40,6 +41,19 @@ mod queue_stations_http;
 mod queue_tips_http;
 mod team_http;
 mod tips_http;
+
+async fn operation_timeout<T>(future: impl Future<Output = T>) -> Result<T, api::ApiError> {
+    tokio::time::timeout(Duration::from_secs(5), future)
+        .await
+        .map_err(|_| api::ApiError::unavailable())
+}
+
+async fn bounded<T, E>(future: impl Future<Output = Result<T, E>>) -> Result<T, api::ApiError>
+where
+    api::ApiError: From<E>,
+{
+    operation_timeout(future).await?.map_err(Into::into)
+}
 
 #[derive(Clone)]
 pub struct AppState {

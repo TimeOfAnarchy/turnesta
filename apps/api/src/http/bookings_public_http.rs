@@ -1,3 +1,4 @@
+use super::bounded;
 use super::{
     AppState,
     api::{ApiError, SignedIn, check_mutation, check_origin, single_header},
@@ -23,7 +24,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -88,15 +88,15 @@ impl From<PublicBookingError> for ApiError {
                 "booking_closed",
                 "Public booking paused",
             ),
-            PublicBookingError::RateLimit => Self::new(
-                StatusCode::TOO_MANY_REQUESTS,
+            PublicBookingError::RateLimit => Self::rate_limited(
                 "booking_rate_limit",
                 "Please retry later",
+                "booking_rate_limit",
             ),
-            PublicBookingError::PhoneLimit => Self::new(
-                StatusCode::TOO_MANY_REQUESTS,
+            PublicBookingError::PhoneLimit => Self::rate_limited(
                 "booking_phone_limit",
                 "Too many upcoming bookings for this phone number",
+                "booking_phone_limit",
             ),
             PublicBookingError::Invalid => Self::new(
                 StatusCode::BAD_REQUEST,
@@ -138,14 +138,6 @@ impl From<PublicBookingError> for ApiError {
             ),
         }
     }
-}
-async fn bounded<T>(
-    future: impl Future<Output = Result<T, PublicBookingError>>,
-) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 pub(super) struct BookingAccess([u8; 32]);
 impl FromRequestParts<AppState> for BookingAccess {
@@ -338,11 +330,7 @@ pub(super) async fn page(
 ) -> Result<(StatusCode, Html<String>), ApiError> {
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
-    let profile = match tokio::time::timeout(
-        Duration::from_secs(5),
-        bookings_public::profile(&state.pool, slug),
-    )
-    .await
+    let profile = match super::operation_timeout(bookings_public::profile(&state.pool, slug)).await
     {
         Ok(Ok(p)) => Some(p),
         Ok(Err(PublicBookingError::NotFound)) => None,

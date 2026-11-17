@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use super::bounded;
 
 use axum::{
     Json, Router,
@@ -85,13 +85,6 @@ impl From<QueueError> for ApiError {
             ),
         }
     }
-}
-
-async fn bounded<T>(future: impl Future<Output = Result<T, QueueError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 
 #[derive(Deserialize, ToSchema)]

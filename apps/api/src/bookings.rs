@@ -56,20 +56,26 @@ pub enum BookingError {
 }
 impl From<sqlx::Error> for BookingError {
     fn from(error: sqlx::Error) -> Self {
-        match error.as_database_error().and_then(|e| e.code()).as_deref() {
-            Some("B2001") => Self::Invalid,
-            Some("B2002") => Self::TimeGap,
-            Some("B2003") => Self::TimeFold,
-            Some("B2101") => Self::NotFound,
-            Some("B2102") => Self::AppointmentClosed,
-            Some("B2103") => Self::OfferUnavailable,
-            Some("B2104") => Self::OfferFull,
-            Some("B2105") => Self::SpecialistBusy,
-            Some("B2106") => Self::OfferOccupied,
-            Some("B2107") => Self::Core(CoreError::VersionConflict),
-            Some("R1401") => Self::IdempotencyConflict,
-            _ => Self::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| {
+                Some(match code {
+                    "B2001" => Self::Invalid,
+                    "B2002" => Self::TimeGap,
+                    "B2003" => Self::TimeFold,
+                    "B2101" => Self::NotFound,
+                    "B2102" => Self::AppointmentClosed,
+                    "B2103" => Self::OfferUnavailable,
+                    "B2104" => Self::OfferFull,
+                    "B2105" => Self::SpecialistBusy,
+                    "B2106" => Self::OfferOccupied,
+                    "B2107" => Self::Core(CoreError::VersionConflict),
+                    "R1401" => Self::IdempotencyConflict,
+                    _ => return None,
+                })
+            },
+            Self::Database,
+        )
     }
 }
 
@@ -328,14 +334,56 @@ pub(crate) async fn lock_calendar(
     specialist: Uuid,
 ) -> Result<(), BookingError> {
     let tenant = session.tenant_id();
-    sqlx::query_scalar::<_, i64>("SELECT revision FROM bookings.calendars WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 FOR UPDATE")
-        .bind(tenant).bind(location).bind(specialist).fetch_optional(session.connection()).await?.ok_or(BookingError::NotFound)?;
+    sqlx::query_scalar::<_, i64>(
+        "SELECT revision
+         FROM bookings.calendars
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND specialist_id = $3 FOR UPDATE",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(specialist)
+    .fetch_optional(session.connection())
+    .await?
+    .ok_or(BookingError::NotFound)?;
     Ok(())
 }
 
 // No contacts enter the schedule projection. Employee sees unknown occupancy,
 // rather than a false zero caused by the private appointment RLS policy.
-const OFFER_PROJECTION: &str = "SELECT v.*, CASE WHEN $8 THEN (SELECT count(*) FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed') END AS reserved_places, CASE WHEN $8 THEN EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.specialist_id=v.specialist_id AND a.offer_id<>v.id AND a.status='confirmed' AND bookings.times_conflict(a.starts_at,a.ends_at,v.starts_at::timestamptz,v.ends_at::timestamptz)) END AS blocked_by_booking FROM bookings.offer_details v WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=to_char(bookings.valid_date($4),'YYYY-MM-DD') OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR state<>'withdrawn' OR EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed')) ORDER BY id LIMIT $7";
+const OFFER_PROJECTION: &str = "SELECT v.*,
+   CASE WHEN $8 THEN (
+     SELECT count(*)
+     FROM bookings.appointments a
+     WHERE a.tenant_id = v.tenant_id
+       AND a.offer_id = v.id
+       AND a.status = 'confirmed'
+   ) END AS reserved_places,
+   CASE WHEN $8 THEN EXISTS(
+     SELECT 1
+     FROM bookings.appointments a
+     WHERE a.tenant_id = v.tenant_id
+       AND a.specialist_id = v.specialist_id
+       AND a.offer_id <> v.id
+       AND a.status = 'confirmed'
+       AND bookings.times_conflict(
+         a.starts_at, a.ends_at, v.starts_at::timestamptz, v.ends_at::timestamptz
+       )
+   ) END AS blocked_by_booking
+ FROM bookings.offer_details v
+ WHERE tenant_id = $1
+   AND location_id = $2
+   AND specialist_id = $3
+   AND (date = to_char(bookings.valid_date($4), 'YYYY-MM-DD') OR date IS NULL)
+   AND ($5::uuid IS NULL OR id > $5)
+   AND ($6 OR state <> 'withdrawn' OR EXISTS(SELECT 1
+         FROM bookings.appointments a
+         WHERE a.tenant_id = v.tenant_id
+           AND a.offer_id = v.id
+           AND a.status = 'confirmed'))
+ ORDER BY id
+ LIMIT $7";
 
 pub async fn specialists(
     pool: &impl TenantPool,
@@ -347,8 +395,21 @@ pub async fn specialists(
 ) -> Result<Vec<Specialist>, BookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     location_zone(&mut s, location, false).await?;
-    let rows=sqlx::query_as("SELECT id,name,description,enabled,version FROM bookings.specialists WHERE tenant_id=$1 AND location_id=$2 AND ($3::uuid IS NULL OR id>$3) ORDER BY id LIMIT $4")
-        .bind(tenant).bind(location).bind(after).bind(limit.clamp(1,100)+1).fetch_all(s.connection()).await?;
+    let rows = sqlx::query_as(
+        "SELECT id, name, description, enabled, version
+         FROM bookings.specialists
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND ($3::uuid IS NULL OR id > $3)
+         ORDER BY id
+         LIMIT $4",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(after)
+    .bind(limit.clamp(1, 100) + 1)
+    .fetch_all(s.connection())
+    .await?;
     s.commit().await?;
     Ok(rows)
 }
@@ -362,8 +423,21 @@ pub async fn presets(
 ) -> Result<Vec<Preset>, BookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     location_zone(&mut s, location, false).await?;
-    let rows=sqlx::query_as("SELECT id,name,duration_minutes,enabled,version FROM bookings.presets WHERE tenant_id=$1 AND location_id=$2 AND ($3::uuid IS NULL OR id>$3) ORDER BY id LIMIT $4")
-        .bind(tenant).bind(location).bind(after).bind(limit.clamp(1,100)+1).fetch_all(s.connection()).await?;
+    let rows = sqlx::query_as(
+        "SELECT id, name, duration_minutes, enabled, version
+         FROM bookings.presets
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND ($3::uuid IS NULL OR id > $3)
+         ORDER BY id
+         LIMIT $4",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(after)
+    .bind(limit.clamp(1, 100) + 1)
+    .fetch_all(s.connection())
+    .await?;
     s.commit().await?;
     Ok(rows)
 }
@@ -383,8 +457,18 @@ pub async fn offers(
 ) -> Result<Vec<Offer>, BookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
     location_zone(&mut s, location, false).await?;
-    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bookings.specialists WHERE tenant_id=$1 AND location_id=$2 AND id=$3)")
-        .bind(tenant).bind(location).bind(page.specialist).fetch_one(s.connection()).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1
+             FROM bookings.specialists
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND id = $3)",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(page.specialist)
+    .fetch_one(s.connection())
+    .await?;
     if !exists {
         return Err(BookingError::NotFound);
     }
@@ -426,11 +510,35 @@ pub async fn execute(
         .execute(s.connection())
         .await?;
     let zone = location_zone(&mut s, location, true).await?;
-    let claimed=sqlx::query("INSERT INTO bookings.commands(tenant_id,location_id,actor_id,idempotency_key,command) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING")
-        .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&command)).execute(s.connection()).await?.rows_affected();
+    let claimed = sqlx::query(
+        "INSERT INTO bookings.commands(tenant_id, location_id, actor_id, idempotency_key, command)
+         VALUES($1, $2, $3, $4, $5)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(user)
+    .bind(key)
+    .bind(Json(&command))
+    .execute(s.connection())
+    .await?
+    .rows_affected();
     if claimed == 0 {
-        let (Json(previous),Json(result)):(Json<BookingCommand>,Json<BookingReceipt>)=sqlx::query_as("SELECT command,result FROM bookings.commands WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
-            .bind(tenant).bind(location).bind(user).bind(key).fetch_one(s.connection()).await?;
+        let (Json(previous), Json(result)): (Json<BookingCommand>, Json<BookingReceipt>) =
+            sqlx::query_as(
+                "SELECT command, result
+                 FROM bookings.commands
+                 WHERE tenant_id = $1
+                   AND location_id = $2
+                   AND actor_id = $3
+                   AND idempotency_key = $4",
+            )
+            .bind(tenant)
+            .bind(location)
+            .bind(user)
+            .bind(key)
+            .fetch_one(s.connection())
+            .await?;
         if previous != command {
             return Err(BookingError::IdempotencyConflict);
         }
@@ -474,13 +582,42 @@ pub async fn execute(
             enabled,
             expected_version,
         } => {
-            let row=if *expected_version==0 {
-                sqlx::query_as("INSERT INTO bookings.specialists(tenant_id,location_id,id,name,description,enabled) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id,name,description,enabled,version")
-                    .bind(tenant).bind(location).bind(id).bind(name).bind(description).bind(enabled).fetch_optional(s.connection()).await?
+            let row = if *expected_version == 0 {
+                sqlx::query_as(
+                    "INSERT INTO bookings.specialists(tenant_id, location_id, id, name, description, enabled)
+                     VALUES($1, $2, $3, $4, $5, $6)
+                     ON CONFLICT DO NOTHING
+                     RETURNING id, name, description, enabled, version",
+                )
+                .bind(tenant)
+                .bind(location)
+                .bind(id)
+                .bind(name)
+                .bind(description)
+                .bind(enabled)
+                .fetch_optional(s.connection())
+                .await?
             } else {
-                sqlx::query_as("UPDATE bookings.specialists SET name=$4,description=$5,enabled=$6,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND id=$3 AND version=$7 RETURNING id,name,description,enabled,version")
-                    .bind(tenant).bind(location).bind(id).bind(name).bind(description).bind(enabled).bind(expected_version).fetch_optional(s.connection()).await?
-            }.ok_or(CoreError::VersionConflict)?;
+                sqlx::query_as(
+                    "UPDATE bookings.specialists
+                     SET name = $4, description = $5, enabled = $6, version = version+1
+                     WHERE tenant_id = $1
+                       AND location_id = $2
+                       AND id = $3
+                       AND version = $7
+                     RETURNING id, name, description, enabled, version",
+                )
+                .bind(tenant)
+                .bind(location)
+                .bind(id)
+                .bind(name)
+                .bind(description)
+                .bind(enabled)
+                .bind(expected_version)
+                .fetch_optional(s.connection())
+                .await?
+            }
+            .ok_or(CoreError::VersionConflict)?;
             BookingResource::Specialist(row)
         }
         BookingCommand::SavePreset {
@@ -490,13 +627,42 @@ pub async fn execute(
             enabled,
             expected_version,
         } => {
-            let row=if *expected_version==0 {
-                sqlx::query_as("INSERT INTO bookings.presets(tenant_id,location_id,id,name,duration_minutes,enabled) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id,name,duration_minutes,enabled,version")
-                    .bind(tenant).bind(location).bind(id).bind(name).bind(duration_minutes).bind(enabled).fetch_optional(s.connection()).await?
+            let row = if *expected_version == 0 {
+                sqlx::query_as(
+                    "INSERT INTO bookings.presets(tenant_id, location_id, id, name, duration_minutes, enabled)
+                     VALUES($1, $2, $3, $4, $5, $6)
+                     ON CONFLICT DO NOTHING
+                     RETURNING id, name, duration_minutes, enabled, version",
+                )
+                .bind(tenant)
+                .bind(location)
+                .bind(id)
+                .bind(name)
+                .bind(duration_minutes)
+                .bind(enabled)
+                .fetch_optional(s.connection())
+                .await?
             } else {
-                sqlx::query_as("UPDATE bookings.presets SET name=$4,duration_minutes=$5,enabled=$6,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND id=$3 AND version=$7 RETURNING id,name,duration_minutes,enabled,version")
-                    .bind(tenant).bind(location).bind(id).bind(name).bind(duration_minutes).bind(enabled).bind(expected_version).fetch_optional(s.connection()).await?
-            }.ok_or(CoreError::VersionConflict)?;
+                sqlx::query_as(
+                    "UPDATE bookings.presets
+                     SET name = $4, duration_minutes = $5, enabled = $6, version = version+1
+                     WHERE tenant_id = $1
+                       AND location_id = $2
+                       AND id = $3
+                       AND version = $7
+                     RETURNING id, name, duration_minutes, enabled, version",
+                )
+                .bind(tenant)
+                .bind(location)
+                .bind(id)
+                .bind(name)
+                .bind(duration_minutes)
+                .bind(enabled)
+                .bind(expected_version)
+                .fetch_optional(s.connection())
+                .await?
+            }
+            .ok_or(CoreError::VersionConflict)?;
             BookingResource::Preset(row)
         }
         BookingCommand::SaveOffer { .. } => {
@@ -504,8 +670,21 @@ pub async fn execute(
         }
     };
     let receipt = BookingReceipt { resource };
-    sqlx::query("UPDATE bookings.commands SET result=$5 WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
-        .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&receipt)).execute(s.connection()).await?;
+    sqlx::query(
+        "UPDATE bookings.commands
+         SET result = $5
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND actor_id = $3
+           AND idempotency_key = $4",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(user)
+    .bind(key)
+    .bind(Json(&receipt))
+    .execute(s.connection())
+    .await?;
     s.commit().await?;
     Ok(receipt)
 }
@@ -530,14 +709,38 @@ async fn save_offer(
         return Err(BookingError::Invalid);
     };
     let tenant = s.tenant_id();
-    let (enabled,generation):(bool,i64)=sqlx::query_as("SELECT enabled,schedule_version FROM bookings.specialists WHERE tenant_id=$1 AND location_id=$2 AND id=$3 FOR UPDATE")
-        .bind(tenant).bind(location).bind(specialist_id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+    let (enabled, generation): (bool, i64) = sqlx::query_as(
+        "SELECT enabled, schedule_version
+         FROM bookings.specialists
+         WHERE tenant_id = $1
+           AND location_id = $2
+           AND id = $3 FOR UPDATE",
+    )
+    .bind(tenant)
+    .bind(location)
+    .bind(specialist_id)
+    .fetch_optional(s.connection())
+    .await?
+    .ok_or(BookingError::NotFound)?;
     if !enabled && *state == OfferState::Ready {
         return Err(BookingError::SpecialistDisabled);
     }
     let zone = if *expected_version > 0 {
-        let (zone,version):(String,i32)=sqlx::query_as("SELECT time_zone,version FROM bookings.offers WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4")
-            .bind(tenant).bind(location).bind(specialist_id).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+        let (zone, version): (String, i32) = sqlx::query_as(
+            "SELECT time_zone, version
+             FROM bookings.offers
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4",
+        )
+        .bind(tenant)
+        .bind(location)
+        .bind(specialist_id)
+        .bind(id)
+        .fetch_optional(s.connection())
+        .await?
+        .ok_or(BookingError::NotFound)?;
         if version != *expected_version {
             return Err(CoreError::VersionConflict.into());
         }
@@ -567,8 +770,27 @@ async fn save_offer(
     let start_utc = start_instant.map(|v| v.to_string());
     let end_utc = end_instant.map(|v| v.to_string());
     if *state != OfferState::Withdrawn && start_utc.is_some() {
-        let conflicts:Vec<(Json<Conflict>,i64)>=sqlx::query_as("SELECT jsonb_build_object('id',o.id,'title',o.title,'starts_local',v.starts_local,'ends_local',v.ends_local,'time_zone',v.time_zone),count(*) OVER() FROM bookings.offers o JOIN bookings.offer_details v ON v.tenant_id=o.tenant_id AND v.id=o.id WHERE o.tenant_id=$1 AND o.specialist_id=$2 AND o.id<>$3 AND o.state<>'withdrawn' AND bookings.times_conflict(o.starts_at,o.ends_at,$4::text::timestamptz,$5::text::timestamptz) ORDER BY o.starts_at,o.id LIMIT 20")
-            .bind(tenant).bind(specialist_id).bind(id).bind(&start_utc).bind(&end_utc).fetch_all(s.connection()).await?;
+        let conflicts:Vec<(Json<Conflict>,i64)>=sqlx::query_as(
+            "SELECT jsonb_build_object('id', o.id, 'title', o.title, 'starts_local', v.starts_local,
+                 'ends_local', v.ends_local, 'time_zone', v.time_zone), count(*) OVER()
+             FROM bookings.offers o
+             JOIN bookings.offer_details v ON v.tenant_id = o.tenant_id
+               AND v.id = o.id
+             WHERE o.tenant_id = $1
+               AND o.specialist_id = $2
+               AND o.id <> $3
+               AND o.state <> 'withdrawn'
+               AND bookings.times_conflict(o.starts_at, o.ends_at, $4::text::timestamptz, $5::text::timestamptz)
+             ORDER BY o.starts_at, o.id
+             LIMIT 20",
+        )
+            .bind(tenant)
+        .bind(specialist_id)
+        .bind(id)
+        .bind(&start_utc)
+        .bind(&end_utc)
+        .fetch_all(s.connection())
+        .await?;
         if !conflicts.is_empty() {
             let mut payload = serde_json::to_value(command).map_err(|_| BookingError::Invalid)?;
             payload
@@ -587,24 +809,84 @@ async fn save_offer(
         }
     }
     let changed = if *expected_version == 0 {
-        sqlx::query("INSERT INTO bookings.offers(tenant_id,location_id,specialist_id,id,title,mode,local_date,starts_local,ends_local,starts_at,ends_at,time_zone,places,state) VALUES($1,$2,$3,$4,$5,$6,coalesce(bookings.valid_date($7),$8::text::timestamp::date),$8::text::timestamp,$9::text::timestamp,$10::text::timestamptz,$11::text::timestamptz,$12,$13,$14) ON CONFLICT DO NOTHING")
-            .bind(tenant).bind(location).bind(specialist_id).bind(id).bind(title).bind(mode).bind(date).bind(start).bind(end).bind(&start_utc).bind(&end_utc).bind(&zone).bind(places).bind(state).execute(s.connection()).await?.rows_affected()
+        sqlx::query(
+            "INSERT INTO bookings.offers(tenant_id, location_id, specialist_id, id, title, mode,
+                 local_date, starts_local, ends_local, starts_at, ends_at, time_zone, places, state)
+             VALUES($1, $2, $3, $4, $5, $6, coalesce(bookings.valid_date($7), $8::text::timestamp::date),
+                 $8::text::timestamp, $9::text::timestamp, $10::text::timestamptz, $11::text::timestamptz,
+                 $12, $13, $14)
+             ON CONFLICT DO NOTHING",
+        )
+            .bind(tenant)
+        .bind(location)
+        .bind(specialist_id)
+        .bind(id)
+        .bind(title)
+        .bind(mode)
+        .bind(date)
+        .bind(start)
+        .bind(end)
+        .bind(&start_utc)
+        .bind(&end_utc)
+        .bind(&zone)
+        .bind(places)
+        .bind(state)
+        .execute(s.connection())
+        .await?
+        .rows_affected()
     } else {
-        sqlx::query("UPDATE bookings.offers SET title=$5,mode=$6,local_date=coalesce(bookings.valid_date($7),$8::text::timestamp::date),starts_local=$8::text::timestamp,ends_local=$9::text::timestamp,starts_at=$10::text::timestamptz,ends_at=$11::text::timestamptz,places=$12,state=$13,version=version+1 WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND id=$4 AND version=$14")
-            .bind(tenant).bind(location).bind(specialist_id).bind(id).bind(title).bind(mode).bind(date).bind(start).bind(end).bind(&start_utc).bind(&end_utc).bind(places).bind(state).bind(expected_version).execute(s.connection()).await?.rows_affected()
+        sqlx::query(
+            "UPDATE bookings.offers
+             SET title = $5, mode = $6, local_date = coalesce(bookings.valid_date($7), $8::text::timestamp::date),
+             starts_local = $8::text::timestamp, ends_local = $9::text::timestamp, starts_at = $10::text::timestamptz,
+             ends_at = $11::text::timestamptz, places = $12, state = $13, version = version+1
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND specialist_id = $3
+               AND id = $4
+               AND version = $14",
+        )
+            .bind(tenant)
+        .bind(location)
+        .bind(specialist_id)
+        .bind(id)
+        .bind(title)
+        .bind(mode)
+        .bind(date)
+        .bind(start)
+        .bind(end)
+        .bind(&start_utc)
+        .bind(&end_utc)
+        .bind(places)
+        .bind(state)
+        .bind(expected_version)
+        .execute(s.connection())
+        .await?
+        .rows_affected()
     };
     if changed != 1 {
         return Err(CoreError::VersionConflict.into());
     }
-    sqlx::query("UPDATE bookings.specialists SET schedule_version=schedule_version+1 WHERE tenant_id=$1 AND id=$2")
-        .bind(tenant).bind(specialist_id).execute(s.connection()).await?;
-    Ok(
-        sqlx::query_as("SELECT *,NULL::bigint AS reserved_places,NULL::boolean AS blocked_by_booking FROM bookings.offer_details WHERE tenant_id=$1 AND id=$2")
-            .bind(tenant)
-            .bind(id)
-            .fetch_one(s.connection())
-            .await?,
+    sqlx::query(
+        "UPDATE bookings.specialists
+         SET schedule_version = schedule_version+1
+         WHERE tenant_id = $1
+           AND id = $2",
     )
+    .bind(tenant)
+    .bind(specialist_id)
+    .execute(s.connection())
+    .await?;
+    Ok(sqlx::query_as(
+        "SELECT *, NULL::bigint AS reserved_places, NULL::boolean AS blocked_by_booking
+         FROM bookings.offer_details
+         WHERE tenant_id = $1
+           AND id = $2",
+    )
+    .bind(tenant)
+    .bind(id)
+    .fetch_one(s.connection())
+    .await?)
 }
 
 #[derive(Serialize, ToSchema)]
@@ -632,7 +914,11 @@ pub async fn suggest_time(
     let current = location_zone(&mut s, location, false).await?;
     let zone = if let Some(id) = request.offer_id {
         sqlx::query_scalar(
-            "SELECT time_zone FROM bookings.offers WHERE tenant_id=$1 AND location_id=$2 AND id=$3",
+            "SELECT time_zone
+             FROM bookings.offers
+             WHERE tenant_id = $1
+               AND location_id = $2
+               AND id = $3",
         )
         .bind(tenant)
         .bind(location)

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use super::bounded;
 
 use axum::{
     Json, Router,
@@ -54,12 +54,13 @@ pub(super) async fn settings(
 ) -> Result<Json<TipSettings>, ApiError> {
     tips_http::enabled(&state)?;
     let Path((tenant, queue)) = path.map_err(|_| ApiError::bad_request())?;
-    let result = tokio::time::timeout(
-        Duration::from_secs(5),
-        queue_tips::settings(&state.pool, signed.user_id, tenant, queue),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable())??;
+    let result = bounded(queue_tips::settings(
+        &state.pool,
+        signed.user_id,
+        tenant,
+        queue,
+    ))
+    .await?;
     Ok(Json(result))
 }
 
@@ -75,18 +76,14 @@ pub(super) async fn configure(
     tips_http::enabled(&state)?;
     let Path((tenant, queue)) = path.map_err(|_| ApiError::bad_request())?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
-    let result = tokio::time::timeout(
-        Duration::from_secs(5),
-        queue_tips::configure(
-            &state.pool,
-            signed.user_id,
-            tenant,
-            queue,
-            body.recipient_id,
-            body.expected_version,
-        ),
-    )
-    .await
-    .map_err(|_| ApiError::unavailable())??;
+    let result = bounded(queue_tips::configure(
+        &state.pool,
+        signed.user_id,
+        tenant,
+        queue,
+        body.recipient_id,
+        body.expected_version,
+    ))
+    .await?;
     Ok(Json(result))
 }

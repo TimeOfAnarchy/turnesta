@@ -244,10 +244,36 @@ pub(super) struct OverlapResponse {
 async fn bounded<T>(
     future: impl std::future::Future<Output = Result<T, BookingError>>,
 ) -> Result<T, BookingHttpError> {
-    tokio::time::timeout(std::time::Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
+    super::operation_timeout(future).await?.map_err(Into::into)
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bounded_preserves_overlap_details() {
+        let details = ConflictNotice {
+            token: "review-token".into(),
+            total: 1,
+            conflicts: vec![],
+        };
+        let result = bounded(async { Err::<(), _>(BookingError::Overlap(details)) }).await;
+        let response = match result {
+            Err(error) => error.into_response(),
+            Ok(()) => panic!("expected overlap"),
+        };
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["code"], "booking_overlap");
+        assert_eq!(
+            body["details"],
+            serde_json::json!({"token":"review-token", "total":1,"conflicts":[]})
+        );
+    }
 }
 
 #[utoipa::path(post,path="/api/organizations/{tenant_id}/locations/{location_id}/bookings/batch-preview",tag="bookings",security(("sessionCookie"=[])),params(("tenant_id"=Uuid,Path),("location_id"=Uuid,Path)),request_body=crate::bookings_batch::BatchRequest,responses((status=200,body=crate::bookings_batch::BatchPreview)))]

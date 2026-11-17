@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use super::bounded;
 
 use askama::Template;
 use axum::{
@@ -131,15 +131,13 @@ impl From<PublicQueueError> for ApiError {
                 "queue_closed",
                 "Public issuance is paused",
             ),
-            PublicQueueError::RateLimit => Self::new(
-                StatusCode::TOO_MANY_REQUESTS,
-                "queue_rate_limit",
-                "Please retry later",
-            ),
-            PublicQueueError::Capacity => Self::new(
-                StatusCode::TOO_MANY_REQUESTS,
+            PublicQueueError::RateLimit => {
+                Self::rate_limited("queue_rate_limit", "Please retry later", "queue_rate_limit")
+            }
+            PublicQueueError::Capacity => Self::rate_limited(
                 "queue_capacity",
                 "Queue waiting capacity reached",
+                "queue_capacity",
             ),
             PublicQueueError::ServiceUnavailable => Self::new(
                 StatusCode::CONFLICT,
@@ -150,23 +148,9 @@ impl From<PublicQueueError> for ApiError {
     }
 }
 
-async fn bounded<T>(
-    future: impl Future<Output = Result<T, PublicQueueError>>,
-) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
-}
-
 pub(super) fn permit(state: &AppState) -> Result<SemaphorePermit<'_>, ApiError> {
     state.public_gate.try_acquire().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too_many_requests",
-            "Please retry later",
-        )
-        .with_limit_reason("public_capacity")
+        ApiError::rate_limited("too_many_requests", "Please retry later", "public_capacity")
     })
 }
 
@@ -346,11 +330,7 @@ async fn display_page(
 ) -> Result<(StatusCode, Html<String>), ApiError> {
     let _permit = permit(&state)?;
     let Path(slug) = path.map_err(|_| ApiError::bad_request())?;
-    let snapshot = match tokio::time::timeout(
-        Duration::from_secs(5),
-        queue_public::display(&state.pool, slug, 0),
-    )
-    .await
+    let snapshot = match super::operation_timeout(queue_public::display(&state.pool, slug, 0)).await
     {
         Ok(Ok(value)) => Some(value),
         Ok(Err(PublicQueueError::NotFound)) => None,

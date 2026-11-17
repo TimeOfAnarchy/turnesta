@@ -44,20 +44,26 @@ pub enum PublicBookingError {
 }
 impl From<sqlx::Error> for PublicBookingError {
     fn from(error: sqlx::Error) -> Self {
-        match error.as_database_error().and_then(|e| e.code()).as_deref() {
-            Some("B2201") => Self::NotFound,
-            Some("B2202") => Self::Closed,
-            Some("B2203") => Self::RateLimit,
-            Some("B2208") => Self::PhoneLimit,
-            Some("B2204" | "B2001") => Self::Invalid,
-            Some("B2205") => Self::Changed,
-            Some("B2206") => Self::IdempotencyConflict,
-            Some("B2207") => Self::Expired,
-            Some("B2103") => Self::Unavailable,
-            Some("B2104") => Self::Full,
-            Some("B2105") => Self::Busy,
-            _ => Self::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| {
+                Some(match code {
+                    "B2201" => Self::NotFound,
+                    "B2202" => Self::Closed,
+                    "B2203" => Self::RateLimit,
+                    "B2208" => Self::PhoneLimit,
+                    "B2204" | "B2001" => Self::Invalid,
+                    "B2205" => Self::Changed,
+                    "B2206" => Self::IdempotencyConflict,
+                    "B2207" => Self::Expired,
+                    "B2103" => Self::Unavailable,
+                    "B2104" => Self::Full,
+                    "B2105" => Self::Busy,
+                    _ => return None,
+                })
+            },
+            Self::Database,
+        )
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -171,7 +177,7 @@ pub async fn settings(
     location: LocationId,
 ) -> Result<BookingPublicSettings, PublicBookingError> {
     let mut s = TenantSession::begin(pool, user, tenant).await?;
-    check_location(&mut s, location).await?;
+    crate::core::check_location(&mut s, location, PublicBookingError::NotFound).await?;
     let row: Option<SettingsRow> = sqlx::query_as("SELECT public_slug,enabled,privacy_url,consent_text,consent_version,form,version FROM bookings.public_settings WHERE tenant_id=$1 AND location_id=$2").bind(tenant).bind(location).fetch_optional(s.connection()).await?;
     s.commit().await?;
     Ok(row.map_or_else(
@@ -187,24 +193,6 @@ pub async fn settings(
         Into::into,
     ))
 }
-async fn check_location(
-    s: &mut TenantSession,
-    location: LocationId,
-) -> Result<(), PublicBookingError> {
-    let tenant = s.tenant_id();
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM core.locations WHERE tenant_id=$1 AND id=$2)",
-    )
-    .bind(tenant)
-    .bind(location)
-    .fetch_one(s.connection())
-    .await?;
-    if exists {
-        Ok(())
-    } else {
-        Err(PublicBookingError::NotFound)
-    }
-}
 pub async fn configure(
     pool: &impl TenantPool,
     user: UserId,
@@ -217,7 +205,7 @@ pub async fn configure(
     if !s.role().can_manage_locations() {
         return Err(CoreError::Forbidden.into());
     }
-    check_location(&mut s, location).await?;
+    crate::core::check_location(&mut s, location, PublicBookingError::NotFound).await?;
     if version < 0 {
         return Err(PublicBookingError::Invalid);
     }

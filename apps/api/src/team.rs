@@ -36,18 +36,24 @@ pub enum TeamError {
 }
 impl From<sqlx::Error> for TeamError {
     fn from(error: sqlx::Error) -> Self {
-        match error.as_database_error().and_then(|e| e.code()).as_deref() {
-            Some("P2401") => Self::EmailUnverified,
-            Some("M2201") => Self::Core(CoreError::Forbidden),
-            Some("M2202") => Self::Idempotency,
-            Some("M2203") => Self::NotFound,
-            Some("M2204") => Self::RateLimited,
-            Some("M2205") => Self::Invalid,
-            Some("M2206") => Self::Exists,
-            Some("M2207") => Self::OwnerProtected,
-            Some("M2208") => Self::Version,
-            _ => Self::Database(error),
-        }
+        crate::database::map_sqlstate(
+            error,
+            |code| {
+                Some(match code {
+                    "P2401" => Self::EmailUnverified,
+                    "M2201" => Self::Core(CoreError::Forbidden),
+                    "M2202" => Self::Idempotency,
+                    "M2203" => Self::NotFound,
+                    "M2204" => Self::RateLimited,
+                    "M2205" => Self::Invalid,
+                    "M2206" => Self::Exists,
+                    "M2207" => Self::OwnerProtected,
+                    "M2208" => Self::Version,
+                    _ => return None,
+                })
+            },
+            Self::Database,
+        )
     }
 }
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]

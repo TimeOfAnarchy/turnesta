@@ -97,6 +97,14 @@ impl ApiError {
         self.limit_reason = crate::metrics::LimitReason(reason);
         self
     }
+
+    pub(super) fn rate_limited(
+        code: &'static str,
+        message: &'static str,
+        reason: &'static str,
+    ) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, code, message).with_limit_reason(reason)
+    }
     pub(super) fn unauthorized() -> Self {
         Self::new(
             StatusCode::UNAUTHORIZED,
@@ -397,14 +405,10 @@ pub(super) async fn login(
     body: Result<Json<LoginRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     check_origin(&headers, &state.auth)?;
-    let _permit = state.login_gate.try_acquire().map_err(|_| {
-        ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "busy",
-            "Please retry shortly",
-        )
-        .with_limit_reason("login_capacity")
-    })?;
+    let _permit = state
+        .login_gate
+        .try_acquire()
+        .map_err(|_| ApiError::rate_limited("busy", "Please retry shortly", "login_capacity"))?;
     let Json(body) = body.map_err(|_| ApiError::bad_request())?;
     let code = SecretToken::parse(&body.code).map_err(|_| ApiError::unauthorized())?;
     let previous = cookie_token(&headers, state.auth.session_cookie_name())?;
@@ -811,6 +815,142 @@ mod tests {
 
     fn db_error(code: &'static str, message: &'static str) -> sqlx::Error {
         sqlx::Error::Database(Box::new(DatabaseFailure { code, message }))
+    }
+
+    async fn error_json(response: Response, status: StatusCode) -> serde_json::Value {
+        assert_eq!(response.status(), status);
+        let bytes = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn sqlstate_mapping_keeps_domain_specific_http_errors() {
+        use super::super::bookings_http::BookingHttpError;
+        use crate::{bookings::BookingError, bookings_public::PublicBookingError, tips::TipsError};
+
+        for (state, code, status) in [
+            ("B2001", "invalid_booking", StatusCode::BAD_REQUEST),
+            ("B2107", "version_conflict", StatusCode::CONFLICT),
+            ("R1401", "idempotency_conflict", StatusCode::CONFLICT),
+            ("23503", "internal", StatusCode::INTERNAL_SERVER_ERROR),
+            ("42501", "internal", StatusCode::INTERNAL_SERVER_ERROR),
+            (
+                "57014",
+                "service_unavailable",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+        ] {
+            let response = BookingHttpError::from(BookingError::from(db_error(state, "private")))
+                .into_response();
+            assert_eq!(error_json(response, status).await["code"], code, "{state}");
+        }
+        for (state, code, message, status) in [
+            (
+                "23503",
+                "not_found",
+                "Tips record not found",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "42501",
+                "forbidden",
+                "Request not permitted",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "ZZ999",
+                "internal",
+                "Internal server error",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ] {
+            let response =
+                ApiError::from(TipsError::from(db_error(state, "private"))).into_response();
+            assert_eq!(
+                error_json(response, status).await,
+                serde_json::json!({ "code": code, "message": message })
+            );
+        }
+        let response =
+            ApiError::from(PublicBookingError::from(db_error("B2208", "private"))).into_response();
+        assert_eq!(
+            response
+                .extensions()
+                .get::<crate::metrics::LimitReason>()
+                .unwrap()
+                .0,
+            "booking_phone_limit"
+        );
+        assert_eq!(
+            error_json(response, StatusCode::TOO_MANY_REQUESTS).await,
+            serde_json::json!({"code":"booking_phone_limit", "message":"Too many upcoming bookings for this phone number"})
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_reason_does_not_change_the_public_error_body() {
+        let response = ApiError::rate_limited("busy", "Please retry shortly", "login_capacity")
+            .into_response();
+        assert_eq!(
+            response
+                .extensions()
+                .get::<crate::metrics::LimitReason>()
+                .unwrap()
+                .0,
+            "login_capacity"
+        );
+        assert_eq!(
+            error_json(response, StatusCode::TOO_MANY_REQUESTS).await,
+            serde_json::json!({"code":"busy", "message":"Please retry shortly"})
+        );
+        assert!(
+            ApiError::forbidden()
+                .into_response()
+                .extensions()
+                .get::<crate::metrics::LimitReason>()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_keeps_success_and_domain_errors_and_cancels_expired_work() {
+        use super::super::bounded;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        assert_eq!(
+            bounded(async { Ok::<_, sqlx::Error>(42) }).await.unwrap(),
+            42
+        );
+        let error = bounded(async { Err::<(), _>(CoreError::Forbidden) })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error_json(error.into_response(), StatusCode::FORBIDDEN).await["code"],
+            "forbidden"
+        );
+
+        struct Cancelled(Arc<AtomicBool>);
+        impl Drop for Cancelled {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let guard = Cancelled(cancelled.clone());
+        let started = std::time::Instant::now();
+        let error = bounded(async move {
+            let _guard = guard;
+            std::future::pending::<Result<(), sqlx::Error>>().await
+        })
+        .await
+        .unwrap_err();
+        assert!(started.elapsed() >= std::time::Duration::from_secs(5));
+        assert!(cancelled.load(Ordering::SeqCst));
+        assert_eq!(
+            error_json(error.into_response(), StatusCode::SERVICE_UNAVAILABLE).await,
+            serde_json::json!({"code":"service_unavailable", "message":"Service temporarily unavailable"})
+        );
     }
 
     #[test]

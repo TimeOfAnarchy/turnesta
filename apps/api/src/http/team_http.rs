@@ -1,3 +1,4 @@
+use super::bounded;
 use super::{
     AppState,
     api::{ApiError, SignedIn, check_mutation, single_header},
@@ -16,7 +17,6 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 
 pub(super) fn routes() -> Router<AppState> {
@@ -53,10 +53,10 @@ impl From<TeamError> for ApiError {
                 "team_member_unavailable",
                 "Member or email unavailable",
             ),
-            TeamError::RateLimited => Self::new(
-                StatusCode::TOO_MANY_REQUESTS,
+            TeamError::RateLimited => Self::rate_limited(
                 "team_rate_limited",
                 "Wait before requesting another invitation",
+                "team_rate_limited",
             ),
             TeamError::Exists => Self::new(
                 StatusCode::CONFLICT,
@@ -75,12 +75,6 @@ impl From<TeamError> for ApiError {
             ),
         }
     }
-}
-async fn bounded<T>(future: impl Future<Output = Result<T, TeamError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

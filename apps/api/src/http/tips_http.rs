@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use super::bounded;
 
 use askama::Template;
 use axum::{
@@ -117,13 +117,6 @@ pub(super) fn enabled(state: &AppState) -> Result<(), ApiError> {
         ))
     }
 }
-async fn bounded<T>(future: impl Future<Output = Result<T, TipsError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
-}
-
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CreateRecipientRequest {

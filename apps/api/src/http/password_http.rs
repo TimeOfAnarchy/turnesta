@@ -1,3 +1,4 @@
+use super::bounded as db;
 use axum::{
     Json, Router,
     extract::{
@@ -9,7 +10,6 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 use zeroize::Zeroizing;
 
@@ -74,12 +74,11 @@ impl From<PasswordError> for ApiError {
     }
 }
 fn rate_limited(reason: &'static str) -> ApiError {
-    ApiError::new(
-        StatusCode::TOO_MANY_REQUESTS,
+    ApiError::rate_limited(
         "password_rate_limited",
         "Please wait before trying again",
+        reason,
     )
-    .with_limit_reason(reason)
 }
 fn invalid_login() -> ApiError {
     ApiError::new(
@@ -87,12 +86,6 @@ fn invalid_login() -> ApiError {
         "invalid_credentials",
         "Email or password is incorrect",
     )
-}
-async fn db<T>(future: impl Future<Output = Result<T, sqlx::Error>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 fn client(state: &AppState, headers: &HeaderMap) -> String {
     state
@@ -446,18 +439,24 @@ pub(super) async fn create_account(
         .bind(hash.as_str())
         .fetch_one(transaction.connection())
         .await
-        .map_err(
-            |e| match e.as_database_error().and_then(|e| e.code()).as_deref() {
-                Some("P2302" | "23505") => ApiError::new(
-                    StatusCode::CONFLICT,
-                    "email_in_use",
-                    "Account already exists; password was not changed",
-                ),
-                Some("P2303") => rate_limited("password_account_budget"),
-                Some("M2201") => ApiError::forbidden(),
-                _ => e.into(),
-            },
-        )?;
+        .map_err(|error| {
+            crate::database::map_sqlstate(
+                error,
+                |code| {
+                    Some(match code {
+                        "P2302" | "23505" => ApiError::new(
+                            StatusCode::CONFLICT,
+                            "email_in_use",
+                            "Account already exists; password was not changed",
+                        ),
+                        "P2303" => rate_limited("password_account_budget"),
+                        "M2201" => ApiError::forbidden(),
+                        _ => return None,
+                    })
+                },
+                ApiError::from,
+            )
+        })?;
     transaction.commit().await?;
     Ok((
         StatusCode::CREATED,

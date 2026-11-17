@@ -3204,6 +3204,74 @@ fn public_config(enabled: bool, form: BookingForm) -> PublicBookingConfig {
         form,
     }
 }
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn booking_location_checks_reject_missing_and_foreign_points_before_writes() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let foreign = Fixture::new("Europe/Moscow").await;
+    for point in [LocationId::new(), foreign.point] {
+        assert!(matches!(
+            public_bookings::settings(&f.runtime, f.owner, f.tenant, point).await,
+            Err(PubError::NotFound)
+        ));
+        assert!(matches!(
+            public_bookings::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                point,
+                public_config(false, BookingForm::default()),
+                0
+            )
+            .await,
+            Err(PubError::NotFound)
+        ));
+        assert!(matches!(
+            widget::settings(&f.runtime, f.owner, f.tenant, point).await,
+            Err(WidgetError::NotFound)
+        ));
+        assert!(matches!(
+            widget::configure(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                point,
+                "http://127.0.0.1:8080",
+                WidgetConfigure {
+                    allowed_origins: vec![],
+                    expected_version: 0
+                }
+            )
+            .await,
+            Err(WidgetError::NotFound)
+        ));
+        let key = Uuid::new_v4();
+        assert!(matches!(
+            appointments::execute(
+                &f.runtime,
+                f.owner,
+                f.tenant,
+                point,
+                key,
+                record(Uuid::new_v4(), Uuid::new_v4(), 1, "Client")
+            )
+            .await,
+            Err(BookingError::NotFound)
+        ));
+        let claimed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM bookings.appointment_commands WHERE idempotency_key=$1)",
+        )
+        .bind(key)
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+        assert!(!claimed);
+    }
+    foreign.close().await;
+    f.close().await;
+}
+
 fn public_input(offer: &bookings::Offer) -> PublicBookingInput {
     PublicBookingInput {
         consent: true,

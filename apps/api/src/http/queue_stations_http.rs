@@ -1,10 +1,10 @@
+use super::bounded;
 use super::{
     AppState,
     api::{ApiError, SignedIn, check_mutation},
 };
 use crate::{
     core::{Name, TenantId},
-    queue::QueueError,
     queue_stations::{self, Station, StationDraft},
 };
 use axum::{
@@ -17,7 +17,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::{future::Future, time::Duration};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -31,12 +30,6 @@ pub(super) fn routes() -> Router<AppState> {
             "/api/organizations/{tenant_id}/queues/{queue_id}/stations/{station_id}",
             axum::routing::patch(update),
         )
-}
-async fn bounded<T>(future: impl Future<Output = Result<T, QueueError>>) -> Result<T, ApiError> {
-    tokio::time::timeout(Duration::from_secs(5), future)
-        .await
-        .map_err(|_| ApiError::unavailable())?
-        .map_err(Into::into)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

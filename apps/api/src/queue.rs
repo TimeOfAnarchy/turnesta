@@ -320,10 +320,11 @@ pub async fn execute(
     .bind(Json(&result))
     .execute(session.connection())
     .await
-    .map_err(|error| match error.as_database_error().and_then(|value| value.code()).as_deref() {
-        Some("R1401") => QueueError::IdempotencyConflict,
-        _ => QueueError::Database(error),
-    })?;
+    .map_err(|error| crate::database::map_sqlstate(
+        error,
+        |code| (code == "R1401").then_some(QueueError::IdempotencyConflict),
+        QueueError::Database,
+    ))?;
     session.commit().await?;
     Ok(result)
 }
@@ -340,12 +341,12 @@ async fn issue(
         .bind(service)
         .fetch_one(session.connection())
         .await
-        .map_err(|error: sqlx::Error| {
-            if error.as_database_error().and_then(|e| e.code()).as_deref() == Some("Q2010") {
-                QueueError::ServiceUnavailable
-            } else {
-                QueueError::Database(error)
-            }
+        .map_err(|error| {
+            crate::database::map_sqlstate(
+                error,
+                |code| (code == "Q2010").then_some(QueueError::ServiceUnavailable),
+                QueueError::Database,
+            )
         })
 }
 async fn call_next(
