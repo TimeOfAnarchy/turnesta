@@ -136,6 +136,21 @@ pub async fn purge(pool: &PgPool, dry_run: bool) -> Result<PurgeReport> {
         }
         counts.push(PurgeCount { kind, count: total });
     }
+    let mut audit_total = 0;
+    loop {
+        let count: i64 = sqlx::query_scalar("SELECT audit.purge_batch($1)")
+            .bind(dry_run)
+            .fetch_one(pool)
+            .await?;
+        audit_total += count;
+        if dry_run || count < 1000 {
+            break;
+        }
+    }
+    counts.push(PurgeCount {
+        kind: "audit_access",
+        count: audit_total,
+    });
     for kind in [
         "queue_commands",
         "booking_commands",
@@ -231,16 +246,16 @@ pub async fn inspect(
         .collect();
     let ownership_valid:bool=sqlx::query_scalar(r#"
         SELECT NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') OR (n.nspname='public' AND c.relname='_sqlx_migrations'))
+            WHERE (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention','audit') OR (n.nspname='public' AND c.relname='_sqlx_migrations'))
             AND c.relkind IN('r','p','v','m','S') AND pg_get_userbyid(c.relowner)<>'turnesta_migrator')
         AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND pg_get_userbyid(p.proowner)<>'turnesta_migrator')
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention','audit') AND pg_get_userbyid(p.proowner)<>'turnesta_migrator')
         AND NOT EXISTS(SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND NOT k.convalidated)
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention','audit') AND NOT k.convalidated)
         AND NOT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') AND (NOT i.indisvalid OR NOT i.indisready))
+            WHERE n.nspname IN('core','auth','catalog','queue','bookings','tips','retention','audit') AND (NOT i.indisvalid OR NOT i.indisready))
         AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r'
-            AND n.nspname IN('core','auth','catalog','queue','bookings','tips')
+            AND n.nspname IN('core','auth','catalog','queue','bookings','tips','audit')
             AND (EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id' AND NOT a.attisdropped)
                 OR (n.nspname='core' AND c.relname IN('users','organizations')))
             AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity))
@@ -249,7 +264,7 @@ pub async fn inspect(
         ownership_valid,
         "object ownership, constraints or indexes are invalid"
     );
-    let relations:Vec<(String,String)>=sqlx::query_as("SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention') OR (n.nspname='public' AND c.relname='_sqlx_migrations')) ORDER BY n.nspname,c.relname").fetch_all(&mut *tx).await?;
+    let relations:Vec<(String,String)>=sqlx::query_as("SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND (n.nspname IN('core','auth','catalog','queue','bookings','tips','retention','audit') OR (n.nspname='public' AND c.relname='_sqlx_migrations')) ORDER BY n.nspname,c.relname").fetch_all(&mut *tx).await?;
     let mut tables = Vec::new();
     for (schema, name) in relations {
         // Catalog identifiers are quoted, never accepted as SQL from a request.

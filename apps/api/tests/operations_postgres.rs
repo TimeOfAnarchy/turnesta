@@ -212,10 +212,10 @@ async fn purge_orchestrator_reports_all_classes_and_rejects_runtime() {
     .unwrap();
     assert_eq!(before["tables"], after["tables"]);
     assert_eq!(dry["dry_run"], true);
-    assert_eq!(dry["counts"].as_array().unwrap().len(), 11);
+    assert_eq!(dry["counts"].as_array().unwrap().len(), 12);
     let actual = serde_json::to_value(operations::purge(&migrator, false).await.unwrap()).unwrap();
     assert_eq!(actual["dry_run"], false);
-    assert_eq!(actual["counts"].as_array().unwrap().len(), 11);
+    assert_eq!(actual["counts"].as_array().unwrap().len(), 12);
     runtime.close().await;
     migrator.close().await;
 }

@@ -14,6 +14,7 @@ import { serviceOptions, startSection } from './navigation';
 
 const TeamPage = lazy(() => import('./TeamPage').then(module => ({ default: module.TeamPage })));
 const SettingsPage = lazy(() => import('./SettingsPage').then(module => ({ default: module.SettingsPage })));
+const AuditPage = lazy(() => import('./AuditPage').then(module => ({ default: module.AuditPage })));
 
 export type Workspace = { organization: Organization; role: Role; canManage: boolean; userId: string };
 export function useWorkspace() { return useOutletContext<Workspace>(); }
@@ -29,6 +30,7 @@ export function App() {
       <Route path="locations" element={<LocationsPage/>}/>
       <Route path="bookings" element={<BookingsPage/>}/>
       <Route path="settings" element={<Suspense fallback={<Loading/>}><SettingsPage/></Suspense>}/>
+      <Route path="audit" element={<Suspense fallback={<Loading/>}><AuditPage/></Suspense>}/>
       <Route path="team" element={<Suspense fallback={<Loading/>}><TeamPage/></Suspense>}/>
       <Route path="tips" element={<TipsPage/>}/>
       <Route path="queues" element={<QueuesPage/>}/>
@@ -43,6 +45,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
   const pathname = useLocation().pathname;
   const isSettings = pathname.endsWith('/settings');
   const isTeam = pathname.endsWith('/team');
+  const isAudit = pathname.endsWith('/audit');
   const isTips = pathname.endsWith('/tips');
   const isBookings = pathname.includes('/bookings');
   const isQueue = pathname.includes('/queues');
@@ -67,6 +70,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
           {serviceOptions.filter(service => organization.visible_services.includes(service.id)).map(service =>
             <NavLink key={service.id} to={`${base}/${service.id}`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name={service.icon}/>{service.label}</NavLink>)}
           {role === 'owner' && <NavLink to={`${base}/team`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="users"/>Команда</NavLink>}
+          {role === 'owner' && <NavLink to={`${base}/audit`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="users"/>Журнал доступа</NavLink>}
           <NavLink to={`${base}/settings`} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon name="settings"/>Настройки</NavLink>
         </nav>
       </> : <nav className="main-nav" aria-label="Главная"><Link className="nav-item active" to="/"><Icon name="grid"/>Мои организации</Link></nav>}
@@ -78,7 +82,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div></header>
+      <header className="topbar"><div className="breadcrumb"><Link to="/" state={pickState}>Мои организации</Link>{organization && <><span aria-hidden="true">/</span><span className="breadcrumb-organization">{organization.name}</span><span aria-hidden="true">/</span><strong>{isAudit ? 'Журнал доступа' : isTeam ? 'Команда' : isBookings ? 'Запись' : isSettings ? 'Настройки' : isTips ? 'Чаевые' : isQueue ? 'Очереди' : 'Точки'}</strong></>}</div></header>
       <main className="main-content" id="main-content" tabIndex={-1}>
         {organization && serviceOptions.some(service => pathname.split('/')[3] === service.id && !organization.visible_services.includes(service.id)) &&
           <div className="service-visibility-notice" role="status"><p>Этот раздел скрыт из меню организации. Вы можете продолжить работу по открытой ссылке.</p>{role === 'owner' || role === 'manager'

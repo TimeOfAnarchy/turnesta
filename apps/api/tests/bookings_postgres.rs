@@ -10,6 +10,7 @@ use std::time::Duration;
 use tower::ServiceExt;
 use turnesta_api::{
     appointments::{self, AppointmentCommand as AppointmentCmd, AppointmentResource, ClientInput},
+    audit::{self, AuditError, AuditQuery},
     auth::login::{self, Email},
     bookings::{
         self, BookingCommand as Command, BookingError, BookingResource, OfferState, Timing,
@@ -23,6 +24,306 @@ use turnesta_api::{
     core::{CoreError, LocationId, Name, Provisioner, Role, TenantId, TenantSession, UserId},
     http::{AppState, router},
 };
+
+fn audit_query(actor: Option<UserId>) -> AuditQuery<'static> {
+    AuditQuery {
+        from: None,
+        to: None,
+        actor,
+        before_at: None,
+        before_id: None,
+        limit: 100,
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn audit_records_access_and_replays_without_contacts_and_is_owner_scoped() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let other = Fixture::new("Europe/Moscow").await;
+    let operator = f.member(Role::Operator).await;
+    let specialist = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        specialist.id,
+        interval("2026-11-16T10:00", "2026-11-16T11:00"),
+    )
+    .await;
+    let command = record(specialist.id, offer.id, 1, "Private Audit Client");
+    let key = Uuid::new_v4();
+    let created = appointment_execute(&f, operator, key, command.clone())
+        .await
+        .unwrap();
+    let items = appointments::list(
+        &f.runtime,
+        operator,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: specialist.id,
+            date: "2026-11-16",
+            after: None,
+            limit: 10,
+            include_cancelled: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(items.len(), 1);
+    appointments::get(&f.runtime, operator, f.tenant, f.point, created.id)
+        .await
+        .unwrap();
+    appointment_execute(&f, operator, key, command)
+        .await
+        .unwrap();
+
+    let entries = audit::list(&f.runtime, f.owner, f.tenant, audit_query(Some(operator)))
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 4);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|e| e.action.as_str())
+            .collect::<Vec<_>>(),
+        vec!["command", "detail", "list", "command"]
+    );
+    assert_eq!(entries[2].visit_date.as_deref(), Some("2026-11-16"));
+    assert_eq!(entries[2].result_count, Some(1));
+    assert_eq!(entries[1].appointment_id, Some(created.id));
+    let page = audit::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        AuditQuery {
+            limit: 2,
+            ..audit_query(Some(operator))
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.len(), 3);
+    let next = audit::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        AuditQuery {
+            before_at: Some(&page[1].created_at),
+            before_id: Some(page[1].id.parse().unwrap()),
+            limit: 2,
+            ..audit_query(Some(operator))
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        next.iter().map(|e| &e.id).collect::<Vec<_>>(),
+        entries[2..].iter().map(|e| &e.id).collect::<Vec<_>>()
+    );
+    let old_range = audit::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        AuditQuery {
+            from: Some("2000-01-01"),
+            to: Some("2000-12-31"),
+            ..audit_query(None)
+        },
+    )
+    .await
+    .unwrap();
+    assert!(old_range.is_empty());
+    assert!(matches!(
+        audit::list(
+            &f.runtime,
+            f.owner,
+            f.tenant,
+            AuditQuery {
+                from: Some("2026-02-01"),
+                to: Some("2026-01-01"),
+                ..audit_query(None)
+            }
+        )
+        .await,
+        Err(AuditError::Invalid)
+    ));
+    let encoded = serde_json::to_string(&entries).unwrap();
+    assert!(
+        !encoded.contains("Private Audit Client")
+            && !encoded.contains("CLIENT@EXAMPLE.TEST")
+            && !encoded.contains("+7 (900) 000-00-00")
+    );
+    assert!(matches!(
+        audit::list(&f.runtime, operator, f.tenant, audit_query(None)).await,
+        Err(AuditError::Core(CoreError::Forbidden))
+    ));
+    assert!(
+        audit::list(
+            &other.runtime,
+            other.owner,
+            other.tenant,
+            audit_query(Some(operator))
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
+    assert!(
+        audit::list(&f.runtime, f.owner, other.tenant, audit_query(None))
+            .await
+            .is_err()
+    );
+    let can_select: bool = sqlx::query_scalar(
+        "SELECT has_table_privilege('turnesta_runtime','audit.access_log','SELECT')",
+    )
+    .fetch_one(&f.runtime)
+    .await
+    .unwrap();
+    assert!(!can_select);
+
+    let settings = audit::settings(&f.runtime, f.owner, f.tenant)
+        .await
+        .unwrap();
+    assert_eq!((settings.retention_days, settings.version), (365, 1));
+    let updated = audit::configure(&f.runtime, f.owner, f.tenant, 90, settings.version)
+        .await
+        .unwrap();
+    assert_eq!((updated.retention_days, updated.version), (90, 2));
+    assert!(matches!(
+        audit::configure(&f.runtime, f.owner, f.tenant, 60, 1).await,
+        Err(AuditError::Core(CoreError::VersionConflict))
+    ));
+    assert!(matches!(
+        audit::settings(&f.runtime, operator, f.tenant).await,
+        Err(AuditError::Core(CoreError::Forbidden))
+    ));
+
+    let owner_login = f.login(f.owner).await;
+    let operator_login = f.login(operator).await;
+    let url = format!(
+        "/api/organizations/{}/audit/access?actor={}",
+        f.tenant, operator
+    );
+    for (login, status) in [
+        (&owner_login, StatusCode::OK),
+        (&operator_login, StatusCode::FORBIDDEN),
+    ] {
+        let response = f
+            .app
+            .clone()
+            .oneshot(
+                Request::get(&url)
+                    .header("cookie", &login.0)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+    }
+    let old_id: i64 = entries[3].id.parse().unwrap();
+    sqlx::query("UPDATE audit.access_log SET created_at=now()-interval '91 days' WHERE id=$1")
+        .bind(old_id)
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let eligible: i64 = sqlx::query_scalar("SELECT audit.purge_batch(true)")
+        .fetch_one(&f.migrator)
+        .await
+        .unwrap();
+    assert!(eligible >= 1);
+    let still_present: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM audit.access_log WHERE id=$1)")
+            .bind(old_id)
+            .fetch_one(&f.migrator)
+            .await
+            .unwrap();
+    assert!(still_present);
+    sqlx::query("SELECT audit.purge_batch(false)")
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let remaining = audit::list(&f.runtime, f.owner, f.tenant, audit_query(Some(operator)))
+        .await
+        .unwrap();
+    assert_eq!(remaining.len(), 3);
+    assert!(remaining.iter().all(|entry| entry.id != old_id.to_string()));
+    f.close().await;
+    other.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires migrated dedicated PostgreSQL *_test database"]
+async fn audit_failure_rolls_back_access_and_appointment_command() {
+    let f = Fixture::new("Europe/Moscow").await;
+    let specialist = f.specialist().await;
+    let offer = saved_offer(
+        &f,
+        specialist.id,
+        interval("2026-11-16T12:00", "2026-11-16T13:00"),
+    )
+    .await;
+    let command = record(specialist.id, offer.id, 1, "Failure Client");
+    let key = Uuid::new_v4();
+    let function = format!("audit.test_reject_{}", Uuid::new_v4().simple());
+    let trigger = format!("test_reject_{}", Uuid::new_v4().simple());
+    let setup = format!(
+        "CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$; CREATE TRIGGER {trigger} BEFORE INSERT ON audit.access_log FOR EACH ROW WHEN (NEW.tenant_id = '{}'::uuid) EXECUTE FUNCTION {function}()",
+        f.tenant
+    );
+    // Identifiers and the tenant literal are generated UUIDs, never user input.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(setup))
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let failure = appointment_execute(&f, f.owner, key, command.clone()).await;
+    assert!(failure.is_err());
+    let list = appointments::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: specialist.id,
+            date: "2026-11-16",
+            after: None,
+            limit: 10,
+            include_cancelled: false,
+        },
+    )
+    .await;
+    assert!(list.is_err());
+    let cleanup = format!("DROP TRIGGER {trigger} ON audit.access_log; DROP FUNCTION {function}()");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(cleanup))
+        .execute(&f.migrator)
+        .await
+        .unwrap();
+    let recovered = appointment_execute(&f, f.owner, key, command)
+        .await
+        .unwrap();
+    let list = appointments::list(
+        &f.runtime,
+        f.owner,
+        f.tenant,
+        f.point,
+        appointments::AppointmentPage {
+            specialist: specialist.id,
+            date: "2026-11-16",
+            after: None,
+            limit: 10,
+            include_cancelled: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, recovered.id);
+    let events = audit::list(&f.runtime, f.owner, f.tenant, audit_query(None))
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 2);
+    f.close().await;
+}
 use uuid::Uuid;
 
 async fn pool(key: &str, size: u32) -> PgPool {

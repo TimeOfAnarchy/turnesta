@@ -24,6 +24,7 @@ use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
 mod api;
+mod audit_http;
 mod bookings_http;
 mod bookings_public_http;
 mod bookings_widget_http;
@@ -152,6 +153,9 @@ struct ErrorResponse {
         password_http::create_account,
         team_http::members,
         team_http::command,
+        audit_http::access,
+        audit_http::settings,
+        audit_http::configure,
         bookings_http::batch_preview,
         bookings_http::anonymize_appointment,
         bookings_widget_http::settings,
@@ -230,6 +234,11 @@ struct ErrorResponse {
         crate::team::TeamMember,
         crate::team::TeamDelivery,
         team_http::TeamPage,
+        crate::audit::AuditEntry,
+        crate::audit::AuditSettings,
+        audit_http::AuditCursor,
+        audit_http::AuditPage,
+        audit_http::AuditSettingsInput,
         crate::bookings_batch::BatchRequest,
         crate::bookings_batch::BatchSource,
         crate::bookings_batch::BatchRow,
@@ -356,6 +365,7 @@ pub fn router(state: AppState) -> Router {
         .merge(api::routes())
         .merge(password_http::routes())
         .merge(team_http::routes())
+        .merge(audit_http::routes())
         .merge(tips_http::routes())
         .merge(queue_http::routes())
         .merge(queue_events::routes())

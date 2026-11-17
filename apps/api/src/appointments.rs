@@ -38,6 +38,7 @@ mod tests {
 }
 
 use crate::{
+    audit::{self, Access},
     auth::login::Email,
     bookings::{self, BookingError},
     core::{CoreError, LocationId, Name, Role, TenantId, TenantSession, UserId},
@@ -257,6 +258,7 @@ pub async fn get(
         return Err(CoreError::Forbidden.into());
     }
     let row=sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND id=$3").bind(tenant).bind(location).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+    audit::record(&mut s, location, Access::Detail(id)).await?;
     s.commit().await?;
     Ok(row)
 }
@@ -275,8 +277,22 @@ pub async fn list(
         .bind(page.date)
         .execute(s.connection())
         .await?;
-    let rows=sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=$4 OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR status='confirmed') ORDER BY id LIMIT $7")
+    let rows: Vec<Appointment>=sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=$4 OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR status='confirmed') ORDER BY id LIMIT $7")
         .bind(tenant).bind(location).bind(page.specialist).bind(page.date).bind(page.after).bind(page.include_cancelled).bind(page.limit.clamp(1,100)+1).fetch_all(s.connection()).await?;
+    let limit = page.limit.clamp(1, 100) as i32;
+    audit::record(
+        &mut s,
+        location,
+        Access::List {
+            specialist: page.specialist,
+            date: page.date,
+            after: page.after,
+            limit,
+            include_cancelled: page.include_cancelled,
+            returned: rows.len().min(limit as usize) as i32,
+        },
+    )
+    .await?;
     s.commit().await?;
     Ok(rows)
 }
@@ -324,6 +340,7 @@ pub async fn execute(
         let StoredAppointmentResult::Appointment { id, .. } = result;
         let appointment = sqlx::query_as("SELECT * FROM bookings.appointment_details WHERE tenant_id=$1 AND location_id=$2 AND id=$3")
             .bind(tenant).bind(location).bind(id).fetch_optional(s.connection()).await?.ok_or(BookingError::NotFound)?;
+        audit::record(&mut s, location, Access::Command(id)).await?;
         s.commit().await?;
         return Ok(AppointmentReceipt {
             resource: AppointmentResource::Appointment(appointment),
@@ -384,6 +401,7 @@ pub async fn execute(
     let receipt = AppointmentReceipt {
         resource: AppointmentResource::Appointment(appointment),
     };
+    audit::record(&mut s, location, Access::Command(id)).await?;
     sqlx::query("UPDATE bookings.appointment_commands SET result=$5 WHERE tenant_id=$1 AND location_id=$2 AND actor_id=$3 AND idempotency_key=$4")
         .bind(tenant).bind(location).bind(user).bind(key).bind(Json(&stored)).execute(s.connection()).await?;
     s.commit().await?;
