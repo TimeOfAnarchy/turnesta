@@ -29,6 +29,13 @@ x-turnesta-service: &turnesta-service
   stop_grace_period: 15s
 
 services:
+  # Local email capture; production uses an explicitly configured SMTP service.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "127.0.0.1:${TURNESTA_MAILHOG_PORT:-8025}:8025"
+    restart: unless-stopped
+
   db:
     image: postgres:18-bookworm
     environment:
@@ -148,6 +155,8 @@ services:
       TURNESTA_SMTP_USERNAME: ${TURNESTA_SMTP_USERNAME:-}
       TURNESTA_SMTP_PASSWORD: ${TURNESTA_SMTP_PASSWORD:-}
     depends_on:
+      mailhog:
+        condition: service_started
       db:
         condition: service_healthy
       migrator:

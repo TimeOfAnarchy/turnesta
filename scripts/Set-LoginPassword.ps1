@@ -9,7 +9,7 @@ param(
 )
 . "$PSScriptRoot/ops/Common.ps1"
 $context=Get-OpsContext -EnvFile $EnvFile -ComposeFile $ComposeFile -Project $Project
-if(-not $Password){$Password=Read-Host 'Временный пароль (15–128 символов, ввод скрыт)' -AsSecureString}
+if(-not $Password){$Password=Read-Host 'Temporary password (15-128 characters, hidden input)' -AsSecureString}
 $process=[Diagnostics.Process]::new()
 $start=[Diagnostics.ProcessStartInfo]::new('docker')
 $start.UseShellExecute=$false
@@ -33,10 +33,10 @@ try{
     $process.StandardInput.Close()
     if(-not $process.WaitForExit(30000)){throw 'Password command exceeded its time budget. Check the result before repeating.'}
     [void]$errors.GetAwaiter().GetResult()
-    if($process.ExitCode -ne 0){throw 'Password was not confirmed. Check the user, email, database migrations and the 15–128 character policy.'}
+    if($process.ExitCode -ne 0){throw 'Password was not confirmed. Check the user, email, database migrations and the 15-128 character policy.'}
     $result=$output.GetAwaiter().GetResult() | ConvertFrom-Json
     if($result.status -ne 'password_set'){throw 'Unexpected password command result.'}
-    'Временный пароль установлен. Прежние сессии завершены; при входе потребуется задать свой пароль.'
+    'Temporary password set. Existing sessions were revoked; the user must choose a new password on sign-in.'
 }finally{
     if($pointer -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($pointer)}
     $plain=$null

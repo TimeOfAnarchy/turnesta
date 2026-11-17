@@ -14,7 +14,7 @@ Write-Host "Stand metadata: $($stand.Directory)"
 Invoke-OpsNative -DockerArgs ($stand.Args+@('up','--detach','--wait','db')) | Out-Null
 Invoke-OpsNative -DockerArgs ($stand.Args+@('run','--rm','--no-deps','db-bootstrap')) | Out-Null
 Invoke-OpsNative -DockerArgs ($stand.Args+@('run','--rm','--no-deps','migrator')) | Out-Null
-$owner=Invoke-OpsNative -DockerArgs ($stand.Args+@('run','--rm','--no-deps','admin','core','organization-create','--name','Локальная пилотная клиника','--owner-name','Владелец пилота')) | ConvertFrom-Json -AsHashtable
+$owner=Invoke-OpsNative -DockerArgs ($stand.Args+@('run','--rm','--no-deps','admin','core','organization-create','--name','Local pilot clinic','--owner-name','Pilot owner')) | ConvertFrom-Json -AsHashtable
 Invoke-OpsNative -DockerArgs ($stand.Args+@('up','--detach','--wait','api','mailhog')) | Out-Null
 $ready=Invoke-RestMethod -Uri "$($stand.Origin)/health/ready" -TimeoutSec 5
 if($ready.status -ne 'ready'){throw 'The pilot API is not reachable from the host.'}

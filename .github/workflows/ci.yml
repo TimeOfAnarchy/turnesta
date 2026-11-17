@@ -67,8 +67,7 @@ jobs:
             sh -c 'cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked'
 
       - name: Database tests
-        shell: pwsh
-        run: ./scripts/Test-Postgres.ps1
+        run: node scripts/test-postgres.mjs
 
       - name: Browser tests
         working-directory: e2e

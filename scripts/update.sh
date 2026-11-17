@@ -81,6 +81,8 @@ restore_environment() {
 }
 trap restore_environment EXIT
 trap 'exit 1' HUP INT TERM
+# Old API/worker processes must not use a schema while incompatible migrations run.
+compose stop api worker
 sed -i "s|^TURNESTA_IMAGE=.*|TURNESTA_IMAGE=$resolved|" .env
 compose up --pull never --wait
 compose run --rm --no-deps inspector > /dev/null

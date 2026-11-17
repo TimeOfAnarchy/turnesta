@@ -27,6 +27,7 @@ case "$1" in
                 version) exit 0 ;;
                 ps) echo api-container; exit 0 ;;
                 pull) [ "$2" = api ] && [ "$#" = 2 ]; exit "${TEST_PULL_EXIT:-0}" ;;
+                stop) [ "$*" = 'stop api worker' ]; exit "${TEST_STOP_EXIT:-0}" ;;
                 up) [ "$*" = 'up --pull never --wait' ] || [ "$*" = 'up --pull always --wait' ]; exit "${TEST_UP_EXIT:-0}" ;;
                 run)
                     if [ "$*" = 'run --rm --no-deps inspector' ]; then exit "${TEST_INSPECT_EXIT:-0}"; fi
@@ -109,6 +110,7 @@ cmp .env.before-update "$work/original"
 grep -q 'compose .* pull api' "$TEST_LOG"
 grep -q 'compose .* up --pull never --wait' "$TEST_LOG"
 grep -q '^backup$' "$TEST_LOG"
+awk '/^backup$/ {backup=NR} /compose .* stop api worker$/ {stop=NR} /compose .* up --pull never --wait$/ {up=NR} END {exit !(backup > 0 && backup < stop && stop < up)}' "$TEST_LOG"
 grep -Fq "./scripts/update.sh '$old_ref'" "$work/success.out"
 
 reset_env "$old_ref"
@@ -122,6 +124,11 @@ reset_env "$old_ref"
 if TEST_UP_EXIT=9 ./scripts/update.sh registry.example/app:two > "$work/up-failure.out" 2>&1; then exit 1; fi
 cmp .env "$work/original"
 grep -Fq "./scripts/update.sh '$old_ref'" "$work/up-failure.out"
+
+reset_env "$old_ref"
+if TEST_STOP_EXIT=8 ./scripts/update.sh registry.example/app:two > "$work/stop-failure.out" 2>&1; then exit 1; fi
+cmp .env "$work/original"
+if grep -q 'compose .* up' "$TEST_LOG"; then exit 1; fi
 
 reset_env "$old_ref"
 TEST_RUNNING=false ./scripts/update.sh "$old_ref" > "$work/stopped.out"
@@ -153,5 +160,17 @@ cp "$work/install/scripts/common.sh" "$work/install/scripts/install-probe.sh" "$
 cd "$work/install-failure"
 if printf 'example.test\n' | TEST_REGISTRY_DOWN=true sh scripts/install-probe.sh > "$work/install-failure.out" 2>&1; then exit 1; fi
 [ ! -e .env ]
+
+for domain in example..test -example.test example-.test example.test. localhost; do
+    if printf '%s\n' "$domain" | sh scripts/install-probe.sh > "$work/invalid-domain.out" 2>&1; then exit 1; fi
+    [ ! -e .env ]
+done
+
+awk '/^schedule_backups\(\)/ {exit} {print}' "$root/scripts/install.sh" > scripts/local-probe.sh
+printf '\ncreate_local_env\n' >> scripts/local-probe.sh
+for port in 0 65536 999999999999999999999 abc; do
+    if printf '%s\n' "$port" | sh scripts/local-probe.sh > "$work/invalid-port.out" 2>&1; then exit 1; fi
+    [ ! -e .env ]
+done
 
 echo 'Deployment update regression tests passed.'

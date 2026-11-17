@@ -21,6 +21,7 @@ create_local_env() {
     case $port in
         *[!0-9]*) fail 'The port must be a number.' ;;
     esac
+    [ "$port" -ge 1 ] 2>/dev/null && [ "$port" -le 65535 ] 2>/dev/null || fail 'The port must be between 1 and 65535.'
     ./scripts/init-env.sh
     sed -i.bak \
         -e "s/^TURNESTA_API_PORT=.*/TURNESTA_API_PORT=$port/" \
@@ -33,6 +34,10 @@ create_server_env() {
     case $answer in
         *[!a-zA-Z0-9.-]*) fail 'Enter only the domain name, without https:// or a path.' ;;
     esac
+    printf '%s\n' "$answer" | awk '
+        length($0) > 253 || NF < 2 { exit 1 }
+        { for (i = 1; i <= NF; i++) if (length($i) < 1 || length($i) > 63 || $i ~ /^-/ || $i ~ /-$/) exit 1 }
+    ' FS=. || fail 'Enter a fully qualified domain with valid labels, for example app.example.com.'
     image=${TURNESTA_IMAGE:-}
     if [ -z "$image" ]; then
         image=$(image_digest ghcr.io/timeofanarchy/turnesta:latest)
@@ -112,6 +117,13 @@ command -v docker >/dev/null 2>&1 || fail 'Docker is not installed: https://docs
 docker compose version >/dev/null 2>&1 || fail 'Docker Compose is not installed.'
 docker info >/dev/null 2>&1 || fail 'Docker is not running.'
 
+if [ "$server" = true ]; then
+    [ "$(uname -s)" = Linux ] || fail 'Server installation requires Linux. Use local installation to try Turnesta on this computer.'
+    command -v flock >/dev/null 2>&1 || fail 'Install flock (util-linux) before server setup.'
+    command -v curl >/dev/null 2>&1 || fail 'Install curl before server setup.'
+    docker buildx version >/dev/null 2>&1 || fail 'Install the Docker Buildx plugin before server setup.'
+fi
+
 if [ ! -e .env ]; then
     if [ "$server" = true ]; then
         create_server_env
@@ -136,6 +148,8 @@ else
     echo 'Building and starting Turnesta. The first build takes several minutes.'
     compose up --build --wait
     origin=$(setting TURNESTA_PUBLIC_ORIGIN)
+    mail_port=$(setting TURNESTA_MAILHOG_PORT)
+    echo "Local email inbox: http://127.0.0.1:${mail_port:-8025}"
 fi
 
 password=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
