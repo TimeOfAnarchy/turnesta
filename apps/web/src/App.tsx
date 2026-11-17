@@ -61,7 +61,7 @@ function Shell({ organization, role, children }: { organization?: Organization; 
       <div className="sidebar-divider"/>
       {organization ? <>
         <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
-        <Link className="workspace-switch" to="/" state={pickState} aria-label={`Сменить организацию. Сейчас ${organization.name}`}>
+        <Link className="workspace-switch" to="/" state={pickState}>
           <span className="workspace-avatar" aria-hidden="true">{[...organization.name][0]?.toUpperCase()}</span>
           <span className="workspace-copy"><strong>{organization.name}</strong><span>Все организации</span></span><Icon name="chevron"/>
         </Link>

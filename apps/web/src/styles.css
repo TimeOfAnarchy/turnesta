@@ -45,7 +45,7 @@ h1, h2, h3, p { margin-top: 0; }
 .workspace-avatar, .account-avatar { display: grid; place-items: center; width: 32px; height: 32px; background: var(--accent-soft); color: var(--green); font-weight: 700; border-radius: 9px; flex-shrink: 0; font-size: 14px; }
 .workspace-copy { display: grid; gap: 5px; min-width: 0; flex: 1; }
 .workspace-copy strong { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.35; overflow-wrap: anywhere; font-size: 13.5px; font-weight: 650; }
-.workspace-copy span { color: #809087; font-size: 11.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.workspace-copy span { color: var(--muted); font-size: 11.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .workspace-switch > .icon { width: 15px; color: #788b80; }
 .main-nav { display: grid; gap: 2px; }
 .nav-item { position: relative; display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 9px; text-decoration: none; font-size: 14px; font-weight: 550; color: #4b5a52; }
@@ -60,21 +60,21 @@ h1, h2, h3, p { margin-top: 0; }
 .account-avatar { width: 32px; height: 32px; font-size: 13.5px; border-radius: 50%; }
 .account-row > div { display: grid; gap: 4px; flex: 1; }
 .account-row strong { font-size: 12.5px; font-weight: 600; }
-.account-row span:not(.account-avatar) { font-size: 11.5px; color: #7c9084; }
+.account-row span:not(.account-avatar) { font-size: 11.5px; color: var(--muted); }
 .icon-button { border: 0; background: transparent; color: var(--muted); padding: 8px; display: grid; place-items: center; }
 .icon-button:hover:not(:disabled) { background: var(--hover); color: var(--green); }
 .logout-button .icon { width: 17px; height: 17px; }
 .workspace-main { min-width: 0; display: flex; flex-direction: column; }
 .topbar { position: sticky; top: 0; z-index: 5; min-height: 60px; padding: 0 40px; background: rgba(244, 246, 244, .85); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .breadcrumb { display: flex; gap: 13px; font-size: 12.5px; align-items: center; min-width: 0; }
-.breadcrumb > a { color: #79877f; text-decoration: none; flex-shrink: 0; }
+.breadcrumb > a { color: var(--muted); text-decoration: none; flex-shrink: 0; }
 .breadcrumb > a:hover { color: var(--green); }
 .breadcrumb > span[aria-hidden] { color: #bcc9c1; }
 .breadcrumb strong { font-size: 12.5px; font-weight: 550; }
-.breadcrumb-organization { max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #79877f; }
+.breadcrumb-organization { max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .main-content { width: 100%; max-width: 1240px; margin: 0 auto; padding: 36px 40px 56px; flex: 1; outline: none; }
 .page-heading { display: flex; gap: 24px; align-items: center; justify-content: space-between; margin-bottom: 32px; }
-.eyebrow { font-size: 11px; font-weight: 650; letter-spacing: 1.4px; color: #6c7a72; margin: 0 0 10px; }
+.eyebrow { font-size: 11px; font-weight: 650; letter-spacing: 1.4px; color: var(--muted); margin: 0 0 10px; }
 h1 { font-size: clamp(26px, 2.2vw, 34px); font-weight: 650; line-height: 1.2; letter-spacing: -1px; margin: 0 0 8px; }
 .heading-dot { color: #d99b5a; }
 .page-intro { font-size: 14.5px; line-height: 1.65; color: var(--muted); margin-bottom: 0; }
@@ -195,7 +195,7 @@ h1 { font-size: clamp(26px, 2.2vw, 34px); font-weight: 650; line-height: 1.2; le
 .error-notice .text-button { color: #9f5e4b; margin-top: 8px; }
 .sidebar .error-notice { padding: 10px; }
 .sidebar .error-notice > p { font-size: 11.5px; }
-.success-notice { display: flex; align-items: center; gap: 10px; color: #4c7e61; background: #edf6e6; border: 1px solid #d5e6dc; border-radius: 8px; padding: 14px 16px; margin: 0 0 24px; font-size: 13.5px; line-height: 1.7; }
+.success-notice { display: flex; align-items: center; gap: 10px; color: var(--green); background: #edf6e6; border: 1px solid #d5e6dc; border-radius: 8px; padding: 14px 16px; margin: 0 0 24px; font-size: 13.5px; line-height: 1.7; }
 .success-notice .icon { width: 17px; height: 17px; }
 .organization-form > .success-notice { margin: 20px 0 0; }
 .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 90px 20px; font-size: 13.5px; line-height: 1.8; color: #7d9687; }

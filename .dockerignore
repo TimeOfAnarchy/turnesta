@@ -17,6 +17,7 @@ target/
 node_modules/
 **/node_modules/
 **/dist/
+e2e/test-results/
 .idea/
 .vscode/
 *.log

@@ -11,6 +11,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: turnesta-ci
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -18,7 +20,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            e2e/package-lock.json
 
       - name: Frontend
         working-directory: apps/web
@@ -55,6 +59,13 @@ jobs:
       - name: Database tests
         shell: pwsh
         run: ./scripts/Test-Postgres.ps1
+
+      - name: Browser tests
+        working-directory: e2e
+        run: |
+          npm ci
+          npx --no-install playwright install --with-deps chromium firefox webkit
+          npm test
 
   audit:
     runs-on: ubuntu-latest
