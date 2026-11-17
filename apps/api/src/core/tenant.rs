@@ -1,6 +1,59 @@
 use sqlx::{PgPool, Postgres, Transaction};
+use std::{ops::Deref, sync::Arc};
+use tokio::sync::OnceCell;
 
 use super::{CoreError, Location, LocationId, Name, Organization, Role, TenantId, UserId};
+
+// Only the application pool can reuse a role check. One-off CLI and library
+// callers that supply a raw PgPool still have to establish its role.
+mod sealed {
+    pub trait Sealed {}
+}
+pub trait TenantPool: sealed::Sealed + Sync {
+    fn runtime(&self) -> impl Future<Output = Result<&PgPool, CoreError>> + Send;
+}
+
+impl sealed::Sealed for PgPool {}
+impl TenantPool for PgPool {
+    async fn runtime(&self) -> Result<&PgPool, CoreError> {
+        if !crate::database::is_runtime_role(self).await? {
+            return Err(CoreError::RuntimeRoleRequired);
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ApiPool {
+    pool: PgPool,
+    verified: Arc<OnceCell<()>>,
+}
+
+impl ApiPool {
+    pub(crate) fn new(pool: PgPool) -> Self {
+        Self {
+            pool,
+            verified: Arc::new(OnceCell::new()),
+        }
+    }
+}
+
+impl Deref for ApiPool {
+    type Target = PgPool;
+    fn deref(&self) -> &PgPool {
+        &self.pool
+    }
+}
+
+impl sealed::Sealed for ApiPool {}
+impl TenantPool for ApiPool {
+    async fn runtime(&self) -> Result<&PgPool, CoreError> {
+        self.verified
+            .get_or_try_init(|| async { self.pool.runtime().await.map(|_| ()) })
+            .await?;
+        Ok(&self.pool)
+    }
+}
 
 /// One checked membership and one transaction-local tenant context. The caller
 /// supplies a user ID established by authentication, never an untrusted header.
@@ -25,14 +78,11 @@ impl TenantSession {
     }
 
     pub async fn begin(
-        pool: &PgPool,
+        pool: &impl TenantPool,
         user_id: UserId,
         tenant_id: TenantId,
     ) -> Result<Self, CoreError> {
-        if !crate::database::is_runtime_role(pool).await? {
-            return Err(CoreError::RuntimeRoleRequired);
-        }
-        let mut tx = pool.begin().await?;
+        let mut tx = pool.runtime().await?.begin().await?;
         sqlx::query(
             "SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)",
         )

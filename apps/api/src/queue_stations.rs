@@ -1,5 +1,5 @@
+use crate::core::TenantPool;
 use serde::Serialize;
-use sqlx::PgPool;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,7 +18,7 @@ pub struct Station {
 }
 
 pub async fn list(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -51,7 +51,7 @@ pub struct StationDraft<'a> {
 }
 
 pub async fn save(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,

@@ -212,7 +212,7 @@ pub(super) async fn login(
                 .bind(credential.identity_id)
                 .bind(credential.version)
                 .bind(password::setup_digest(&grant).as_slice())
-                .fetch_one(&state.pool),
+                .fetch_one(&*state.pool),
         )
         .await?;
         if !ready {
@@ -240,7 +240,7 @@ pub(super) async fn login(
     .bind(csrf.hash().as_slice())
     .bind(state.auth.session_ttl_seconds)
     .bind(previous.as_ref().map(|h| h.as_slice()))
-    .fetch_one(&state.pool))
+    .fetch_one(&*state.pool))
     .await?;
     Ok(signed_response(
         &state,
@@ -277,7 +277,7 @@ pub(super) async fn setup(
         "SELECT * FROM auth.password_setup_lookup($1)",
     )
     .bind(grant.as_slice())
-    .fetch_optional(&state.pool))
+    .fetch_optional(&*state.pool))
     .await?;
     let snapshot = snapshot.ok_or_else(invalid_login)?;
     let email = Email::parse(&snapshot.email).map_err(|_| ApiError::unavailable())?;
@@ -309,7 +309,7 @@ pub(super) async fn setup(
     .bind(csrf.hash().as_slice())
     .bind(state.auth.session_ttl_seconds)
     .bind(previous.as_ref().map(|h| h.as_slice()))
-    .fetch_one(&state.pool))
+    .fetch_one(&*state.pool))
     .await?;
     Ok(signed_response(
         &state,
@@ -391,7 +391,7 @@ pub(super) async fn change(
         .bind(signed.token_hash.as_slice())
         .bind(own.version)
         .bind(hash.as_str())
-        .fetch_one(&state.pool))
+        .fetch_one(&*state.pool))
     .await?;
     if !changed {
         return Err(ApiError::unauthorized());

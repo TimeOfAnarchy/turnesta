@@ -1,7 +1,8 @@
+use crate::core::TenantPool;
 use jiff::{SignedDuration, Zoned, civil::DateTime, tz::AmbiguousOffset};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -337,7 +338,7 @@ pub(crate) async fn lock_calendar(
 const OFFER_PROJECTION: &str = "SELECT v.*, CASE WHEN $8 THEN (SELECT count(*) FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed') END AS reserved_places, CASE WHEN $8 THEN EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.specialist_id=v.specialist_id AND a.offer_id<>v.id AND a.status='confirmed' AND bookings.times_conflict(a.starts_at,a.ends_at,v.starts_at::timestamptz,v.ends_at::timestamptz)) END AS blocked_by_booking FROM bookings.offer_details v WHERE tenant_id=$1 AND location_id=$2 AND specialist_id=$3 AND (date=to_char(bookings.valid_date($4),'YYYY-MM-DD') OR date IS NULL) AND ($5::uuid IS NULL OR id>$5) AND ($6 OR state<>'withdrawn' OR EXISTS(SELECT 1 FROM bookings.appointments a WHERE a.tenant_id=v.tenant_id AND a.offer_id=v.id AND a.status='confirmed')) ORDER BY id LIMIT $7";
 
 pub async fn specialists(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -352,7 +353,7 @@ pub async fn specialists(
     Ok(rows)
 }
 pub async fn presets(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -374,7 +375,7 @@ pub struct OfferPage<'a> {
     pub include_withdrawn: bool,
 }
 pub async fn offers(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -409,7 +410,7 @@ pub async fn offers(
 }
 
 pub async fn execute(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -618,7 +619,7 @@ pub struct TimeRequest<'a> {
     pub offer_id: Option<Uuid>,
 }
 pub async fn suggest_time(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,

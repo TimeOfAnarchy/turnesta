@@ -144,6 +144,7 @@ pub(super) async fn command(
             key,
             command,
             &state.auth.public_origin,
+            &state.delivery_key,
         ))
         .await?,
     ))

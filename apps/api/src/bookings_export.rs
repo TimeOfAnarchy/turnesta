@@ -1,9 +1,10 @@
+use crate::core::TenantPool;
 use std::collections::BTreeMap;
 
 use futures_util::TryStreamExt;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -54,7 +55,7 @@ const VISITS: &str = "
     ) visit ORDER BY visit.created_at, visit.id";
 
 pub async fn export(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,

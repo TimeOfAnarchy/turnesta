@@ -1,5 +1,5 @@
+use crate::core::TenantPool;
 use serde::Serialize;
-use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -44,7 +44,7 @@ impl ServiceDraft<'_> {
 }
 
 pub async fn list(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -72,7 +72,7 @@ pub async fn list(
 }
 
 pub async fn save(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,

@@ -1,5 +1,6 @@
+use crate::core::TenantPool;
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -98,7 +99,7 @@ pub struct CommandResult {
 }
 
 pub async fn create(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -126,7 +127,7 @@ pub async fn create(
 
 /// Returns at most limit + 1 rows so the HTTP adapter can produce a cursor.
 pub async fn list(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -160,7 +161,7 @@ pub async fn list(
 }
 
 pub async fn get(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -188,7 +189,7 @@ pub struct TicketPage {
 }
 
 pub async fn tickets(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -225,7 +226,7 @@ pub async fn tickets(
 }
 
 pub async fn execute(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,

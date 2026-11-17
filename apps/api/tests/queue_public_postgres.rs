@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     Router,
@@ -1311,7 +1312,11 @@ impl Fixture {
         .await
         .unwrap()
         .id;
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        ));
         Self {
             runtime,
             admin,
@@ -1440,7 +1445,12 @@ fn tip_configuration(f: &Fixture, login: &(String, String), body: Value) -> Requ
 
 fn mock_app(f: &Fixture) -> Router {
     router(
-        AppState::new(f.runtime.clone(), Duration::from_secs(1)).with_payments(
+        AppState::new(
+            f.runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        )
+        .with_payments(
             turnesta_api::payments::PaymentConfig::mock(
                 &"37".repeat(32),
                 "http://127.0.0.1:8080/hooks/tips/mock",
@@ -2960,7 +2970,12 @@ fn live_app(f: &Fixture) -> (Router, Arc<LiveHub>, tokio::task::JoinHandle<()>) 
     let hub = LiveHub::new(f.runtime.clone());
     let task = hub.start();
     let app = router(
-        AppState::new(f.runtime.clone(), Duration::from_secs(1)).with_queue_live(hub.clone()),
+        AppState::new(
+            f.runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        )
+        .with_queue_live(hub.clone()),
     );
     (app, hub, task)
 }

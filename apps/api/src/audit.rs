@@ -1,6 +1,6 @@
+use crate::core::TenantPool;
 use crate::core::{CoreError, LocationId, Role, TenantId, TenantSession, UserId};
 use serde::Serialize;
-use sqlx::PgPool;
 use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -115,7 +115,7 @@ pub async fn record(
 }
 
 pub(crate) async fn owner(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
 ) -> Result<TenantSession, CoreError> {
@@ -131,7 +131,7 @@ pub(crate) async fn owner(
 }
 
 pub async fn settings(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
 ) -> Result<AuditSettings, AuditError> {
@@ -149,7 +149,7 @@ pub async fn settings(
 }
 
 pub async fn configure(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     days: i32,
@@ -181,7 +181,7 @@ pub struct AuditQuery<'a> {
 }
 
 pub async fn list(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     query: AuditQuery<'_>,

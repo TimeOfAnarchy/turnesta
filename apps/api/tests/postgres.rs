@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     body::{Body, to_bytes},
@@ -267,7 +268,11 @@ async fn postgres_migrations_readiness_and_shutdown() {
             .unwrap();
     assert!(has_core);
 
-    let state = AppState::new(pool.clone(), Duration::from_secs(1));
+    let state = AppState::new(
+        pool.clone(),
+        Duration::from_secs(1),
+        DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+    );
     let app = router(state.clone());
     assert_eq!(
         status(app.clone(), "/health/ready").await,
@@ -284,7 +289,11 @@ async fn postgres_migrations_readiness_and_shutdown() {
         (StatusCode::OK, "alive".into())
     );
 
-    let active_app = router(AppState::new(pool.clone(), Duration::from_secs(1)));
+    let active_app = router(AppState::new(
+        pool.clone(),
+        Duration::from_secs(1),
+        DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+    ));
     pool.close().await;
     assert_eq!(
         status(active_app, "/health/ready").await,

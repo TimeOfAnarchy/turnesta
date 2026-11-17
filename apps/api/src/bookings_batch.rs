@@ -1,3 +1,4 @@
+use crate::core::TenantPool;
 use crate::{
     bookings::{self, BookingError, Offer, OfferState, Preset, Timing},
     core::{CoreError, LocationId, TenantId, TenantSession, UserId},
@@ -5,7 +6,7 @@ use crate::{
 use jiff::{SignedDuration, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -247,7 +248,7 @@ fn duplicate(a: &BatchRow, b: &BatchRow) -> bool {
         && a.places == b.places
 }
 pub async fn preview(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     point: LocationId,

@@ -1,4 +1,5 @@
 use std::time::Duration;
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     Router,
@@ -61,7 +62,11 @@ impl Fixture {
         let runtime = pool("TEST_DATABASE_URL").await;
         let admin = pool("TEST_ADMIN_DATABASE_URL").await;
         let migrator = pool("TEST_MIGRATION_DATABASE_URL").await;
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        ));
         Self {
             runtime,
             admin,
@@ -190,12 +195,19 @@ async fn request_logs_identify_only_the_authenticated_actor_and_authorized_tenan
     let credentials = f.login(&owner).await;
     let foreign = TenantId::new();
     let app = router(
-        AppState::new(f.runtime.clone(), Duration::from_secs(1))
-            .with_client_ip_header(Some("x-real-ip".parse().unwrap()))
-            .with_log_ip_salt([29; 32]),
+        AppState::new(
+            f.runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        )
+        .with_client_ip_header(Some("x-real-ip".parse().unwrap()))
+        .with_log_ip_salt([29; 32]),
     );
     let capture = Capture::default();
     let writer = capture.clone();
+    // Parallel HTTP tests can register the same callsite before the scoped
+    // subscriber sees it. Give those threads an explicit silent dispatcher.
+    tracing::subscriber::set_global_default(tracing::subscriber::NoSubscriber::default()).unwrap();
     let dispatch = tracing::Dispatch::new(
         tracing_subscriber::fmt()
             .json()
@@ -581,8 +593,12 @@ async fn https_login_sets_secure_host_only_cookies() {
     let identity = fixture.identity(Role::Owner).await;
     let code = fixture.code(&identity).await;
     let app = router(
-        AppState::new(fixture.runtime.clone(), Duration::from_secs(1))
-            .with_auth(AuthConfig::parse("https://turnesta.example", 3600).unwrap()),
+        AppState::new(
+            fixture.runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        )
+        .with_auth(AuthConfig::parse("https://turnesta.example", 3600).unwrap()),
     );
     let response = app
         .oneshot(

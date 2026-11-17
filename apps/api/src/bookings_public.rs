@@ -1,3 +1,4 @@
+use crate::core::TenantPool;
 use crate::core::{CoreError, LocationId, TenantId, TenantSession, UserId};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, types::Json};
@@ -164,7 +165,7 @@ fn normalized_privacy_url(value: Option<String>) -> Result<Option<String>, Publi
     }
 }
 pub async fn settings(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -205,7 +206,7 @@ async fn check_location(
     }
 }
 pub async fn configure(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,

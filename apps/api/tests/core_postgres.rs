@@ -158,6 +158,35 @@ async fn provisioning_creates_owner_and_rejects_wrong_database_capability() {
     fixture.close().await;
 }
 
+#[test]
+#[ignore = "requires dedicated PostgreSQL test database roles"]
+fn serve_refuses_non_runtime_database_roles_before_binding_listeners() {
+    // A missing guard must fail the test promptly even if the server tries to start.
+    let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let addr = occupied.local_addr().unwrap().to_string();
+    for url_name in [
+        "TEST_ADMIN_DATABASE_URL",
+        "TEST_MIGRATION_DATABASE_URL",
+        "TEST_WORKER_DATABASE_URL",
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_turnesta-api"))
+            .arg("serve")
+            .env("DATABASE_URL", std::env::var(url_name).unwrap())
+            .env("TURNESTA_DELIVERY_KEY", "17".repeat(32))
+            .env("TURNESTA_TIPS_MODE", "disabled")
+            .env("TURNESTA_BIND_ADDR", &addr)
+            .env("TURNESTA_METRICS_BIND_ADDR", &addr)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("serve requires the restricted runtime database role"),
+            "{url_name}"
+        );
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires migrated dedicated PostgreSQL *_test database and runtime/admin URLs"]
 async fn rls_isolates_organizations_even_without_query_tenant_filter() {

@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 use tower::ServiceExt;
+use turnesta_api::auth::delivery::DeliveryKey;
 use turnesta_api::{
     appointments::{self, AppointmentCommand as AppointmentCmd, AppointmentResource, ClientInput},
     audit::{self, AuditError, AuditQuery},
@@ -2259,7 +2260,11 @@ impl Fixture {
             .unwrap()
             .id;
         session.commit().await.unwrap();
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        ));
         Self {
             runtime,
             admin,

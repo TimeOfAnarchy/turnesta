@@ -11,4 +11,5 @@ pub use model::{
     TenantId, User, UserId,
 };
 pub use provisioning::Provisioner;
-pub use tenant::TenantSession;
+pub(crate) use tenant::ApiPool;
+pub use tenant::{TenantPool, TenantSession};

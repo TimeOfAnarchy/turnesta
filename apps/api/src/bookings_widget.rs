@@ -1,3 +1,4 @@
+use crate::core::TenantPool;
 use crate::core::{CoreError, LocationId, TenantId, TenantSession, UserId};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -121,7 +122,7 @@ async fn check_location(s: &mut TenantSession, point: LocationId) -> Result<(), 
     Ok(())
 }
 pub async fn settings(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     point: LocationId,
@@ -144,7 +145,7 @@ pub async fn settings(
     ))
 }
 pub async fn configure(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     point: LocationId,

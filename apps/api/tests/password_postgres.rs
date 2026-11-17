@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction, postgres::PgPoolOptions};
 use std::time::Duration;
 use tower::ServiceExt;
+use turnesta_api::auth::delivery::DeliveryKey;
 use turnesta_api::{
     auth::{
         login::{self, Email},
@@ -114,7 +115,11 @@ impl Fixture {
         login::bind_email(&admin, org.owner.id, &email)
             .await
             .unwrap();
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        ));
         Self {
             runtime,
             admin,
@@ -195,8 +200,12 @@ impl Fixture {
     }
     fn use_client_header(&mut self) {
         self.app = router(
-            AppState::new(self.runtime.clone(), Duration::from_secs(1))
-                .with_client_ip_header(Some("x-real-ip".parse().unwrap())),
+            AppState::new(
+                self.runtime.clone(),
+                Duration::from_secs(1),
+                DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+            )
+            .with_client_ip_header(Some("x-real-ip".parse().unwrap())),
         );
     }
     async fn setup_token(&self) -> String {
@@ -665,7 +674,11 @@ async fn wrong_and_unknown_emails_share_errors_and_database_throttling_across_ro
         assert_eq!(unknown.status(), expected);
         assert_eq!(body(known).await, body(unknown).await);
     }
-    let other = router(AppState::new(f.runtime.clone(), Duration::from_secs(1)));
+    let other = router(AppState::new(
+        f.runtime.clone(),
+        Duration::from_secs(1),
+        DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+    ));
     let request = Request::post("/auth/password/login")
         .header("origin", ORIGIN)
         .header("content-type", "application/json")

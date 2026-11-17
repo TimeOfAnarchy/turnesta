@@ -1,3 +1,4 @@
+use crate::core::TenantPool;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, types::Json};
 use thiserror::Error;
@@ -121,7 +122,7 @@ struct DeliveryRow {
 }
 
 async fn manager(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
 ) -> Result<TenantSession, TipsError> {
@@ -133,7 +134,7 @@ async fn manager(
 }
 
 pub async fn create_recipient(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -148,7 +149,7 @@ pub async fn create_recipient(
 }
 
 pub async fn recipients(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     after: Option<Uuid>,
@@ -162,7 +163,7 @@ pub async fn recipients(
 }
 
 pub async fn attempts(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     after: Option<Uuid>,
@@ -231,7 +232,7 @@ pub async fn accept_event(pool: &PgPool, event: &MockEvent) -> Result<bool, Tips
         .await?)
 }
 pub async fn reconcile_attempt(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     attempt_id: Uuid,

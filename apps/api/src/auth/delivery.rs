@@ -14,7 +14,8 @@ use super::{AuthConfig, login::Email, mail::Mailer, token::SecretToken};
 
 #[path = "delivery_crypto.rs"]
 mod crypto;
-use crypto::{DeliveryKey, Invitation};
+pub use crypto::DeliveryKey;
+use crypto::Invitation;
 
 const DATABASE_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -91,11 +92,10 @@ pub(crate) struct PreparedInvitation {
 }
 
 pub(crate) fn prepare_invitation(
+    key: &DeliveryKey,
     email: &Email,
     public_origin: &str,
 ) -> Result<PreparedInvitation, DeliveryError> {
-    // Key validation and encryption happen before any identity/code mutation.
-    let key = DeliveryKey::from_env()?;
     let origin = AuthConfig::parse(public_origin, 3600)
         .map_err(DeliveryError::Configuration)?
         .public_origin;
@@ -123,7 +123,7 @@ pub async fn enqueue_invitation(
     email: &Email,
     public_origin: &str,
 ) -> Result<Uuid, DeliveryError> {
-    let prepared = prepare_invitation(email, public_origin)?;
+    let prepared = prepare_invitation(&DeliveryKey::from_env()?, email, public_origin)?;
     db(
         sqlx::query("SELECT auth.enqueue_invitation($1, $2, $3, $4, $5, $6, $7)")
             .bind(prepared.job_id)
@@ -179,8 +179,7 @@ pub async fn delivery_status(
 }
 
 impl Worker {
-    pub fn from_env(pool: PgPool) -> Result<Self, DeliveryError> {
-        let key = DeliveryKey::from_env()?;
+    pub fn new(pool: PgPool, key: DeliveryKey) -> Result<Self, DeliveryError> {
         let mailer = Mailer::from_env().map_err(|_| DeliveryError::Configuration("SMTP"))?;
         Ok(Self { pool, key, mailer })
     }

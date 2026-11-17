@@ -1,9 +1,10 @@
+use crate::core::TenantPool;
 use crate::{
     auth::{delivery, login::Email},
     core::{CoreError, Name, Role, TenantId, TenantSession, UserId},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -134,7 +135,11 @@ pub struct TeamMember {
     pub delivery_expires_at: Option<String>,
     pub resend_after: Option<String>,
 }
-async fn owner(pool: &PgPool, user: UserId, tenant: TenantId) -> Result<TenantSession, TeamError> {
+async fn owner(
+    pool: &impl TenantPool,
+    user: UserId,
+    tenant: TenantId,
+) -> Result<TenantSession, TeamError> {
     let mut session = TenantSession::begin(pool, user, tenant).await?;
     if session.role() != Role::Owner {
         return Err(CoreError::Forbidden.into());
@@ -145,7 +150,7 @@ async fn owner(pool: &PgPool, user: UserId, tenant: TenantId) -> Result<TenantSe
     Ok(session)
 }
 pub async fn members(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     after: Option<UserId>,
@@ -162,12 +167,13 @@ pub async fn members(
     Ok(items)
 }
 pub async fn execute(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     key: Uuid,
     mut command: TeamCommand,
     origin: &str,
+    delivery_key: &delivery::DeliveryKey,
 ) -> Result<TeamReceipt, TeamError> {
     command.normalize()?;
     let mut s = owner(pool, user, tenant).await?;
@@ -197,6 +203,7 @@ pub async fn execute(
         .as_deref()
         .map(|email| {
             delivery::prepare_invitation(
+                delivery_key,
                 &Email::parse(email).map_err(|_| TeamError::Invalid)?,
                 origin,
             )

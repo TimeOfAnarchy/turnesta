@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 use tower::ServiceExt;
+use turnesta_api::auth::delivery::DeliveryKey;
 use turnesta_api::{
     auth::login::{self, Email},
     core::{Name, Provisioner, Role, TenantId, TenantSession, UserId},
@@ -50,7 +51,11 @@ impl Fixture {
             )
             .await
             .unwrap();
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_env().unwrap(),
+        ));
         Self {
             runtime,
             admin,
@@ -61,7 +66,16 @@ impl Fixture {
         }
     }
     async fn execute(&self, key: Uuid, c: TeamCommand) -> Result<team::TeamReceipt, TeamError> {
-        team::execute(&self.runtime, self.owner, self.tenant, key, c, ORIGIN).await
+        team::execute(
+            &self.runtime,
+            self.owner,
+            self.tenant,
+            key,
+            c,
+            ORIGIN,
+            &DeliveryKey::from_env().unwrap(),
+        )
+        .await
     }
     async fn invite(&self) -> team::TeamReceipt {
         self.execute(Uuid::new_v4(), invite()).await.unwrap()

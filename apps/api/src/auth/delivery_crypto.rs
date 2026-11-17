@@ -11,7 +11,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::DeliveryError;
 
-pub(super) struct DeliveryKey {
+pub struct DeliveryKey {
     cipher: XChaCha20Poly1305,
     id: [u8; 32],
 }
@@ -38,13 +38,13 @@ pub(super) struct EncryptedInvitation {
 }
 
 impl DeliveryKey {
-    pub(super) fn from_env() -> Result<Self, DeliveryError> {
+    pub fn from_env() -> Result<Self, DeliveryError> {
         let encoded =
             Zeroizing::new(env::var("TURNESTA_DELIVERY_KEY").map_err(|_| DeliveryError::Key)?);
         Self::from_hex(&encoded)
     }
 
-    fn from_hex(encoded: &str) -> Result<Self, DeliveryError> {
+    pub fn from_hex(encoded: &str) -> Result<Self, DeliveryError> {
         if encoded.len() != 64 {
             return Err(DeliveryError::Key);
         }

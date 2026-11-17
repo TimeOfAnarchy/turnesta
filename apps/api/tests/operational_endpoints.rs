@@ -1,4 +1,5 @@
 use std::time::Duration;
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     body::{Body, to_bytes},
@@ -15,7 +16,40 @@ fn offline_state() -> AppState {
         .acquire_timeout(Duration::from_millis(30))
         .connect_lazy("postgres://user:password@127.0.0.1:1/turnesta")
         .expect("valid test URL");
-    AppState::new(pool, Duration::from_millis(50))
+    AppState::new(
+        pool,
+        Duration::from_millis(50),
+        DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+    )
+}
+
+#[test]
+fn api_and_worker_reject_invalid_delivery_keys_before_connecting() {
+    for args in [
+        &[][..],
+        &["serve"][..],
+        &["worker"][..],
+        &["worker", "--once"][..],
+    ] {
+        for value in [None, Some(""), Some("too-short"), Some(&"xy".repeat(32))] {
+            let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_turnesta-api"));
+            cmd.args(args)
+                .env("DATABASE_URL", "postgres://localhost:1/unused")
+                .env("TURNESTA_TIPS_MODE", "disabled")
+                .env_remove("TURNESTA_DELIVERY_KEY");
+            if let Some(value) = value {
+                cmd.env("TURNESTA_DELIVERY_KEY", value);
+            }
+            let output = cmd.output().unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.contains("TURNESTA_DELIVERY_KEY must contain a 32-byte key"));
+            if let Some(value) = value.filter(|s| !s.is_empty()) {
+                assert!(!stderr.contains(value));
+                assert!(!String::from_utf8_lossy(&output.stdout).contains(value));
+            }
+        }
+    }
 }
 
 async fn json(response: axum::response::Response) -> Value {

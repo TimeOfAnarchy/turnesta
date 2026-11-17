@@ -528,7 +528,7 @@ pub(super) async fn organizations(
             .bind(signed_in.user_id)
             .bind(page.after)
             .bind(page.limit)
-            .fetch_all(&state.pool)
+            .fetch_all(&*state.pool)
             .await?;
     let more = items.len() > page.limit as usize;
     items.truncate(page.limit as usize);
@@ -759,7 +759,7 @@ pub(super) async fn time_zones(
         return Err(ApiError::bad_request());
     }
     let items = sqlx::query_scalar("SELECT name FROM core.time_zones WHERE strpos(lower(name), lower($1)) > 0 ORDER BY name LIMIT $2")
-        .bind(query.query.trim()).bind(query.limit).fetch_all(&state.pool).await?;
+        .bind(query.query.trim()).bind(query.limit).fetch_all(&*state.pool).await?;
     Ok(Json(TimeZoneList { items }))
 }
 

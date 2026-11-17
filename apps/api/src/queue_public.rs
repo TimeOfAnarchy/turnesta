@@ -1,3 +1,4 @@
+use crate::core::TenantPool;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use thiserror::Error;
@@ -133,7 +134,7 @@ pub struct PublicDisplay {
 }
 
 pub async fn settings(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -150,7 +151,7 @@ pub async fn settings(
 }
 
 pub async fn configure(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -169,7 +170,7 @@ pub async fn configure(
 }
 
 pub async fn configure_display(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -193,7 +194,7 @@ enum Setting {
 }
 
 async fn configure_setting(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,

@@ -1,4 +1,5 @@
 use std::time::Duration;
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     Router,
@@ -76,7 +77,11 @@ impl Fixture {
         .await
         .unwrap()
         .id;
-        let app = router(AppState::new(runtime.clone(), Duration::from_secs(1)));
+        let app = router(AppState::new(
+            runtime.clone(),
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        ));
         Self {
             runtime,
             admin,

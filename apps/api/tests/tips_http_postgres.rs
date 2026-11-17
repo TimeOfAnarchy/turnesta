@@ -1,4 +1,5 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use turnesta_api::auth::delivery::DeliveryKey;
 
 use axum::{
     Router,
@@ -101,7 +102,12 @@ impl Fixture {
         let payments =
             PaymentConfig::mock(&"13".repeat(32), "http://127.0.0.1:8080/hooks/tips/mock").unwrap();
         let app = router(
-            AppState::new(runtime.clone(), Duration::from_secs(1)).with_payments(payments.clone()),
+            AppState::new(
+                runtime.clone(),
+                Duration::from_secs(1),
+                DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+            )
+            .with_payments(payments.clone()),
         );
         Self {
             runtime,
@@ -966,7 +972,11 @@ async fn disabled_public_tips_reject_before_using_even_a_closed_database_pool() 
         .connect_lazy("postgresql://unused:unused@127.0.0.1:1/turnesta_test")
         .unwrap();
     pool.close().await;
-    let app = router(AppState::new(pool, Duration::from_millis(20)));
+    let app = router(AppState::new(
+        pool,
+        Duration::from_millis(20),
+        DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+    ));
     let slug = Uuid::new_v4();
     let page = get(&app, &format!("/tips/{slug}"), None).await;
     assert_eq!(page.status(), StatusCode::SERVICE_UNAVAILABLE);

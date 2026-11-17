@@ -1,5 +1,5 @@
+use crate::core::TenantPool;
 use serde::Serialize;
-use sqlx::PgPool;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ pub struct TipSettings {
 }
 
 pub async fn settings(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,
@@ -37,7 +37,7 @@ pub async fn settings(
 }
 
 pub async fn configure(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     queue: Uuid,

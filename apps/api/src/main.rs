@@ -7,7 +7,7 @@ use tokio::{net::TcpListener, sync::watch};
 use turnesta_api::{
     auth::{
         cli::{self as auth_cli, AuthCommand},
-        delivery::{self, Worker},
+        delivery::{self, DeliveryKey, Worker},
     },
     config::Config,
     core::cli::{self as core_cli, CoreCommand},
@@ -72,15 +72,15 @@ async fn run(cli: Cli) -> Result<()> {
     telemetry::init()?;
     let config = Config::from_env()?;
     let command = cli.command.unwrap_or(Command::Serve);
-    let pool = if matches!(command, Command::Serve) {
-        database::connect_api(&config.database).await
-    } else {
-        database::connect(&config.database).await
-    }
-    .context("could not connect to PostgreSQL")?;
+    let connect = || async {
+        database::connect(&config.database)
+            .await
+            .context("could not connect to PostgreSQL")
+    };
 
     match command {
         Command::Migrate => {
+            let pool = connect().await?;
             tracing::info!("applying database migrations");
             let result = database::migrate(&pool)
                 .await
@@ -90,8 +90,9 @@ async fn run(cli: Cli) -> Result<()> {
                 .context("database pool shutdown deadline exceeded")?;
             result
         }
-        Command::Serve => serve(&config, pool).await,
+        Command::Serve => serve(&config).await,
         Command::Core { command } => {
+            let pool = connect().await?;
             let result = core_cli::run(command, &pool).await;
             tokio::time::timeout(config.shutdown_timeout, pool.close())
                 .await
@@ -99,6 +100,7 @@ async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Auth { command } => {
+            let pool = connect().await?;
             let result = auth_cli::run(command, &pool, &config.auth.public_origin).await;
             tokio::time::timeout(config.shutdown_timeout, pool.close())
                 .await
@@ -106,21 +108,25 @@ async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Ops { command } => {
+            let pool = connect().await?;
             let result = operations::run(command, &pool).await;
             tokio::time::timeout(config.shutdown_timeout, pool.close())
                 .await
                 .context("database pool shutdown deadline exceeded")?;
             result
         }
-        Command::Worker { once } => run_worker(&config, pool, once).await,
+        Command::Worker { once } => {
+            let key = DeliveryKey::from_env()?;
+            run_worker(&config, connect().await?, key, once).await
+        }
     }
 }
 
-async fn serve(config: &Config, pool: PgPool) -> Result<()> {
-    anyhow::ensure!(
-        database::is_runtime_role(&pool).await?,
-        "serve requires the restricted runtime database role"
-    );
+async fn serve(config: &Config) -> Result<()> {
+    let delivery_key = DeliveryKey::from_env()?;
+    let pool = database::connect_api(&config.database)
+        .await
+        .context("could not connect to PostgreSQL")?;
     let queue_live = LiveHub::new(pool.clone());
     let log_ip_salt = match config.log_ip_salt {
         Some(salt) => salt,
@@ -134,7 +140,7 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
             salt
         }
     };
-    let state = AppState::new(pool.clone(), config.ready_timeout)
+    let state = AppState::new(pool.clone(), config.ready_timeout, delivery_key)
         .with_queue_live(queue_live.clone())
         .with_auth(config.auth.clone())
         .with_expose_openapi(config.expose_openapi)
@@ -142,6 +148,10 @@ async fn serve(config: &Config, pool: PgPool) -> Result<()> {
         .with_client_ip_header(config.client_ip_header.clone())
         .with_log_ip_salt(log_ip_salt)
         .with_web_dist(config.web_dist.clone());
+    state
+        .verify_runtime_role()
+        .await
+        .context("serve requires the restricted runtime database role")?;
     with_metrics(
         config,
         state.metrics_router(),
@@ -256,12 +266,12 @@ async fn shutdown_signal() -> Result<()> {
     Ok(())
 }
 
-async fn run_worker(config: &Config, pool: PgPool, once: bool) -> Result<()> {
+async fn run_worker(config: &Config, pool: PgPool, key: DeliveryKey, once: bool) -> Result<()> {
     anyhow::ensure!(
         delivery::is_worker_role(&pool).await?,
         "worker requires the dedicated delivery database role"
     );
-    let worker = Worker::from_env(pool.clone())?;
+    let worker = Worker::new(pool.clone(), key)?;
     let payments = MockDispatcher::new(pool.clone(), config.payments.clone())?;
     if once {
         let has_work = worker_step(&worker, &payments).await?;

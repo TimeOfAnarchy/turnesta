@@ -43,7 +43,8 @@ mod tips_http;
 
 #[derive(Clone)]
 pub struct AppState {
-    pool: PgPool,
+    pool: crate::core::ApiPool,
+    delivery_key: Arc<crate::auth::delivery::DeliveryKey>,
     metrics: Arc<crate::metrics::ApiMetrics>,
     ready_timeout: Duration,
     draining: Arc<AtomicBool>,
@@ -60,9 +61,14 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, ready_timeout: Duration) -> Self {
+    pub fn new(
+        pool: PgPool,
+        ready_timeout: Duration,
+        delivery_key: crate::auth::delivery::DeliveryKey,
+    ) -> Self {
         Self {
-            pool,
+            pool: crate::core::ApiPool::new(pool),
+            delivery_key: Arc::new(delivery_key),
             metrics: Arc::new(crate::metrics::ApiMetrics::new()),
             ready_timeout,
             draining: Arc::new(AtomicBool::new(false)),
@@ -80,7 +86,12 @@ impl AppState {
     }
 
     pub fn metrics_router(&self) -> Router {
-        crate::metrics::api_router(self.pool.clone(), self.metrics.clone())
+        crate::metrics::api_router((*self.pool).clone(), self.metrics.clone())
+    }
+
+    pub async fn verify_runtime_role(&self) -> Result<(), crate::core::CoreError> {
+        use crate::core::TenantPool;
+        self.pool.runtime().await.map(|_| ())
     }
 
     pub fn begin_shutdown(&self) {
@@ -466,7 +477,7 @@ async fn ready(State(state): State<AppState>) -> (StatusCode, Json<HealthRespons
 
     let check = tokio::time::timeout(
         state.ready_timeout,
-        sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&state.pool),
+        sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&*state.pool),
     )
     .await;
 

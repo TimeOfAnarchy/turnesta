@@ -331,13 +331,18 @@ fn connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::delivery::DeliveryKey;
 
     #[tokio::test]
     async fn active_metric_follows_the_sse_body_through_disconnect_and_end_of_stream() {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
-        let state = AppState::new(pool, Duration::from_secs(1));
+        let state = AppState::new(
+            pool,
+            Duration::from_secs(1),
+            DeliveryKey::from_hex(&"17".repeat(32)).unwrap(),
+        );
         let slots = Arc::new(tokio::sync::Semaphore::new(2));
         let (_sender, receiver) = watch::channel(Signal::Stopping);
         let open = || {

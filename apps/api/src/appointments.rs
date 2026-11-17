@@ -1,6 +1,7 @@
+use crate::core::TenantPool;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, types::Json};
+use sqlx::types::Json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -262,7 +263,7 @@ pub struct AppointmentPage<'a> {
     pub include_cancelled: bool,
 }
 pub async fn get(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -278,7 +279,7 @@ pub async fn get(
     Ok(row)
 }
 pub async fn list(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
@@ -325,7 +326,7 @@ pub async fn list(
     Ok(rows)
 }
 pub async fn execute(
-    pool: &PgPool,
+    pool: &impl TenantPool,
     user: UserId,
     tenant: TenantId,
     location: LocationId,
