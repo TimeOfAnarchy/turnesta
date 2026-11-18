@@ -3,7 +3,7 @@
 # Keep this version aligned with rust-toolchain.toml.
 ARG RUST_VERSION=1.99.1
 
-FROM node:22-bookworm-slim AS web-builder
+FROM node:26-bookworm-slim AS web-builder
 WORKDIR /web
 COPY apps/web/package.json apps/web/package-lock.json ./
 COPY apps/web/tools/openapi/package.json tools/openapi/
