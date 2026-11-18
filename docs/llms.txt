@@ -6,7 +6,7 @@
 
 - [English product tour](https://timeofanarchy.github.io/turnesta/): Real screens from a visitor booking, staff schedule, queue ticket, operator workspace and live display.
 - [Обзор на русском](https://timeofanarchy.github.io/turnesta/ru/): Онлайн-запись, виджет на сайте, талоны по QR-коду и вызов к окну.
-- [v0.1.0 pre-release](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0): Evaluation status, tested image, source archives and limitations. Tips is mock-only.
+- [v0.1.1 pre-release](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.1): Evaluation status, tested image, source archives and limitations. Tips is mock-only.
 
 ## Documentation
 

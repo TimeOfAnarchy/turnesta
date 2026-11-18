@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## [0.1.1](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.1) — 2026-11-18
+
+### Security
+
+- Updated the SMTP library `lettre` from 0.11.23 to 0.11.24. The upstream patch fixes message handling, address parsing and SMTP reply processing, including STARTTLS. Install this version before enabling external mail delivery. See the [upstream security release](https://github.com/lettre/lettre/releases/tag/v0.11.24).
+
+### Documentation
 
 - Published a bilingual product tour and README with screenshots from v0.1.0.
 

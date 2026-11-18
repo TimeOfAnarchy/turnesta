@@ -1,6 +1,6 @@
 # Turnesta — self-hosted appointment booking and queue management
 
-[Русский](README.ru.md) · [Product tour](https://timeofanarchy.github.io/turnesta/) · [Try locally](#try-locally) · [v0.1.0 pre-release](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0)
+[Русский](README.ru.md) · [Product tour](https://timeofanarchy.github.io/turnesta/) · [Try locally](#try-locally) · [v0.1.1 pre-release](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.1)
 
 Turnesta is open-source software for service businesses that take appointments and serve walk-ins. Visitors can book a time on your website or scan a QR code at the counter to join a queue. Staff manage both from one workspace. You run Turnesta on your own server. The application interface is in Russian.
 
@@ -22,14 +22,14 @@ Turnesta is open-source software for service businesses that take appointments a
 
 Owners can set up multiple locations, invite staff and assign roles. The optional Tips module simulates checkout and callbacks. Real charges and payouts are unavailable.
 
-**Release status.** [v0.1.0](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0) is a pre-release for evaluation. Staff handle booking changes and cancellations. Booking holds and reminders are unavailable. Local integration checks have passed. Deployment to a real VPS, delivery through external SMTP and integration with a business website still need verification.
+**Release status.** [v0.1.1](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.1) is a pre-release for evaluation. Staff handle booking changes and cancellations. Booking holds and reminders are unavailable. Local integration checks have passed. Deployment to a real VPS, delivery through external SMTP and integration with a business website still need verification.
 
 ## Try locally
 
 Install Git and Docker with the Compose plugin. Run these commands in a POSIX shell; on Windows use Git Bash and Docker Desktop with Linux containers.
 
 ```sh
-git clone --branch v0.1.0 https://github.com/TimeOfAnarchy/turnesta.git
+git clone --branch v0.1.1 https://github.com/TimeOfAnarchy/turnesta.git
 cd turnesta
 ./scripts/install.sh
 ```
@@ -46,7 +46,7 @@ In a fresh server checkout with Docker, Compose, Buildx, flock, curl and a confi
 ./scripts/install.sh --server
 ```
 
-The server uses a prebuilt Linux AMD64 image, PostgreSQL and Caddy for HTTPS. The mail worker is optional. The [release notes](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0) give the image digest for this version. Follow the [deployment guide](docs/DEPLOYMENT.md#linux-vps) for prerequisites, email and first acceptance, then the [operations runbook](docs/OPERATIONS.md) for updates, backups and recovery.
+The server uses a prebuilt Linux AMD64 image, PostgreSQL and Caddy for HTTPS. The mail worker is optional. The [release notes](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.1) give the image digest for this version. Follow the [deployment guide](docs/DEPLOYMENT.md#linux-vps) for prerequisites, email and first acceptance, then the [operations runbook](docs/OPERATIONS.md) for updates, backups and recovery.
 
 ## Documentation
 
