@@ -74,7 +74,7 @@ npm run api:types -- --check
 
 After API changes, refresh the committed OpenAPI snapshot from an updated local API with `npm run api:snapshot`, then regenerate types using `npm run api:types`. CI checks both with --check against the running API. Do not hand-edit generated types. Generated schemas coexist with handwritten transport/DTOs.
 
-Use [e2e/README](../e2e/README.md) for isolated Playwright setup. Browser tests create synthetic organizations and exercise public/staff/widget flows, error recovery, drafts and accessibility. Vite dev proxy is a development convenience; it must respect the API's exact Origin and CSRF checks.
+Use [e2e/README](https://github.com/TimeOfAnarchy/turnesta/blob/main/e2e/README.md) for isolated Playwright setup. Browser tests create synthetic organizations and exercise public/staff/widget flows, error recovery, drafts and accessibility. Vite dev proxy is a development convenience; it must respect the API's exact Origin and CSRF checks.
 
 ## Migrations and checks for deployment scripts
 
@@ -91,7 +91,7 @@ These use controlled Docker substitutes and real Linux utilities. Git Bash lacks
 
 ## Contract changes and verification scope
 
-The committed [OpenAPI snapshot](../apps/web/openapi.json) and Rust HTTP handlers define API shapes. Use the snapshot for inspection; `/openapi.json` is available on a local loopback setup and must be explicitly exposed for a server. Generated schema types coexist with handwritten request transport and some DTOs. The snapshot does not establish runtime authorization behavior.
+The committed [OpenAPI snapshot](https://github.com/TimeOfAnarchy/turnesta/blob/main/apps/web/openapi.json) and Rust HTTP handlers define API shapes. Use the snapshot for inspection; `/openapi.json` is available on a local loopback setup and must be explicitly exposed for a server. Generated schema types coexist with handwritten request transport and some DTOs. The snapshot does not establish runtime authorization behavior.
 
 Preserve organization isolation, current-role checks, optimistic versions and exact-command recovery when changing an endpoint. Reusing a staff command key with changed content conflicts; a successful replay is distinct from a fresh intention. Public Queue/Bookings recovery has its own capability contract. Never infer rollback from a timeout. See [architecture](ARCHITECTURE.md) and the [user recovery guidance](GETTING-STARTED.md#passwords-and-uncertain-actions).
 

@@ -46,7 +46,7 @@ Contacts, form answers, capabilities, confirmation numbers and appointment assig
 
 `GET/PUT /api/organizations/{tenant}/locations/{point}/bookings/widget` reads/updates allowed origins and returns publication/script URLs. PUT requires owner/manager, session, Origin, CSRF and expected version; version 0 creates settings. Its version is independent of public form settings. Unknown outcomes require a read before another edit. FORCE RLS/composite foreign keys and a narrow origin projection protect storage.
 
-Playwright covers a cross-origin clinic page and booking in Chromium/Firefox/WebKit. Local unit tests cover protocol validation, bounds, storage probe and cleanup. These are not proof of Safari on a physical phone, a real CMS, every third-party storage policy or HTTPS/CDN behavior. See [browser tests](../e2e/README.md), [architecture](ARCHITECTURE.md#public-access-and-client-data) and [operations](OPERATIONS.md).
+Playwright covers a cross-origin clinic page and booking in Chromium/Firefox/WebKit. Local unit tests cover protocol validation, bounds, storage probe and cleanup. These are not proof of Safari on a physical phone, a real CMS, every third-party storage policy or HTTPS/CDN behavior. See [browser tests](https://github.com/TimeOfAnarchy/turnesta/blob/main/e2e/README.md), [architecture](ARCHITECTURE.md#public-access-and-client-data) and [operations](OPERATIONS.md).
 
 ## Troubleshooting
 

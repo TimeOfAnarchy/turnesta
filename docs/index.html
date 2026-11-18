@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Turnesta — self-hosted appointment booking and queue management</title>
+  <meta name="description" content="Open-source appointment scheduling and walk-in queue management. Explore public booking pages, QR queue tickets, the operator workspace and live display. Run Turnesta on your own server with Docker Compose.">
+  <link rel="sitemap" type="application/xml" href="./sitemap.xml">
+  <link rel="canonical" href="https://timeofanarchy.github.io/turnesta/">
+  <link rel="alternate" hreflang="en" href="https://timeofanarchy.github.io/turnesta/">
+  <link rel="alternate" hreflang="ru" href="https://timeofanarchy.github.io/turnesta/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://timeofanarchy.github.io/turnesta/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Turnesta — self-hosted appointment booking and queue management">
+  <meta property="og:description" content="Open-source appointment scheduling and walk-in queue management. Explore public booking pages, QR queue tickets, the operator workspace and live display. Run Turnesta on your own server with Docker Compose.">
+  <meta property="og:url" content="https://timeofanarchy.github.io/turnesta/">
+  <meta property="og:image" content="https://timeofanarchy.github.io/turnesta/tour/schedule.png">
+  <meta property="og:image:alt" content="Staff schedule with the confirmed visitor in the 09:00 slot">
+  <link rel="icon" type="image/svg+xml" href="./tour/favicon.svg">
+  <link rel="stylesheet" href="./tour/site.css">
+  <script defer src="./tour/tour.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="header wrap">
+    <a class="brand" href="./" aria-label="Turnesta home"><img src="./tour/favicon.svg" width="30" height="30" alt="">turnesta</a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="#tour">Product tour</a>
+      <a class="guide-link" href="./guides/">Guides</a>
+      <a href="https://github.com/TimeOfAnarchy/turnesta">GitHub ↗</a>
+      <a class="lang" href="ru/" lang="ru" hreflang="ru">Русский</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap">
+      <div>
+        <p class="kicker">Self-hosted · Open source</p>
+        <h1>Appointments and walk-ins in one workspace.</h1>
+        <p class="lead">Take bookings from your website and give walk-in visitors a queue ticket by QR code. Your team manages the schedule, the line and the next call. You host the software.</p>
+        <div class="actions"><a class="primary" href="#tour">See how it works <span aria-hidden="true">↓</span></a><a class="action-link" href="#install">Try locally</a></div>
+      </div>
+      <div class="hero-art" role="img" aria-label="Staff schedule and visitor ticket from the Russian-language application">
+        <img class="hero-screen" src="./tour/schedule.png" width="1360" height="900" alt="">
+        <img class="hero-phone" src="./tour/called.png" width="450" height="870" alt="">
+      </div>
+    </section>
+    <div class="tour-intro wrap" id="tour">
+      <h2>Follow a visit</h2>
+      <p>These seven screenshots follow a booking and a walk-in visit in v0.1.0 using synthetic data. The interface is in Russian. Select a step to see what the visitor or staff member sees.</p>
+    </div>
+    <section class="walkthrough wrap" id="bookings" aria-labelledby="bookings-title">
+      <div>
+        <h3 id="bookings-title">Book an appointment</h3>
+        <nav aria-label="Book an appointment — Steps">
+          <ol class="steps">
+            <li><a href="#view-booking"><strong>Choose a time</strong><span>Open the booking link or the widget on the business website and choose a specialist and time.</span></a></li>
+            <li><a href="#view-confirmation"><strong>Confirm the booking</strong><span>Submit the form. Turnesta confirms the appointment and gives the visitor a reference number.</span></a></li>
+            <li><a href="#view-schedule"><strong>Check the staff schedule</strong><span>Staff see the booking against the original time slot and can move or cancel it.</span></a></li>
+          </ol>
+        </nav>
+      </div>
+      <div class="frames">
+        <figure id="view-booking">
+          <a class="canvas" href="./tour/booking.png"><img src="./tour/booking.png" width="1160" height="870" loading="lazy" alt="Public calendar with an available 09:00 appointment selected"></a>
+          <figcaption>The visitor’s booking calendar. <a href="./tour/booking.png">Full size</a></figcaption>
+        </figure>
+        <figure id="view-confirmation">
+          <a class="canvas" href="./tour/confirmation.png"><img src="./tour/confirmation.png" width="1160" height="870" loading="lazy" alt="Confirmation for the 09:00 appointment with booking number 000001"></a>
+          <figcaption>The visitor’s confirmation for the selected time. <a href="./tour/confirmation.png">Full size</a></figcaption>
+        </figure>
+        <figure id="view-schedule">
+          <a class="canvas" href="./tour/schedule.png"><img src="./tour/schedule.png" width="1360" height="900" loading="lazy" alt="Staff schedule with the confirmed visitor in the 09:00 slot"></a>
+          <figcaption>The same appointment in the staff workspace. <a href="./tour/schedule.png">Full size</a></figcaption>
+        </figure>
+      </div>
+    </section>
+    <section class="walkthrough wrap" id="queues" aria-labelledby="queues-title">
+      <div>
+        <h3 id="queues-title">Join a queue</h3>
+        <nav aria-label="Join a queue — Steps">
+          <ol class="steps">
+            <li><a href="#view-waiting"><strong>Take a ticket</strong><span>Open the public queue link or scan its QR code. Take a ticket without signing in.</span></a></li>
+            <li><a href="#view-operator"><strong>Call the next visitor</strong><span>The operator selects a service window and calls the first waiting ticket.</span></a></li>
+            <li><a href="#view-called"><strong>Follow the call</strong><span>The ticket updates in the visitor’s browser with the destination.</span></a></li>
+            <li><a href="#view-board"><strong>Read the display board</strong><span>The shared board shows the ticket number and window without naming the visitor.</span></a></li>
+          </ol>
+        </nav>
+      </div>
+      <div class="frames">
+        <figure id="view-waiting">
+          <a class="canvas" href="./tour/waiting.png"><img class="portrait" src="./tour/waiting.png" width="450" height="870" loading="lazy" alt="A visitor’s phone showing waiting ticket 001"></a>
+          <figcaption>The visitor’s ticket shows how many people are ahead. <a href="./tour/waiting.png">Full size</a></figcaption>
+        </figure>
+        <figure id="view-operator">
+          <a class="canvas" href="./tour/operator.png"><img src="./tour/operator.png" width="1360" height="900" loading="lazy" alt="The operator workspace with window 1 selected and the Call next button"></a>
+          <figcaption>The operator’s workspace before the call. <a href="./tour/operator.png">Full size</a></figcaption>
+        </figure>
+        <figure id="view-called">
+          <a class="canvas" href="./tour/called.png"><img class="portrait" src="./tour/called.png" width="450" height="870" loading="lazy" alt="Visitor ticket 001 updated with a call to window 1"></a>
+          <figcaption>Ticket 001 directs the visitor to window 1. <a href="./tour/called.png">Full size</a></figcaption>
+        </figure>
+        <figure id="view-board">
+          <a class="canvas" href="./tour/board.png"><img src="./tour/board.png" width="1160" height="870" loading="lazy" alt="Public board calling ticket 001 to window 1 with two people waiting"></a>
+          <figcaption>The public display shows the same call. <a href="./tour/board.png">Full size</a></figcaption>
+        </figure>
+      </div>
+    </section>
+    <section class="install wrap" id="install">
+      <div>
+        <h2>Run Turnesta locally</h2>
+        <p class="install-intro">Start with Git and Docker Compose. On Windows use Git Bash and Linux containers. The installer builds the app, creates the first organization and prints the sign-in details.</p>
+      </div>
+      <div>
+        <pre tabindex="0" aria-label="installation commands"><code>git clone --branch v0.1.0 https://github.com/TimeOfAnarchy/turnesta.git
+cd turnesta
+./scripts/install.sh</code></pre>
+        <nav aria-label="Installation guides">
+          <a href="./GETTING-STARTED.html">First configuration</a>
+          <a href="./DEPLOYMENT.html#linux-vps">Linux server setup</a>
+          <a href="./DEPLOYMENT.html#local-resource-measurements-for-v010">Resource measurements</a>
+        </nav>
+      </div>
+    </section>
+    <section class="status wrap">
+      <h3>What to expect from v0.1.0</h3>
+      <p>This pre-release is for evaluation. Staff handle appointment changes and cancellations. Booking holds and reminders are unavailable. Tips is a payment simulation. Local checks cover both visits shown above. A real VPS, external SMTP and a live business website still need verification. <a href="https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0">Release notes ↗</a></p>
+    </section>
+  </main>
+  <footer class="footer wrap">
+    <a class="brand" href="#main">turnesta</a>
+    <nav class="footlinks" aria-label="Project links">
+      <a href="./guides/">Guides</a>
+      <a href="./BOOKINGS-WIDGET.html">Booking widget</a>
+      <a href="https://github.com/TimeOfAnarchy/turnesta/blob/main/LICENSE">AGPL-3.0</a>
+    </nav>
+  </footer>
+</body>
+</html>

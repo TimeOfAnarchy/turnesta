@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-Current development version: **0.1.0**. This is the initial changelog baseline for the existing implementation, not an announcement of a tagged release.
+- Published a bilingual product tour and README with screenshots from v0.1.0.
+
+## [0.1.0](https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0) — 2026-11-18
+
+Initial pre-release for evaluation. The `v0.1.0` tag points to `24d166e`. The release includes source archives, their checksums and the digest of the Linux AMD64 image tested by CI.
 
 ### Added
 

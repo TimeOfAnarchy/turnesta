@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Turnesta — онлайн-запись и электронная очередь на своём сервере</title>
+  <meta name="description" content="Открытая система для онлайн-записи и электронной очереди. Посмотрите, как клиент выбирает время или берёт талон по QR-коду, а сотрудник ведёт расписание и вызывает к окну.">
+  <link rel="sitemap" type="application/xml" href="../sitemap.xml">
+  <link rel="canonical" href="https://timeofanarchy.github.io/turnesta/ru/">
+  <link rel="alternate" hreflang="en" href="https://timeofanarchy.github.io/turnesta/">
+  <link rel="alternate" hreflang="ru" href="https://timeofanarchy.github.io/turnesta/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://timeofanarchy.github.io/turnesta/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Turnesta — онлайн-запись и электронная очередь на своём сервере">
+  <meta property="og:description" content="Открытая система для онлайн-записи и электронной очереди. Посмотрите, как клиент выбирает время или берёт талон по QR-коду, а сотрудник ведёт расписание и вызывает к окну.">
+  <meta property="og:url" content="https://timeofanarchy.github.io/turnesta/ru/">
+  <meta property="og:image" content="https://timeofanarchy.github.io/turnesta/tour/schedule.png">
+  <meta property="og:image:alt" content="Расписание сотрудника с клиентом, записанным на 09:00">
+  <link rel="icon" type="image/svg+xml" href="../tour/favicon.svg">
+  <link rel="stylesheet" href="../tour/site.css">
+  <script defer src="../tour/tour.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="header wrap">
+    <a class="brand" href="./" aria-label="Turnesta — главная"><img src="../tour/favicon.svg" width="30" height="30" alt="">turnesta</a>
+    <nav class="nav" aria-label="Навигация сайта">
+      <a href="#tour">Обзор</a>
+      <a class="guide-link" href="../guides/">Документация</a>
+      <a href="https://github.com/TimeOfAnarchy/turnesta">GitHub ↗</a>
+      <a class="lang" href="../" lang="en" hreflang="en">English</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap">
+      <div>
+        <p class="kicker">На своём сервере · Открытый код</p>
+        <h1>Запись и живая очередь в одном кабинете.</h1>
+        <p class="lead">Принимайте записи с сайта и выдавайте талоны по QR-коду тем, кто пришёл без записи. Сотрудники ведут расписание и вызывают посетителей к окну. Приложение работает на вашем сервере.</p>
+        <div class="actions"><a class="primary" href="#tour">Посмотреть экраны <span aria-hidden="true">↓</span></a><a class="action-link" href="#install">Запустить у себя</a></div>
+      </div>
+      <div class="hero-art" role="img" aria-label="Расписание сотрудника и талон посетителя в Turnesta">
+        <img class="hero-screen" src="../tour/schedule.png" width="1360" height="900" alt="">
+        <img class="hero-phone" src="../tour/called.png" width="450" height="870" alt="">
+      </div>
+    </section>
+    <div class="tour-intro wrap" id="tour">
+      <h2>Два визита по шагам</h2>
+      <p>На семи скриншотах из v0.1.0 — запись на приём и визит без записи. Выберите шаг, чтобы увидеть экран клиента или сотрудника. Данные демонстрационные.</p>
+    </div>
+    <section class="walkthrough wrap" id="bookings" aria-labelledby="bookings-title">
+      <div>
+        <h3 id="bookings-title">Записаться на приём</h3>
+        <nav aria-label="Записаться на приём — Шаги">
+          <ol class="steps">
+            <li><a href="#view-booking"><strong>Выбрать время</strong><span>Клиент открывает страницу записи по ссылке или виджет на сайте, выбирает специалиста и время приёма.</span></a></li>
+            <li><a href="#view-confirmation"><strong>Подтвердить запись</strong><span>После отправки анкеты клиент сразу получает подтверждение и номер записи.</span></a></li>
+            <li><a href="#view-schedule"><strong>Открыть расписание</strong><span>У сотрудника запись видна в расписании специалиста. Отсюда её можно перенести или отменить.</span></a></li>
+          </ol>
+        </nav>
+      </div>
+      <div class="frames">
+        <figure id="view-booking">
+          <a class="canvas" href="../tour/booking.png"><img src="../tour/booking.png" width="1160" height="870" loading="lazy" alt="Публичный календарь с выбранным приёмом на 09:00"></a>
+          <figcaption>Свободное время в календаре клиента. <a href="../tour/booking.png">Увеличить</a></figcaption>
+        </figure>
+        <figure id="view-confirmation">
+          <a class="canvas" href="../tour/confirmation.png"><img src="../tour/confirmation.png" width="1160" height="870" loading="lazy" alt="Подтверждение приёма на 09:00 с номером записи 000001"></a>
+          <figcaption>Подтверждение выбранного времени приёма. <a href="../tour/confirmation.png">Увеличить</a></figcaption>
+        </figure>
+        <figure id="view-schedule">
+          <a class="canvas" href="../tour/schedule.png"><img src="../tour/schedule.png" width="1360" height="900" loading="lazy" alt="Расписание сотрудника с клиентом, записанным на 09:00"></a>
+          <figcaption>Та же запись в кабинете сотрудника. <a href="../tour/schedule.png">Увеличить</a></figcaption>
+        </figure>
+      </div>
+    </section>
+    <section class="walkthrough wrap" id="queues" aria-labelledby="queues-title">
+      <div>
+        <h3 id="queues-title">Занять очередь</h3>
+        <nav aria-label="Занять очередь — Шаги">
+          <ol class="steps">
+            <li><a href="#view-waiting"><strong>Получить талон</strong><span>Посетитель открывает ссылку или сканирует QR-код у стойки и получает талон без регистрации.</span></a></li>
+            <li><a href="#view-operator"><strong>Вызвать следующего</strong><span>Оператор выбирает окно обслуживания и вызывает первого из ожидающих.</span></a></li>
+            <li><a href="#view-called"><strong>Узнать своё окно</strong><span>На телефоне посетителя появляется вызов с указанием окна.</span></a></li>
+            <li><a href="#view-board"><strong>Посмотреть на табло</strong><span>На общем экране видны номер талона и окно. Имена посетителей скрыты.</span></a></li>
+          </ol>
+        </nav>
+      </div>
+      <div class="frames">
+        <figure id="view-waiting">
+          <a class="canvas" href="../tour/waiting.png"><img class="portrait" src="../tour/waiting.png" width="450" height="870" loading="lazy" alt="На телефоне — талон 001 в ожидании вызова"></a>
+          <figcaption>В талоне видно, сколько человек впереди. <a href="../tour/waiting.png">Увеличить</a></figcaption>
+        </figure>
+        <figure id="view-operator">
+          <a class="canvas" href="../tour/operator.png"><img src="../tour/operator.png" width="1360" height="900" loading="lazy" alt="Рабочее место оператора с выбранным окном и кнопкой вызова следующего"></a>
+          <figcaption>Рабочее место оператора перед вызовом. <a href="../tour/operator.png">Увеличить</a></figcaption>
+        </figure>
+        <figure id="view-called">
+          <a class="canvas" href="../tour/called.png"><img class="portrait" src="../tour/called.png" width="450" height="870" loading="lazy" alt="Посетитель с талоном 001 получил вызов к первому окну"></a>
+          <figcaption>Посетителя с талоном 001 ждут у первого окна. <a href="../tour/called.png">Увеличить</a></figcaption>
+        </figure>
+        <figure id="view-board">
+          <a class="canvas" href="../tour/board.png"><img src="../tour/board.png" width="1160" height="870" loading="lazy" alt="На табло вызван талон 001 к первому окну, ещё два человека ожидают"></a>
+          <figcaption>Тот же вызов на публичном табло. <a href="../tour/board.png">Увеличить</a></figcaption>
+        </figure>
+      </div>
+    </section>
+    <section class="install wrap" id="install">
+      <div>
+        <h2>Запустить Turnesta у себя</h2>
+        <p class="install-intro">Понадобятся Git и Docker Compose. В Windows используйте Git Bash и Linux-контейнеры. Установщик соберёт приложение, создаст первую организацию и выведет данные для входа.</p>
+      </div>
+      <div>
+        <pre tabindex="0" aria-label="Команды для установки"><code>git clone --branch v0.1.0 https://github.com/TimeOfAnarchy/turnesta.git
+cd turnesta
+./scripts/install.sh</code></pre>
+        <nav aria-label="Инструкции (на английском)">
+          <a href="../GETTING-STARTED.html">Первоначальная настройка</a>
+          <a href="../DEPLOYMENT.html#linux-vps">Установка на Linux</a>
+          <a href="../DEPLOYMENT.html#local-resource-measurements-for-v010">Замеры ресурсов</a>
+        </nav>
+      </div>
+    </section>
+    <section class="status wrap">
+      <h3>Что доступно в v0.1.0</h3>
+      <p>Это предварительный релиз для знакомства с системой. Перенос и отмену записи оформляет сотрудник. Временного удержания места и напоминаний пока нет. В разделе чаевых действует имитация оплаты. Оба показанных сценария проверены локально. Реальный VPS, внешний SMTP и сайт действующей организации ещё требуют проверки. <a href="https://github.com/TimeOfAnarchy/turnesta/releases/tag/v0.1.0">Описание версии ↗</a></p>
+    </section>
+  </main>
+  <footer class="footer wrap">
+    <a class="brand" href="#main">turnesta</a>
+    <nav class="footlinks" aria-label="Ссылки проекта">
+      <a href="../guides/">Документация</a>
+      <a href="../BOOKINGS-WIDGET.html">Виджет записи</a>
+      <a href="https://github.com/TimeOfAnarchy/turnesta/blob/main/LICENSE">AGPL-3.0</a>
+    </nav>
+  </footer>
+</body>
+</html>

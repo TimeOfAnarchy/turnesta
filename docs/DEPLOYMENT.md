@@ -1,6 +1,6 @@
 # Deployment
 
-Choose local evaluation for development and the separate Linux server stack for hosting. For the product overview and quick start, see the [README](../README.md).
+Choose local evaluation for development and the separate Linux server stack for hosting. For the product overview and quick start, see the [README](https://github.com/TimeOfAnarchy/turnesta/blob/main/README.md).
 
 ## Local evaluation
 
@@ -39,6 +39,19 @@ curl --fail https://your-domain/health/ready
 ```
 
 The root Compose file is local development. Production does not publish PostgreSQL, API or metrics ports; Caddy is the external entry point. Memory/CPU limits are configuration, not measured capacity guarantees. Confirm available resources on the actual workload before committing to a server size.
+
+### Local resource measurements for v0.1.0
+
+On 18 November 2026 the published Linux AMD64 image ran on Docker Desktop (Engine 29.9.3, 32 logical CPUs and 30.1 GiB assigned to the Linux VM). The test used the production Compose file with Caddy bound to loopback HTTPS, a fresh PostgreSQL database, synthetic data and the mail profile off.
+
+| State | Total container memory |
+| --- | ---: |
+| Ready, before the first sign-in | 102–104 MiB |
+| After one booking and one operator call, with the staff workspace, booking receipt, visitor ticket and display board open | 232–235 MiB |
+
+Each range sums the API, PostgreSQL and Caddy memory readings in each of five consecutive `docker stats --no-stream` samples. To repeat, run `docker stats --no-stream $(dc ps -q api db caddy)` in the shell with the `dc` function above. The three local image sizes reported by Docker were 152 MiB (application), 595 MiB (PostgreSQL) and 79 MiB (Caddy), before accounting for shared layers. With the example visits, `pg_database_size` reported 11.1 MiB and a custom-format `pg_dump` was about 403 KiB.
+
+The measurements cover a short local walkthrough. Host memory, browser processes, email delivery, sustained traffic and peak usage during updates or restore are outside this sample. Minimum VPS requirements have yet to be measured.
 
 ## Email
 

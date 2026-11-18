@@ -1,10 +1,15 @@
+---
+title: Turnesta documentation
+permalink: /guides/
+---
+
 # Documentation
 
 Turnesta provides appointment booking and electronic queues, with an explicit mock-only Tips mode. Start with the guide for your role; the interface is currently Russian.
 
 | You want to... | Start here |
 | --- | --- |
-| Try Turnesta and understand its scope | [Project README](../README.md) |
+| Try Turnesta and understand its scope | [Project README](https://github.com/TimeOfAnarchy/turnesta/blob/main/README.md) |
 | Set up a location, schedule and team | [First configuration](GETTING-STARTED.md) |
 | Install locally or on a Linux VPS | [Deployment](DEPLOYMENT.md) |
 | Manage updates, backups, recovery and retention | [Operations](OPERATIONS.md) |
@@ -16,12 +21,12 @@ Turnesta provides appointment booking and electronic queues, with an explicit mo
 
 - **Business owner:** first configuration, then widget integration if needed.
 - **Self-hosting administrator:** deployment, operations and the first-configuration guide.
-- **Contributor:** development, architecture and the [browser test instructions](../e2e/README.md).
+- **Contributor:** development, architecture and the [browser test instructions](https://github.com/TimeOfAnarchy/turnesta/blob/main/e2e/README.md).
 
 The deployment guide includes the checks still required on the target server. Local automated checks do not establish a verified VPS, external SMTP service or business website integration. Tips does not process real money.
 
 ## Project policies
 
-- [Security policy and reporting a vulnerability](../SECURITY.md)
-- [Changelog](../CHANGELOG.md)
-- [AGPL-3.0 license](../LICENSE)
+- [Security policy and reporting a vulnerability](https://github.com/TimeOfAnarchy/turnesta/blob/main/SECURITY.md)
+- [Changelog](https://github.com/TimeOfAnarchy/turnesta/blob/main/CHANGELOG.md)
+- [AGPL-3.0 license](https://github.com/TimeOfAnarchy/turnesta/blob/main/LICENSE)

@@ -11,6 +11,11 @@
 !/docs/BOOKINGS-WIDGET.md
 !/docs/DEVELOPMENT.md
 !/docs/ARCHITECTURE.md
+!/docs/index.html
+!/docs/ru/
+!/docs/tour/
+!/docs/sitemap.xml
+!/docs/llms.txt
 
 # Database backups
 /backups/
